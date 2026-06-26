@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from openspec/changes/decision-reality-drift/tasks.md -->
 # Tasks: decision-reality-drift
 
 ## ⚠️ SESSION CHECKPOINT (2026-06-26)
@@ -52,14 +53,14 @@ Chain strategy: stacked-to-main
 
 ### Phase 1: Counter contract (W2) + BDD absorption (W3)
 
-- [ ] **T1.1** W2 spec.md REQ-8 counter reconciliation
+- [x] **T1.1** W2 spec.md REQ-8 counter reconciliation
   - Type: `docs` · TDD: `N/A` · LOC: ~30
   - Files: `openspec/changes/archive/2026-06-25-decision-code-linking/spec.md` (lines 271/273/279/285)
   - Depends on: —
   - Acceptance: REQ-8 lists 8 impl counters (`suggest_invoked_total`, `suggest_hit_total`, `suggest_miss_total`, `bindings_confirmed_total`, `backfill_observations_total`, `backfill_with_refs_total`, `inspect_invoked_total`, `inspect_render_ms`); drops `avg_bindings_per_observation`; 3 scenarios assert impl names
   - Commit: `docs(spec): reconcile REQ-8 counter names to impl (W2)`
 
-- [ ] **T1.2** W3 BDD scenario + step def
+- [x] **T1.2** W3 BDD scenario + step def
   - Type: `bdd` · TDD: `N/A` · LOC: ~11
   - Files: `tests/bdd/req3_engram_io.feature` (+1 scenario), `tests/bdd/test_decision_code_linking_p1_steps.py` (+6 LOC step def reusing `binding.extract`)
   - Depends on: —
@@ -94,7 +95,7 @@ Chain strategy: stacked-to-main
 
 ### Phase 3: Dataclasses + scan_change skeleton
 
-- [ ] **T1.6** `DriftReport`/`Finding` dataclasses + `scan_change()` + tests
+- [x] **T1.6** `DriftReport`/`Finding` dataclasses + `scan_change()` + tests
   - Type: `code` · TDD: `RED→GREEN` · LOC: ~60 impl + ~50 tests = ~110
   - Files: `src/flow_engineering/decision_drift.py`, `tests/unit/test_decision_drift.py` (+~50 LOC aggregation tests)
   - Depends on: T1.5
@@ -103,21 +104,21 @@ Chain strategy: stacked-to-main
 
 ### Phase 4: Observability + engram_io + CLI
 
-- [ ] **T1.7** Observability counters + `record_drift_summary()` helper
+- [x] **T1.7** Observability counters + `record_drift_summary()` helper
   - Type: `code` · TDD: `RED→GREEN` · LOC: ~35 impl + ~40 tests = ~75
   - Files: `src/flow_engineering/observability.py`, `tests/unit/test_observability_drift.py` (NEW)
   - Depends on: T1.6
   - Acceptance: 8 `drift_*_total` counters increment per `DriftReport.class_counts`; mocked metrics sink verifies one JSONL line per invocation with correct payload shape
   - Commit: `feat(observability): drift counters + record_drift_summary helper`
 
-- [ ] **T1.8** `update_observation_metadata()` in `engram_io.py`
+- [x] **T1.8** `update_observation_metadata()` in `engram_io.py`
   - Type: `code` · TDD: `RED→GREEN` · LOC: ~20 impl + ~50 tests = ~70
   - Files: `src/flow_engineering/engram_io.py`, `tests/unit/test_engram_io_metadata.py` (NEW)
   - Depends on: T1.6
   - Acceptance: Appends `<!-- metadata -->` block distinct from `code_refs`; `code_refs` byte-identical after write; idempotent re-write (no duplicate keys); missing observation raises structured `ObservationNotFound`
   - Commit: `feat(io): update_observation_metadata appends drift_meta block`
 
-- [ ] **T1.9** CLI subcommand `flow drift <change>` + tests
+- [x] **T1.9** CLI subcommand `flow drift <change>` + tests
   - Type: `code` · TDD: `RED→GREEN` · LOC: ~90 impl + ~80 tests = ~170
   - Files: `src/flow_engineering/cli.py`, `tests/unit/test_cli_drift.py` (NEW)
   - Depends on: T1.7, T1.8
@@ -126,7 +127,7 @@ Chain strategy: stacked-to-main
 
 ### Phase 5: BDD feature + step glue
 
-- [ ] **T1.10** BDD feature `req9_drift_detection` + step defs
+- [x] **T1.10** BDD feature `req9_drift_detection` + step defs
   - Type: `bdd` · TDD: `N/A` · LOC: ~40 feature + ~120 step defs (~8 LOC × 15 scenarios) = ~160
   - Files: `tests/bdd/req9_drift_detection.feature` (NEW), `tests/bdd/test_decision_reality_drift_steps.py` (NEW)
   - Depends on: T1.9
@@ -139,14 +140,14 @@ Chain strategy: stacked-to-main
 
 ### Phase 6: Daemon `--drift` integration
 
-- [ ] **T2.1** Daemon `--drift` event handling
+- [x] **T2.1** Daemon `--drift` event handling
   - Type: `code` · TDD: `RED→GREEN` · LOC: ~60 impl + ~40 tests = ~100
   - Files: `src/flow_engineering/daemon.py`, `tests/unit/test_daemon_drift_events.py` (NEW)
   - Depends on: PR#1 merged
   - Acceptance: `start_watch(..., drift=True)` subscribes to `apply-progress.json` writes; `merged` status triggers `scan_change`; missing graph logs `unable_to_verify` once and watcher stays alive
   - Commit: `feat(daemon): flow watch --drift subscribes to apply-progress`
 
-- [ ] **T2.2** `flow watch --drift` CLI trigger logic
+- [x] **T2.2** `flow watch --drift` CLI trigger logic
   - Type: `code` · TDD: `RED→GREEN` · LOC: ~30 impl + ~60 tests = ~90
   - Files: `src/flow_engineering/cli.py`, `tests/unit/test_cli_watch_drift.py` (NEW)
   - Depends on: T2.1
@@ -155,28 +156,28 @@ Chain strategy: stacked-to-main
 
 ### Phase 7: BDD + docs + SKILL.md prose
 
-- [ ] **T2.3** BDD feature `req15_drift_daemon` + step defs
+- [x] **T2.3** BDD feature `req15_drift_daemon` + step defs
   - Type: `bdd` · TDD: `N/A` · LOC: ~20 feature + ~25 step defs (~8 LOC × 3 scenarios) = ~45
   - Files: `tests/bdd/req15_drift_daemon.feature` (NEW), `tests/bdd/test_decision_reality_drift_steps.py` (extend)
   - Depends on: T2.2
   - Acceptance: 3 scenarios pass — event-log line on detected drift, no event-log on still-valid, daemon survives missing graph
   - Commit: `test(bdd): req15_drift_daemon feature`
 
-- [ ] **T2.4** sdd-verify Step 6 sub-step
+- [x] **T2.4** sdd-verify Step 6 sub-step
   - Type: `docs` · TDD: `N/A` · LOC: ~25
   - Files: `~/.config/opencode/skills/sdd-verify/SKILL.md` (runtime location, NOT repo)
   - Depends on: T2.3
   - Acceptance: New sub-step "Run `flow drift <change>` and surface findings before declaring green" present; names exit codes 0/1/2 from REQ-11
   - Commit: `docs(verify): add drift-check sub-step under Step 6`
 
-- [ ] **T2.5** CHANGELOG.md v0.3.0 entry
+- [x] **T2.5** CHANGELOG.md v0.3.0 entry
   - Type: `docs` · TDD: `N/A` · LOC: ~10
   - Files: `CHANGELOG.md`
   - Depends on: T2.4
   - Acceptance: v0.3.0 entry lists `flow drift <change>`, `flow watch --drift`, W2/W3 closure, 8 new drift counters
   - Commit: `chore(release): CHANGELOG v0.3.0 entry`
 
-- [ ] **T2.6** 6 SKILL.md "Drift detection hook" prose updates
+- [x] **T2.6** 6 SKILL.md "Drift detection hook" prose updates
   - Type: `docs` · TDD: `N/A` · LOC: ~25 prose (~4 LOC per file)
   - Files: `~/.config/opencode/skills/sdd-{propose,design,tasks,apply,verify,archive}/SKILL.md` (runtime location, NOT repo)
   - Depends on: T2.5
