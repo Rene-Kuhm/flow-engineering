@@ -106,9 +106,76 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return arr / norms
 
 
+class SentenceTransformersProvider(EmbeddingProvider):
+    """Real embedding provider backed by ``sentence-transformers`` (REQ-19 T2.1).
+
+    Lazy-import strategy:
+    - Module-level ``import flow_engineering.embedding_provider`` does NOT pull
+      torch or sentence_transformers (verified by
+      ``tests/unit/test_embedding_provider.py::test_subprocess_module_import_does_not_pull_torch``).
+    - ``__init__`` does a function-body ``import torch`` + ``from sentence_transformers
+      import SentenceTransformer`` to check the extra is installed. If either import
+      fails, raises :class:`EmbeddingProviderUnavailable` with the install hint.
+    - The actual ``SentenceTransformer(...)`` instantiation is lazy: it happens on
+      the first ``embed()`` call via :meth:`_ensure_model` and the result is cached
+      on ``self._model`` for subsequent calls. This keeps construction cheap (no
+      model download, no GPU init) and defers the expensive model load until the
+      provider is actually used.
+
+    Output contract (REQ-19 scenarios 1, 4):
+    - ``embed(texts)`` returns ``np.ndarray`` of shape ``(len(texts), 384)``,
+      ``dtype=float32``.
+    - ``embed([])`` returns shape ``(0, 384)`` without touching the model.
+    """
+
+    DEFAULT_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    """The default model. 384-dim MiniLM-L6 is the v1 production choice per design D4 + D9."""
+
+    _INSTALL_HINT: str = "pip install flow-engineering[vectors]"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL) -> None:
+        # Function-body import — keeps module-level ``import embedding_provider``
+        # torch-free (REQ-19 scenario 2). The two imports are checked atomically:
+        # torch without sentence_transformers (or vice versa) is treated as
+        # "extra not installed" because the runtime needs both.
+        try:
+            import torch  # noqa: F401  - presence-check only
+            from sentence_transformers import SentenceTransformer  # noqa: F401
+        except ImportError as exc:
+            raise EmbeddingProviderUnavailable(
+                f"Install [vectors] extra: {self._INSTALL_HINT}"
+            ) from exc
+        self.model_name: str = model_name
+        self.model_version: str = model_name
+        self.dim: int = EMBEDDING_DIMS
+        # Lazy: the model is only constructed on the first embed() call so
+        # construction itself stays fast and never downloads weights.
+        self._model: Any | None = None
+
+    def _ensure_model(self) -> Any:
+        """Construct ``SentenceTransformer`` on first call; cache thereafter."""
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
+            self._model = SentenceTransformer(self.model_name)
+        return self._model
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            # Empty input short-circuits before touching the model — keeps the
+            # embed([]) → (0, 384) contract intact even when torch is unavailable
+            # at runtime.
+            return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+        model = self._ensure_model()
+        vectors = model.encode(texts, convert_to_numpy=True)
+        arr = np.asarray(vectors, dtype=np.float32).reshape(len(texts), EMBEDDING_DIMS)
+        return arr
+
+
 __all__ = [
     "EMBEDDING_DIMS",
     "EmbeddingProvider",
     "EmbeddingProviderUnavailable",
     "MockEmbeddingProvider",
+    "SentenceTransformersProvider",
 ]

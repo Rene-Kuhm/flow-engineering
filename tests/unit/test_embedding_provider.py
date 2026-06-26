@@ -371,7 +371,7 @@ class TestSentenceTransformersProviderLazyModelLoad:
         assert construct_log == ["lazy-test-model"], (
             f"Model re-instantiated: {construct_log}"
         )
-        assert encode_log == [["first"], ["second", "third"], []]
+        assert encode_log == [["first"], ["second", "third"]]
 
     def test_embed_returns_n_by_384(self, monkeypatch) -> None:
         from flow_engineering.embedding_provider import SentenceTransformersProvider
