@@ -1058,3 +1058,319 @@ def then_each_row_norm(embedding_world, lo: float, hi: float):
     norms = np.linalg.norm(arr, axis=1)
     for n in norms:
         assert lo <= n <= hi, f"norm {n} outside [{lo}, {hi}]"
+
+
+# =====================================================================
+# REQ-20 scenario bindings — sqlite-vec storage
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Add -> search round-trip returns added observation as top-1",
+)
+def test_req20_round_trip(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Delete removes observation from search results",
+)
+def test_req20_delete_removes(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "count() reflects add/delete accurately",
+)
+def test_req20_count_accuracy(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Vector BLOB size matches 384 x 4 = 1536 bytes",
+)
+def test_req20_blob_size(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Search returns top-k ordered by ascending distance",
+)
+def test_req20_top_k_ordering(vec_store_world):
+    pass
+
+
+# =====================================================================
+# REQ-20 step definitions
+# =====================================================================
+
+
+sqlite_vec = pytest.importorskip("sqlite_vec")
+"""Skip the whole REQ-20 batch when sqlite-vec is missing (test env without [vectors])."""
+
+
+from flow_engineering.vectors.sqlite_vec_store import (
+    BLOB_SIZE,
+    VECTOR_DIM,
+    SqliteVecStore,
+)
+
+
+@pytest.fixture
+def vec_store_world(tmp_path: Path) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-20.
+
+    Uses an in-memory ``:memory:`` SQLite DB so each scenario gets a fresh
+    store with zero fixture setup overhead.
+    """
+    return {
+        "store": None,
+        "vectors": {},
+        "search_results": None,
+        "count_value": None,
+        "raw_blob": None,
+        "round_trip_input": None,
+        "round_trip_output": None,
+    }
+
+
+def _unit(v: np.ndarray) -> np.ndarray:
+    """L2-normalize a vector in place (returns a new array)."""
+    n = float(np.linalg.norm(v))
+    if n <= 0.0:
+        return v.astype(np.float32)
+    return (v / n).astype(np.float32)
+
+
+# ---------- Given ----------
+
+
+@given("a fresh SqliteVecStore (in-memory)")
+def given_fresh_store(tmp_path, vec_store_world):
+    vec_store_world["store"] = SqliteVecStore(tmp_path / "fresh.sqlite")
+    # Use a tmp_path file instead of ":memory:" so each scenario has isolation
+    # but cleanup is automatic via tmp_path fixture teardown.
+
+
+@given("a SqliteVecStore with obs1 and obs2 added")
+def given_store_with_two(tmp_path, vec_store_world):
+    store = SqliteVecStore(tmp_path / "two.sqlite")
+    store.add("obs1", _unit(np.ones(VECTOR_DIM, dtype=np.float32)))
+    store.add("obs2", _unit(np.full(VECTOR_DIM, 2.0, dtype=np.float32)))
+    vec_store_world["store"] = store
+
+
+@given("a fresh SqliteVecStore (in-memory)")
+def given_fresh_store_in_memory(tmp_path, vec_store_world):
+    vec_store_world["store"] = SqliteVecStore(tmp_path / "fresh.sqlite")
+
+
+@given("a SqliteVecStore with 10 random 384-dim vectors at obs1..obs10")
+def given_store_with_ten_random(tmp_path, vec_store_world):
+    rng = np.random.default_rng(seed=2026_06_26)
+    vectors: dict[str, np.ndarray] = {}
+    for i in range(1, 11):
+        v = rng.standard_normal(VECTOR_DIM).astype(np.float32)
+        v = _unit(v)
+        vectors[f"obs{i}"] = v
+    store = SqliteVecStore(tmp_path / "ten.sqlite")
+    for obs_id, vec in vectors.items():
+        store.add(obs_id, vec)
+    vec_store_world["store"] = store
+    vec_store_world["vectors"] = vectors
+
+
+@given("a query vector chosen close to obs7 (cosine distance ~ 0.05)")
+def given_query_close_to_obs7(vec_store_world):
+    """Build a query vector with cosine ~ 0.05 to obs7 by interpolating
+    obs7 with a small orthogonal perturbation."""
+    obs7 = vec_store_world["vectors"]["obs7"]
+    rng = np.random.default_rng(seed=42)
+    # 0.05 cosine distance ~ angle ~ acos(0.95) ~ 0.3176 rad.
+    # Use sin(0.3176) on orthogonal direction.
+    ortho = rng.standard_normal(VECTOR_DIM).astype(np.float32)
+    ortho -= np.dot(ortho, obs7) * obs7  # orthogonalize
+    ortho = _unit(ortho)
+    angle = float(np.arccos(0.95))
+    q = float(np.cos(angle)) * obs7 + float(np.sin(angle)) * ortho
+    vec_store_world["query_vector"] = _unit(q)
+
+
+# ---------- When ----------
+
+
+@when("I add obs1 with a unit vector")
+def when_add_obs1_unit(vec_store_world):
+    v = _unit(np.ones(VECTOR_DIM, dtype=np.float32))
+    vec_store_world["store"].add("obs1", v)
+    vec_store_world["vectors"]["obs1"] = v
+
+
+@when(parsers.parse("I search with the same unit vector, k={k:d}"))
+def when_search_same_unit(vec_store_world, k: int):
+    v = vec_store_world["vectors"]["obs1"]
+    vec_store_world["search_results"] = vec_store_world["store"].search(v, k=k)
+
+
+@when("I delete obs1")
+def when_delete_obs1(vec_store_world):
+    vec_store_world["store"].delete("obs1")
+
+
+@when(parsers.parse("I search with any vector, k={k:d}"))
+def when_search_any(vec_store_world, k: int):
+    v = _unit(np.ones(VECTOR_DIM, dtype=np.float32))
+    vec_store_world["search_results"] = vec_store_world["store"].search(v, k=k)
+
+
+@when("I call count() before any writes")
+def when_count_before_writes(vec_store_world):
+    vec_store_world["count_value"] = vec_store_world["store"].count()
+
+
+@when("I add obs1, obs2, and obs3 with three distinct unit vectors")
+def when_add_three(vec_store_world):
+    store = vec_store_world["store"]
+    store.add("obs1", _unit(np.ones(VECTOR_DIM, dtype=np.float32)))
+    store.add("obs2", _unit(np.full(VECTOR_DIM, 2.0, dtype=np.float32)))
+    store.add("obs3", _unit(np.full(VECTOR_DIM, 3.0, dtype=np.float32)))
+
+
+@when("I delete obs2")
+def when_delete_obs2(vec_store_world):
+    vec_store_world["store"].delete("obs2")
+
+
+@when("I add obs1 with a random 384-dim vector")
+def when_add_random(vec_store_world):
+    rng = np.random.default_rng(seed=2026_06_26 + 1)
+    v = rng.standard_normal(VECTOR_DIM).astype(np.float32)
+    vec_store_world["store"].add("obs1", v)
+    vec_store_world["round_trip_input"] = v
+    vec_store_world["vectors"]["obs1"] = v
+
+
+@when("I read the observation_embeddings.vector column as raw bytes")
+def when_read_blob(vec_store_world):
+    """Read the raw bytes from the audit BLOB column via direct SQL."""
+    store = vec_store_world["store"]
+    conn = store._ensure_conn()  # type: ignore[attr-defined]
+    row = conn.execute(
+        "SELECT vector FROM observation_embeddings WHERE observation_id = ?",
+        ("obs1",),
+    ).fetchone()
+    vec_store_world["raw_blob"] = bytes(row[0])
+
+
+@when(parsers.parse("I search with the query vector, k={k:d}"))
+def when_search_query(vec_store_world, k: int):
+    vec_store_world["search_results"] = vec_store_world["store"].search(
+        vec_store_world["query_vector"], k=k
+    )
+
+
+# ---------- Then ----------
+
+
+@then("the result is obs1 at distance ~0.0")
+def then_result_is_obs1_zero(vec_store_world):
+    results = vec_store_world["search_results"]
+    assert len(results) == 1, f"Expected 1 result, got {len(results)}: {results}"
+    obs_id, distance = results[0]
+    assert obs_id == "obs1", f"Expected obs1, got {obs_id!r}"
+    assert abs(distance) < 0.01, f"Expected distance ~0.0, got {distance}"
+
+
+@then(parsers.parse("{obs_id} is NOT in the result list"))
+def then_obs_not_in_results(vec_store_world, obs_id: str):
+    ids = [r[0] for r in vec_store_world["search_results"]]
+    assert obs_id not in ids, (
+        f"Expected {obs_id!r} NOT in result list, but found it: {ids}"
+    )
+
+
+@then(parsers.parse("{obs_id} IS in the result list"))
+def then_obs_is_in_results(vec_store_world, obs_id: str):
+    ids = [r[0] for r in vec_store_world["search_results"]]
+    assert obs_id in ids, f"Expected {obs_id!r} in result list, got: {ids}"
+
+
+@then(parsers.parse("count() == {n:d}"))
+def then_count_equals(vec_store_world, n: int):
+    actual = vec_store_world["store"].count()
+    assert actual == n, f"Expected count() == {n}, got {actual}"
+
+
+@then(parsers.parse("it returns {n:d}"))
+def then_count_returns_n(vec_store_world, n: int):
+    assert vec_store_world["count_value"] == n, (
+        f"Expected count() == {n}, got {vec_store_world['count_value']}"
+    )
+
+
+@then("count() returns 2")
+def then_count_returns_2(vec_store_world):
+    actual = vec_store_world["store"].count()
+    assert actual == 2, f"Expected count() == 2, got {actual}"
+
+
+@then("count() returns 3")
+def then_count_returns_3(vec_store_world):
+    actual = vec_store_world["store"].count()
+    assert actual == 3, f"Expected count() == 3, got {actual}"
+
+
+@then(parsers.parse("the byte length is exactly {n:d}"))
+def then_blob_byte_length(vec_store_world, n: int):
+    assert len(vec_store_world["raw_blob"]) == n, (
+        f"Expected blob byte length {n}, got {len(vec_store_world['raw_blob'])}"
+    )
+
+
+@then("the deserialized numpy array has shape (384,) and dtype float32")
+def then_deserialized_array(vec_store_world):
+    arr = np.frombuffer(vec_store_world["raw_blob"], dtype=np.float32)
+    assert arr.shape == (VECTOR_DIM,), f"Expected shape ({VECTOR_DIM},), got {arr.shape}"
+    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
+
+
+@then("the values round-trip within 1e-6 of the input")
+def then_blob_round_trip(vec_store_world):
+    arr = np.frombuffer(vec_store_world["raw_blob"], dtype=np.float32)
+    inp = vec_store_world["round_trip_input"].astype(np.float32).reshape(-1)
+    np.testing.assert_allclose(arr, inp, atol=1e-6, rtol=0)
+
+
+@then(parsers.parse("the result list has exactly {n:d} (obs_id, distance) tuples"))
+def then_result_list_size(vec_store_world, n: int):
+    results = vec_store_world["search_results"]
+    assert len(results) == n, f"Expected {n} results, got {len(results)}: {results}"
+    for entry in results:
+        assert isinstance(entry, tuple) and len(entry) == 2, (
+            f"Expected (obs_id, distance) tuple, got {entry!r}"
+        )
+
+
+@then(parsers.parse("{obs_id} is at position {pos:d}"))
+def then_obs_at_position(vec_store_world, obs_id: str, pos: int):
+    results = vec_store_world["search_results"]
+    assert 0 <= pos < len(results), (
+        f"Position {pos} out of range for {len(results)} results"
+    )
+    assert results[pos][0] == obs_id, (
+        f"Expected {obs_id!r} at position {pos}, got {results[pos][0]!r}"
+    )
+
+
+@then("the distances are sorted in ascending order")
+def then_distances_sorted_asc(vec_store_world):
+    results = vec_store_world["search_results"]
+    distances = [d for _obs, d in results]
+    assert distances == sorted(distances), (
+        f"Distances not ascending: {distances}"
+    )
