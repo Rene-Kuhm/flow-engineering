@@ -12,11 +12,8 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from flow_engineering.binding import CodeRef
 from flow_engineering.graphify_query import (
     DEFAULT_CACHE_DIR,
     DEFAULT_CACHE_FILE,
@@ -26,7 +23,6 @@ from flow_engineering.graphify_query import (
     jaccard_fallback,
     query_nodes,
 )
-
 
 # ---------- Fixtures ----------
 
@@ -165,4 +161,4 @@ class TestDefaults:
         assert DEFAULT_TIMEOUT_SECONDS == 5.0
 
     def test_default_cache_dir_is_home_dot_flow_engineering(self):
-        assert DEFAULT_CACHE_DIR == Path.home() / ".flow-engineering"
+        assert Path.home() / ".flow-engineering" == DEFAULT_CACHE_DIR

@@ -15,7 +15,6 @@ import pytest
 from flow_engineering.binding import (
     ALLOWED_SOURCES,
     CODE_REFS_MARKER,
-    SUPPORTED_SCHEMA,
     CodeRef,
     ParseError,
     extract_code_refs,
@@ -23,7 +22,6 @@ from flow_engineering.binding import (
     split_prose_and_refs,
     validate_block,
 )
-
 
 # ---------- Fixtures ----------
 
@@ -135,7 +133,7 @@ class TestFormatRoundtrip:
             project="p", id="x", label="X", file="x.py", line=1,
             confidence=0.9, source="made_up",  # type: ignore[arg-type]
         )
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="unknown source") as exc_info:
             format_code_refs_block([ref], source="made_up")  # type: ignore[arg-type]
         allowed = ALLOWED_SOURCES
         for s in allowed:

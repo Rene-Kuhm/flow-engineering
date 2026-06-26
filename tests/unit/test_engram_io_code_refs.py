@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from flow_engineering.binding import (
     CODE_REFS_MARKER,
-    CodeRef,
-    SUPPORTED_SCHEMA,
 )
 from flow_engineering.engram_io import EngramClient, InMemoryBackend
 
