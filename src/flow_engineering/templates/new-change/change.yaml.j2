@@ -1,0 +1,4 @@
+change: {{ change }}
+created_at: {{ created_at }}
+cross_projects: [{% for p in cross_projects %}"{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+status_path: state.json

@@ -1,0 +1,84 @@
+{
+  "change": "my-change",
+  "status": "DONE",
+  "created_at": "2026-06-25T22:29:47.009991+00:00",
+  "updated_at": "2026-06-25T22:29:55.162211+00:00",
+  "transitions": [
+    {
+      "from_status": "NEW",
+      "to_status": "EXPLORED",
+      "at": "2026-06-25T22:29:47.224838+00:00",
+      "artifact": "explore/exploration.md",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "EXPLORED",
+      "to_status": "PROPOSED",
+      "at": "2026-06-25T22:29:54.679039+00:00",
+      "artifact": "proposed/proposed.md",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "PROPOSED",
+      "to_status": "DESIGNED",
+      "at": "2026-06-25T22:29:54.679039+00:00",
+      "artifact": "designed/designed.md",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "DESIGNED",
+      "to_status": "SPECIFIED",
+      "at": "2026-06-25T22:29:54.679039+00:00",
+      "artifact": "specified/specified.md",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "SPECIFIED",
+      "to_status": "TASKED",
+      "at": "2026-06-25T22:29:54.679039+00:00",
+      "artifact": "tasked/tasked.md",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "TASKED",
+      "to_status": "APPLYING",
+      "at": "2026-06-25T22:29:54.912038+00:00",
+      "artifact": "apply/",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "APPLYING",
+      "to_status": "VERIFYING",
+      "at": "2026-06-25T22:29:55.040164+00:00",
+      "artifact": "verify/",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "VERIFYING",
+      "to_status": "ARCHIVING",
+      "at": "2026-06-25T22:29:55.040633+00:00",
+      "artifact": "archive/",
+      "retry": false,
+      "reason": null
+    },
+    {
+      "from_status": "ARCHIVING",
+      "to_status": "DONE",
+      "at": "2026-06-25T22:29:55.162206+00:00",
+      "artifact": "archive/",
+      "retry": false,
+      "reason": null
+    }
+  ],
+  "drift_baseline": {},
+  "cross_projects": [],
+  "token_cost": 0,
+  "token_budget": 100000
+}
