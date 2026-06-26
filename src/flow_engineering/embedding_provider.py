@@ -65,9 +65,30 @@ class EmbeddingProvider(ABC):
     def embed(self, texts: list[str]) -> np.ndarray:
         """Embed ``texts`` into a ``(len(texts), dim)`` float32 array."""
 
-    def embed_batch(self, texts: list[str]) -> np.ndarray:
-        """Default batched impl: walk ``embed()`` per text. Override for speed."""
-        return self.embed(texts)
+    def embed_batch(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
+        """Batched embed with ``batch_size`` chunking (REQ-21 helper).
+
+        Default impl chunks ``texts`` into slices of size ``batch_size`` and
+        concatenates :meth:`embed` outputs along axis 0. Subclasses may
+        override for hardware-specific speedups (e.g. a single
+        ``model.encode(chunks[0])`` call inside the chunk loop).
+
+        Empty input returns shape ``(0, EMBEDDING_DIMS)`` without touching
+        the model — keeps the ``embed([]) -> (0, 384)`` contract intact.
+        ``batch_size <= 0`` raises ``ValueError`` so callers don't silently
+        fall into an infinite loop on a misconfigured batch.
+        """
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be > 0, got {batch_size}")
+        if not texts:
+            return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+        rows: list[np.ndarray] = []
+        for start in range(0, len(texts), batch_size):
+            chunk = texts[start : start + batch_size]
+            rows.append(self.embed(chunk))
+        if not rows:
+            return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+        return np.concatenate(rows, axis=0)
 
 
 class MockEmbeddingProvider(EmbeddingProvider):

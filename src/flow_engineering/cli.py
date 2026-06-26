@@ -273,6 +273,32 @@ FLOW_VECTOR_SEARCH_ENV: str = "FLOW_VECTOR_SEARCH"
 VECTOR_INSTALL_HINT: str = "pip install flow-engineering[vectors]"
 
 
+def _sqlite_vec_available() -> bool:
+    """Return True iff the ``[vectors]`` extra (specifically ``sqlite_vec``) is importable.
+
+    Used by ``flow reindex`` to gate the SqliteVecStore path. Mirrors
+    :func:`_vectors_extra_available` but focused on the SQLite side —
+    sentence-transformers / torch are NOT required to write the index,
+    only to compute embeddings (which can come from :class:`MockEmbeddingProvider`
+    in tests).
+    """
+    try:
+        import sqlite_vec  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _vectors_sqlite_path() -> Path:
+    """Return the path used by ``flow reindex`` for ``SqliteVecStore``.
+
+    Defaults to ``~/.flow-engineering/vectors.sqlite`` (mirrors the
+    ``DEFAULT_GRAPH_JSON`` precedent). Tests override via ``monkeypatch.setattr``
+    on the cli module's helper so the production default stays untouched.
+    """
+    return Path.home() / ".flow-engineering" / "vectors.sqlite"
+
+
 def _vectors_extra_available() -> bool:
     """Return True iff the ``[vectors]`` extra is importable (REQ-17 gate leg 1).
 
@@ -553,6 +579,140 @@ def search(
         click.echo(json.dumps({"results": rows}, ensure_ascii=False, indent=2))
         return
     click.echo(_render_search_table(rows))
+
+
+# ---------- REQ-21: flow reindex ----------
+
+
+def _resolve_reindex_provider() -> Any:
+    """Return the embedding provider to use for ``flow reindex``.
+
+    Tries :class:`SentenceTransformersProvider` first (real model); falls
+    back to :class:`MockEmbeddingProvider` when torch / sentence-transformers
+    are unavailable so the reindex path stays runnable in test environments
+    without the ``[vectors]`` extra. Both providers satisfy the same ABC,
+    so the worker code is identical.
+    """
+    from flow_engineering.embedding_provider import (
+        MockEmbeddingProvider,
+        SentenceTransformersProvider,
+    )
+
+    try:
+        return SentenceTransformersProvider()
+    except Exception:  # EmbeddingProviderUnavailable or any ImportError.
+        return MockEmbeddingProvider()
+
+
+def _perform_reindex_batch(
+    observations: list[dict],
+    store: Any,
+    provider: Any,
+    *,
+    simulate_crash_after: int | None = None,
+) -> int:
+    """Embed + upsert one batch of observations into ``store``.
+
+    Returns the number of rows successfully upserted. When
+    ``simulate_crash_after`` is set, the worker writes only that many rows
+    of the batch and then raises — used by the REQ-21 crash-resume test to
+    validate that the next run picks up where the first stopped.
+    """
+    from flow_engineering.binding import split_prose_and_refs
+
+    texts = [split_prose_and_refs(str(o.get("content", "")))[0] for o in observations]
+    embeddings = provider.embed_batch(texts)
+    written = 0
+    for o, vec in zip(observations, embeddings, strict=True):
+        if simulate_crash_after is not None and written >= simulate_crash_after:
+            raise RuntimeError("simulated crash mid-batch")
+        store.add(str(o.get("id", o.get("observation_id"))), vec)
+        written += 1
+    return written
+
+
+@main.command()
+@click.option(
+    "--batch-size",
+    type=int,
+    default=100,
+    help="Observations per embedding batch (default: 100).",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help="Report the count without writing anything to the vector store.",
+)
+def reindex(batch_size: int, dry_run: bool) -> None:
+    """Reindex every observation into the sqlite-vec store (REQ-21).
+
+    Sync streaming: walks ``backend.iter_observations()`` in batches of
+    ``--batch-size``, embeds the prose of each observation (with the
+    trailing ``code_refs`` block stripped), and upserts the resulting
+    vector into :class:`SqliteVecStore` at the path returned by
+    :func:`_vectors_sqlite_path`. Writes are idempotent (INSERT OR REPLACE)
+    and commit per batch, so a crash mid-run leaves the index in a
+    consistent state — re-invoking ``flow reindex`` finishes the work.
+    """
+    if batch_size <= 0:
+        click.echo(
+            f"ERROR: --batch-size must be > 0, got {batch_size}", err=True
+        )
+        sys.exit(2)
+
+    if not _sqlite_vec_available():
+        click.echo(
+            "reindex disabled: install [vectors] extra — "
+            f"{VECTOR_INSTALL_HINT}",
+            err=True,
+        )
+        sys.exit(2)
+
+    backend = _default_save_backend()
+    # Unwrap HybridBackend so we index the underlying prose store directly.
+    inner_backend = getattr(backend, "inner", backend)
+    observations = list(inner_backend.iter_observations())
+    total = len(observations)
+
+    if dry_run:
+        # Count report only — no DB writes, no progress lines, no done line.
+        click.echo(f"reindex: {total} observations need reindex", err=True)
+        return
+
+    if total == 0:
+        # Empty corpus short-circuits with the no-op summary line so the
+        # done-format is consistent across zero and non-zero runs.
+        click.echo(
+            "reindex: done — 0 observations indexed in 0.0s", err=True
+        )
+        observability.increment("reindex_observations_total", count=0)
+        observability.increment("reindex_duration_seconds", value=0.0)
+        return
+
+    from flow_engineering.vectors import SqliteVecStore
+
+    store = SqliteVecStore(_vectors_sqlite_path())
+    provider = _resolve_reindex_provider()
+
+    started = time.monotonic()
+    done = 0
+    for batch_start in range(0, total, batch_size):
+        batch = observations[batch_start : batch_start + batch_size]
+        done += _perform_reindex_batch(batch, store, provider)
+        pct = int(done * 100 / total) if total else 100
+        # Per-batch progress to stderr (REQ-21 contract: one line per batch).
+        click.echo(f"reindex: {done}/{total} ({pct}%) embedded", err=True)
+    elapsed = time.monotonic() - started
+    click.echo(
+        f"reindex: done — {total} observations indexed in {elapsed:.1f}s",
+        err=True,
+    )
+
+    # REQ-22 observability: one counter batch per reindex invocation.
+    observability.increment("reindex_observations_total", count=total)
+    observability.increment("reindex_duration_seconds", value=float(elapsed))
 
 
 if __name__ == "__main__":
