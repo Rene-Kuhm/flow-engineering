@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Callable, Literal
 
 from flow_engineering import graphify_query, observability
 from flow_engineering.binding import CodeRef
@@ -42,6 +42,12 @@ DEFAULT_MAX_RESULTS: int = 5
 FLOW_AUTO_SUGGEST_ENV: str = "FLOW_AUTO_SUGGEST"
 
 PromptFn = Callable[[list[CodeRef]], list[CodeRef]]
+
+EMPTY_PROMPT_TEXT: str = "No auto-suggested bindings available."
+PROMPT_HEADER: str = "Auto-suggested code bindings:"
+PROMPT_FOOTER: str = (
+    "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
+)
 
 
 @dataclass(frozen=True)
@@ -60,18 +66,23 @@ class SuggestionResult:
     error: str | None = None
 
 
-def _should_prompt(*, with_suggest: bool, is_tty: bool, env: dict[str, str]) -> bool:
-    """Return True when the interactive prompt should be shown.
+# ---------- Pure helpers (no IO) ----------
 
-    Interactive prompt is used ONLY when: TTY, no ``--with-suggest`` flag,
-    and no ``FLOW_AUTO_SUGGEST`` env override. Every other mode is
-    non-interactive accept-all (the safe default in batch / CI contexts).
+
+def _is_non_interactive(
+    *, with_suggest: bool, is_tty: bool, env: dict[str, str]
+) -> bool:
+    """Return True when the suggester should run in non-interactive mode.
+
+    Non-interactive (accept-all) is the default in batch / CI / env-driven
+    contexts. Interactive prompt is used ONLY when: TTY is true, no
+    ``--with-suggest`` flag, and no ``FLOW_AUTO_SUGGEST`` env override.
     """
     if with_suggest:
-        return False
+        return True
     if env.get(FLOW_AUTO_SUGGEST_ENV) == "1":
-        return False
-    return is_tty
+        return True
+    return not is_tty
 
 
 def format_suggestion_prompt(refs: list[CodeRef]) -> str:
@@ -81,18 +92,66 @@ def format_suggestion_prompt(refs: list[CodeRef]) -> str:
     is purely deterministic so it can be asserted in tests.
     """
     if not refs:
-        return "No auto-suggested bindings available."
-    lines = ["Auto-suggested code bindings:"]
+        return EMPTY_PROMPT_TEXT
+    lines = [PROMPT_HEADER]
     for i, r in enumerate(refs, 1):
         lines.append(
             f"  [{i}] {r.label} ({r.file}:{r.line}, "
             f"score={r.confidence:.2f}, id={r.id})"
         )
     lines.append("")
-    lines.append(
-        "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
-    )
+    lines.append(PROMPT_FOOTER)
     return "\n".join(lines)
+
+
+# ---------- Metric helpers ----------
+
+
+def _record_hit(count: int) -> None:
+    """Record a successful suggestion outcome."""
+    observability.increment("suggest_hit_total", count=count)
+    observability.increment("bindings_confirmed_total", count=count)
+
+
+def _record_miss(reason: str) -> None:
+    """Record a suggestion miss with the given reason."""
+    observability.increment("suggest_miss_total", reason=reason)
+
+
+# ---------- Orchestrator ----------
+
+
+def _resolve_env(env: dict[str, str] | None) -> dict[str, str]:
+    """Return the effective env dict, defaulting to ``os.environ``."""
+    return dict(env) if env is not None else dict(os.environ)
+
+
+def _query_graphify(
+    text: str, *, threshold: float, max_results: int
+) -> list[CodeRef]:
+    """Call graphify_query.query_nodes, returning [] on any error (fail-open)."""
+    try:
+        return graphify_query.query_nodes(
+            text, threshold=threshold, max_results=max_results
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        _record_miss("error")
+        # Re-raise via a sentinel: caller distinguishes via empty result.
+        raise GraphifyCallError(str(exc)) from exc
+
+
+class GraphifyCallError(RuntimeError):
+    """Internal sentinel so the orchestrator can distinguish empty-vs-error."""
+
+
+def _interactive_choose(
+    suggestions: list[CodeRef], prompt_fn: PromptFn | None
+) -> list[CodeRef]:
+    """Resolve the interactive selection; fall back to accept-all when no fn."""
+    if prompt_fn is None:
+        # TTY claimed but no prompt function -- fail-open to non-interactive.
+        return list(suggestions)
+    return list(prompt_fn(suggestions))
 
 
 def auto_suggest_code_refs(
@@ -134,54 +193,40 @@ def auto_suggest_code_refs(
     env : dict | None
         Environment overrides (for tests). Defaults to ``os.environ``.
     """
-    resolved_env: dict[str, str] = (
-        dict(env) if env is not None else dict(os.environ)
-    )
-
     if no_suggest:
         return SuggestionResult(refs=[], source="manual", error=None)
 
-    # Record invocation. Anything past this point is a real suggest attempt.
     observability.increment("suggest_invoked_total")
 
+    resolved_env = _resolve_env(env)
+
     try:
-        suggestions = graphify_query.query_nodes(
+        suggestions = _query_graphify(
             text, threshold=threshold, max_results=max_results
         )
-    except Exception as exc:  # pragma: no cover - defensive; mock guarantees coverage
-        observability.increment("suggest_miss_total", reason="error")
+    except GraphifyCallError as exc:
         return SuggestionResult(
             refs=[], source="unbound", error=f"graphify_error: {exc}"
         )
 
     if not suggestions:
-        observability.increment("suggest_miss_total", reason="no_candidates")
+        _record_miss("no_candidates")
         return SuggestionResult(refs=[], source="unbound", error="no_candidates")
 
-    if not _should_prompt(
+    if _is_non_interactive(
         with_suggest=with_suggest, is_tty=is_tty, env=resolved_env
     ):
-        # Non-interactive accept-all.
-        observability.increment("suggest_hit_total", count=len(suggestions))
-        observability.increment("bindings_confirmed_total", count=len(suggestions))
+        _record_hit(len(suggestions))
         return SuggestionResult(
             refs=list(suggestions), source="auto_suggest", error=None
         )
 
-    # Interactive path.
-    chosen: list[CodeRef]
-    if prompt_fn is None:
-        # TTY claimed but no prompt function -- fail-open to non-interactive.
-        chosen = list(suggestions)
-    else:
-        chosen = list(prompt_fn(suggestions))
-
+    chosen = _interactive_choose(suggestions, prompt_fn)
     if chosen:
-        observability.increment("suggest_hit_total", count=len(chosen))
-        observability.increment("bindings_confirmed_total", count=len(chosen))
+        _record_hit(len(chosen))
         return SuggestionResult(refs=chosen, source="auto_suggest", error=None)
 
-    observability.increment("suggest_miss_total", reason="rejected")
+    _record_miss("rejected")
     return SuggestionResult(refs=[], source="unbound", error="rejected")
 
 
@@ -189,6 +234,7 @@ __all__ = [
     "DEFAULT_MAX_RESULTS",
     "DEFAULT_THRESHOLD",
     "FLOW_AUTO_SUGGEST_ENV",
+    "GraphifyCallError",
     "PromptFn",
     "Source",
     "SuggestionResult",
