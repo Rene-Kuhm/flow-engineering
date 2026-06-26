@@ -85,7 +85,7 @@ class EngramBackend(ABC):
         """Get a single observation by ID."""
 
     def mem_search_semantic(
-        self, query: str, k: int = 10
+        self, query: str, k: int = 10, *, trigger: str = "programmatic"
     ) -> list[dict[str, Any]]:
         """Semantic search by embedding similarity (v1.1 — NON-BREAKING default).
 
@@ -93,6 +93,10 @@ class EngramBackend(ABC):
         ``NotImplementedError``; instantiation is unaffected. The
         ``InMemoryBackend`` test fixture overrides this to raise
         ``VectorSearchDisabled`` with an actionable install hint.
+
+        ``trigger`` is a kwarg-only observability tag (REQ-22) carried
+        through to the ``vector_search_invoked_total`` counter. The ABC
+        default ignores it (raises before any counter would fire).
         """
         raise NotImplementedError(
             "vector search requires explicit backend impl — see [vectors] extra"
@@ -103,6 +107,8 @@ class EngramBackend(ABC):
         query: str,
         k: int = 10,
         alpha: float = 0.5,
+        *,
+        trigger: str = "programmatic",
     ) -> list[dict[str, Any]]:
         """Hybrid semantic + BM25 search (v1.1 — NON-BREAKING default).
 
@@ -221,13 +227,15 @@ class InMemoryBackend(EngramBackend):
         return obs
 
     def mem_search_semantic(
-        self, query: str, k: int = 10
+        self, query: str, k: int = 10, *, trigger: str = "programmatic"
     ) -> list[dict[str, Any]]:
         """InMemoryBackend is the prose test fixture — vector search is opt-in.
 
         REQ-17: ``InMemoryBackend`` raises ``VectorSearchDisabled`` with the
         install hint when vector / hybrid methods are called. The prose
         ``mem_search`` path stays unchanged so existing tests are unaffected.
+        ``trigger`` is accepted for API parity with ``HybridBackend`` but
+        ignored here (no observability event fires before the raise).
         """
         raise VectorSearchDisabled()
 
@@ -236,6 +244,8 @@ class InMemoryBackend(EngramBackend):
         query: str,
         k: int = 10,
         alpha: float = 0.5,
+        *,
+        trigger: str = "programmatic",
     ) -> list[dict[str, Any]]:
         """InMemoryBackend is the prose test fixture — vector search is opt-in.
 

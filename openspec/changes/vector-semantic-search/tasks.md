@@ -83,11 +83,11 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `src/flow_engineering/engram_io.py` (modify — add 2 default methods to `EngramBackend`, bump docstring to "ABC v1.1")
 - **Dependencies:** none
 - **Acceptance criteria:**
-  - [ ] `EngramBackend.mem_search_semantic(self, query: str, k: int = 10) -> list[dict]` defined with default body `raise NotImplementedError("mem_search_semantic not implemented for this backend")`
-  - [ ] `EngramBackend.mem_search_hybrid(self, query: str, k: int = 10, alpha: float = 0.5) -> list[dict]` defined with same default body
-  - [ ] `EngramBackend` class docstring bumped to "ABC v1.1 — added `mem_search_semantic` + `mem_search_hybrid` as default `NotImplementedError` (NON-BREAKING; mirrors `update_observation` precedent at line 86)"
-  - [ ] Existing 385 tests still pass (`uv run pytest`)
-  - [ ] Third-party subclass fixtures (if any) import unchanged
+  - [x] `EngramBackend.mem_search_semantic(self, query: str, k: int = 10) -> list[dict]` defined with default body `raise NotImplementedError("mem_search_semantic not implemented for this backend")`
+  - [x] `EngramBackend.mem_search_hybrid(self, query: str, k: int = 10, alpha: float = 0.5) -> list[dict]` defined with same default body
+  - [x] `EngramBackend` class docstring bumped to "ABC v1.1 — added `mem_search_semantic` + `mem_search_hybrid` as default `NotImplementedError` (NON-BREAKING; mirrors `update_observation` precedent at line 86)"
+  - [x] Existing 385 tests still pass (`uv run pytest`)
+  - [x] Third-party subclass fixtures (if any) import unchanged
 - **Commit:** `feat(backend): add mem_search_semantic + mem_search_hybrid to EngramBackend ABC (v1.1)`
 
 ### T1.2 — Implement default no-op `mem_search_semantic` and `mem_search_hybrid` in `InMemoryBackend`
@@ -100,12 +100,12 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/unit/test_engram_io_vectors.py` (NEW — tests for gate error messages)
 - **Dependencies:** T1.1
 - **Acceptance criteria:**
-  - [ ] RED: `test_inmemory_raises_vector_search_disabled_when_extra_missing` and `test_inmemory_raises_vector_search_disabled_when_env_unset` written first; both fail with `AttributeError` or unimplemented
-  - [ ] GREEN: `InMemoryBackend.mem_search_semantic` raises `VectorSearchDisabled` with message containing `"pip install flow-engineering[vectors]"` when `sqlite_vec` import is patched to raise `ImportError`
-  - [ ] GREEN: `InMemoryBackend.mem_search_semantic` raises `VectorSearchDisabled` with message containing `"FLOW_VECTOR_SEARCH=1"` when env var is unset
-  - [ ] `InMemoryBackend.mem_search_hybrid` mirrors the same gate behavior (env check first, then extra check)
-  - [ ] `InMemoryBackend.mem_search` (prose FTS5) returns unchanged results when gate is unmet (REQ-17 scenario 5)
-  - [ ] No torch import attempted at any point during the gate check (verified via `sys.modules` introspection)
+  - [x] RED: `test_inmemory_raises_vector_search_disabled_when_extra_missing` and `test_inmemory_raises_vector_search_disabled_when_env_unset` written first; both fail with `AttributeError` or unimplemented
+  - [x] GREEN: `InMemoryBackend.mem_search_semantic` raises `VectorSearchDisabled` with message containing `"pip install flow-engineering[vectors]"` when `sqlite_vec` import is patched to raise `ImportError`
+  - [x] GREEN: `InMemoryBackend.mem_search_semantic` raises `VectorSearchDisabled` with message containing `"FLOW_VECTOR_SEARCH=1"` when env var is unset
+  - [x] `InMemoryBackend.mem_search_hybrid` mirrors the same gate behavior (env check first, then extra check)
+  - [x] `InMemoryBackend.mem_search` (prose FTS5) returns unchanged results when gate is unmet (REQ-17 scenario 5)
+  - [x] No torch import attempted at any point during the gate check (verified via `sys.modules` introspection)
 - **Commit:** `feat(backend): VectorSearchDisabled + InMemoryBackend default impls with gate validation`
 
 ### T1.3 — Scaffold `embedding_provider.py` with ABC + `MockEmbeddingProvider`
@@ -118,14 +118,14 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/unit/test_embedding_provider.py` (NEW)
 - **Dependencies:** T1.1 (ABC version bump)
 - **Acceptance criteria:**
-  - [ ] RED: `test_mock_returns_deterministic_384_dim_vectors` fails; `test_no_torch_on_module_import` fails
-  - [ ] GREEN: `MockEmbeddingProvider.embed(["hello world"])` returns `np.ndarray` of shape `(1, 384)`, L2 norm in `[0.99, 1.01]`, identical across two calls
-  - [ ] GREEN: `MockEmbeddingProvider.embed(["hello world"])` differs from `embed(["goodbye world"])` (hash-based, not all-zeros)
-  - [ ] GREEN: `embed([])` returns shape `(0, 384)` (REQ-19 scenario 4)
-  - [ ] GREEN: `import flow_engineering.embedding_provider` does NOT add `"torch"` or `"sentence_transformers"` to `sys.modules`
-  - [ ] `EmbeddingProviderUnavailable(ImportError)` defined with message `"Install [vectors] extra: pip install flow-engineering[vectors]"`
-  - [ ] `EmbeddingProvider.dim = 384` class attribute
-  - [ ] `EmbeddingProvider.embed_batch(texts)` default impl iterates `embed()` (no override needed for tests)
+  - [x] RED: `test_mock_returns_deterministic_384_dim_vectors` fails; `test_no_torch_on_module_import` fails
+  - [x] GREEN: `MockEmbeddingProvider.embed(["hello world"])` returns `np.ndarray` of shape `(1, 384)`, L2 norm in `[0.99, 1.01]`, identical across two calls
+  - [x] GREEN: `MockEmbeddingProvider.embed(["hello world"])` differs from `embed(["goodbye world"])` (hash-based, not all-zeros)
+  - [x] GREEN: `embed([])` returns shape `(0, 384)` (REQ-19 scenario 4)
+  - [x] GREEN: `import flow_engineering.embedding_provider` does NOT add `"torch"` or `"sentence_transformers"` to `sys.modules`
+  - [x] `EmbeddingProviderUnavailable(ImportError)` defined with message `"Install [vectors] extra: pip install flow-engineering[vectors]"`
+  - [x] `EmbeddingProvider.dim = 384` class attribute
+  - [x] `EmbeddingProvider.embed_batch(texts)` default impl iterates `embed()` (no override needed for tests)
 - **Commit:** `feat(embedding): EmbeddingProvider ABC + MockEmbeddingProvider with deterministic hash-based vectors`
 
 ### T1.4 — Scaffold `hybrid_backend.py` with `HybridBackend` class (composition wrapper)
@@ -138,15 +138,15 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/unit/test_hybrid_backend.py` (NEW)
 - **Dependencies:** T1.1, T1.2, T1.3
 - **Acceptance criteria:**
-  - [ ] RED: `test_hybrid_backend_forwards_mem_save_to_inner` and `test_hybrid_backend_forwards_mem_search_unchanged` written first; fail
-  - [ ] GREEN: `HybridBackend(inner, embeddings=MockEmbeddingProvider(), index=InMemoryVectorIndex())` constructs without error
-  - [ ] GREEN: `HybridBackend.mem_save(...)` forwards to `inner.mem_save(...)` and returns the inner obs dict byte-identically
-  - [ ] GREEN: `HybridBackend.mem_search(...)` forwards to `inner.mem_search(...)` byte-identically (zero regression on prose path)
-  - [ ] GREEN: `HybridBackend.mem_get_observation(id)` forwards to inner (via `__getattr__`)
-  - [ ] GREEN: `HybridBackend.iter_observations()` forwards to inner
-  - [ ] GREEN: `HybridBackend.mem_search_semantic(...)` raises `VectorSearchDisabled` when extra missing (delegates to gate check, doesn't override yet)
-  - [ ] GREEN: `HybridBackend.mem_search_hybrid(...)` raises `VectorSearchDisabled` (same)
-  - [ ] Tests cover: `MockEmbeddingProvider` + `InMemoryVectorIndex` (test fixture, separate from production)
+  - [x] RED: `test_hybrid_backend_forwards_mem_save_to_inner` and `test_hybrid_backend_forwards_mem_search_unchanged` written first; fail
+  - [x] GREEN: `HybridBackend(inner, embeddings=MockEmbeddingProvider(), index=InMemoryVectorIndex())` constructs without error
+  - [x] GREEN: `HybridBackend.mem_save(...)` forwards to `inner.mem_save(...)` and returns the inner obs dict byte-identically
+  - [x] GREEN: `HybridBackend.mem_search(...)` forwards to `inner.mem_search(...)` byte-identically (zero regression on prose path)
+  - [x] GREEN: `HybridBackend.mem_get_observation(id)` forwards to inner (via `__getattr__`)
+  - [x] GREEN: `HybridBackend.iter_observations()` forwards to inner
+  - [x] GREEN: `HybridBackend.mem_search_semantic(...)` raises `VectorSearchDisabled` when extra missing (delegates to gate check, doesn't override yet)
+  - [x] GREEN: `HybridBackend.mem_search_hybrid(...)` raises `VectorSearchDisabled` (same)
+  - [x] Tests cover: `MockEmbeddingProvider` + `InMemoryVectorIndex` (test fixture, separate from production)
 - **Commit:** `feat(backend): HybridBackend composition wrapper forwarding all non-search methods to inner`
 
 ### T1.5 — Implement hybrid scoring formula (REQ-18): linear combo with normalized BM25
@@ -159,16 +159,16 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/unit/test_hybrid_backend.py` (extend — add hybrid scoring tests with worked example)
 - **Dependencies:** T1.4
 - **Acceptance criteria:**
-  - [ ] RED: `test_hybrid_alpha_05_worked_example` fails asserting `obs1 ≈ 0.96`, `obs3 ≈ 0.39`, `obs2 ≈ 0.00` (within ±1e-3)
-  - [ ] RED: `test_hybrid_alpha_10_equals_pure_semantic` fails; `test_hybrid_alpha_00_equals_pure_fts` fails; `test_hybrid_alpha_out_of_range_raises` fails
-  - [ ] RED: `test_hybrid_empty_query_returns_empty` fails; `test_normalize_bm25_handles_equal_scores` fails
-  - [ ] GREEN: `mem_search_hybrid(query, k, alpha=0.5)` returns top-3 order `[obs1, obs3, obs2]` with scores `obs1 ≈ 0.96`, `obs3 ≈ 0.39`, `obs2 ≈ 0.00` (REQ-18 scenario 1; design D7 worked example)
-  - [ ] GREEN: `mem_search_hybrid(query, k, alpha=1.0)` returns same ids + same order as `mem_search_semantic(query, k)` (REQ-18 scenario 2)
-  - [ ] GREEN: `mem_search_hybrid(query, k, alpha=0.0)` returns same ids + same order as `inner.mem_search(query)` (REQ-18 scenario 3)
-  - [ ] GREEN: `alpha=1.5` raises `ValueError` with message containing `"[0.0, 1.0]"` and no embedding work attempted (REQ-18 scenario 4)
-  - [ ] GREEN: Empty FTS result set returns `[]` (no `ZeroDivisionError`; `+ε` epsilon applied) — `mem_search_semantic` is NOT called as fallback (REQ-18 scenario 5)
-  - [ ] GREEN: `normalize_bm25` unit-tested separately: handles `min == max` (epsilon path), monotonic scaling, value clamping
-  - [ ] Counter `vector_search_missing_embedding_total` increments when semantic hits an obs without embedding (D11)
+  - [x] RED: `test_hybrid_alpha_05_worked_example` fails asserting `obs1 ≈ 0.96`, `obs3 ≈ 0.39`, `obs2 ≈ 0.00` (within ±1e-3)
+  - [x] RED: `test_hybrid_alpha_10_equals_pure_semantic` fails; `test_hybrid_alpha_00_equals_pure_fts` fails; `test_hybrid_alpha_out_of_range_raises` fails
+  - [x] RED: `test_hybrid_empty_query_returns_empty` fails; `test_normalize_bm25_handles_equal_scores` fails
+  - [x] GREEN: `mem_search_hybrid(query, k, alpha=0.5)` returns top-3 order `[obs1, obs3, obs2]` with scores `obs1 ≈ 0.96`, `obs3 ≈ 0.39`, `obs2 ≈ 0.00` (REQ-18 scenario 1; design D7 worked example)
+  - [x] GREEN: `mem_search_hybrid(query, k, alpha=1.0)` returns same ids + same order as `mem_search_semantic(query, k)` (REQ-18 scenario 2)
+  - [x] GREEN: `mem_search_hybrid(query, k, alpha=0.0)` returns same ids + same order as `inner.mem_search(query)` (REQ-18 scenario 3)
+  - [x] GREEN: `alpha=1.5` raises `ValueError` with message containing `"[0.0, 1.0]"` and no embedding work attempted (REQ-18 scenario 4)
+  - [x] GREEN: Empty FTS result set returns `[]` (no `ZeroDivisionError`; `+ε` epsilon applied) — `mem_search_semantic` is NOT called as fallback (REQ-18 scenario 5)
+  - [x] GREEN: `normalize_bm25` unit-tested separately: handles `min == max` (epsilon path), monotonic scaling, value clamping
+  - [x] Counter `vector_search_missing_embedding_total` increments when semantic hits an obs without embedding (D11)
 - **Commit:** `feat(backend): hybrid scoring with linear combo formula α·cosine + (1−α)·normalize_bm25(fts)`
 
 ### T1.6 — Scaffold `vectors/sqlite_vec_store.py` with `SqliteVecStore` class
@@ -183,15 +183,15 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/unit/test_sqlite_vec_store.py` (NEW)
 - **Dependencies:** T1.1 (ABC version bump)
 - **Acceptance criteria:**
-  - [ ] RED: 5 fixtures for REQ-20 scenarios fail (round-trip, delete, count, BLOB size, top-k ordering)
-  - [ ] GREEN: `SqliteVecStore(":memory:")` constructs; `add("obs1", unit_vector)` + `search(unit_vector, k=1)` returns `[("obs1", ~0.0)]` (REQ-20 scenario 1)
-  - [ ] GREEN: `delete("obs1")` removes from both `vec_observations` AND `observation_embeddings` atomically (REQ-20 scenario 2)
-  - [ ] GREEN: `count()` reflects add/delete accurately: 0 → 3 → 2 across the sequence (REQ-20 scenario 3)
-  - [ ] GREEN: `observation_embeddings.vector` BLOB byte length is exactly `1536` (= 384 × 4 float32); deserialized numpy round-trips within `1e-6` (REQ-20 scenario 4)
-  - [ ] GREEN: `search(q, k=3)` over 10-obs fixture returns 3 tuples ordered by ascending cosine distance, with `obs7` (closest to `q`) at position 0 (REQ-20 scenario 5)
-  - [ ] GREEN: Writes wrapped in transaction; partial failure rolls back entire batch
-  - [ ] Lazy `import sqlite_vec` inside `__init__`; missing extra raises `ImportError` with install hint
-  - [ ] Observation_id type is **TEXT** (per spec #142 D20 schema; consistent with Engram SQLite prose storage)
+  - [x] RED: 5 fixtures for REQ-20 scenarios fail (round-trip, delete, count, BLOB size, top-k ordering)
+  - [x] GREEN: `SqliteVecStore(":memory:")` constructs; `add("obs1", unit_vector)` + `search(unit_vector, k=1)` returns `[("obs1", ~0.0)]` (REQ-20 scenario 1)
+  - [x] GREEN: `delete("obs1")` removes from both `vec_observations` AND `observation_embeddings` atomically (REQ-20 scenario 2)
+  - [x] GREEN: `count()` reflects add/delete accurately: 0 → 3 → 2 across the sequence (REQ-20 scenario 3)
+  - [x] GREEN: `observation_embeddings.vector` BLOB byte length is exactly `1536` (= 384 × 4 float32); deserialized numpy round-trips within `1e-6` (REQ-20 scenario 4)
+  - [x] GREEN: `search(q, k=3)` over 10-obs fixture returns 3 tuples ordered by ascending cosine distance, with `obs7` (closest to `q`) at position 0 (REQ-20 scenario 5)
+  - [x] GREEN: Writes wrapped in transaction; partial failure rolls back entire batch
+  - [x] Lazy `import sqlite_vec` inside `__init__`; missing extra raises `ImportError` with install hint
+  - [x] Observation_id type is **TEXT** (per spec #142 D20 schema; consistent with Engram SQLite prose storage)
 - **Commit:** `feat(vectors): SqliteVecStore with observation_embeddings + vec_observations (sqlite-vec KNN)`
 
 ### T1.7 — Add 6 observability counters for vector operations (REQ-22)
@@ -206,17 +206,17 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/bdd/test_vector_search_steps.py` (extend — step defs for REQ-22 scenarios)
 - **Dependencies:** T1.5 (hybrid scoring emits counters)
 - **Acceptance criteria:**
-  - [ ] RED: Unit tests for counter increments fail; BDD scenarios fail (file does not exist yet)
-  - [ ] GREEN: All 6 counters named per REQ-8 convention (`subject_event_total` / `subject_latency_ms` / `subject_duration_seconds`):
+  - [x] RED: Unit tests for counter increments fail; BDD scenarios fail (file does not exist yet)
+  - [x] GREEN: All 6 counters named per REQ-8 convention (`subject_event_total` / `subject_latency_ms` / `subject_duration_seconds`):
     - `vector_search_invoked_total{trigger=cli|programmatic}` — counter
     - `vector_search_results_returned_total` — counter
     - `vector_search_latency_ms` — histogram (P50/P95/P99 in summary)
     - `vector_index_size_observations` — gauge (sampled at render)
     - `reindex_observations_total` — counter (increments by batch size)
     - `reindex_duration_seconds` — gauge (last run duration)
-  - [ ] GREEN: `record_vector_summary(...)` emits exactly one JSONL line per `flow reindex` invocation (mirrors `record_drift_summary` precedent at `observability.py:216`)
-  - [ ] GREEN: BDD feature file `req22_vector_observability.feature` contains 4 scenarios (REQ-22 scenarios 1-4); `pytest tests/bdd/req22_vector_observability.feature` passes all 4
-  - [ ] GREEN: Counter name catalog documented in `openspec/specs/observability/spec.md` (or referenced from REQ-22 spec) — no silent rename across `decision-code-linking` → `vector-semantic-search` boundary
+  - [x] GREEN: `record_vector_summary(...)` emits exactly one JSONL line per `flow reindex` invocation (mirrors `record_drift_summary` precedent at `observability.py:216`)
+  - [x] GREEN: BDD feature file `req22_vector_observability.feature` contains 4 scenarios (REQ-22 scenarios 1-4); `pytest tests/bdd/req22_vector_observability.feature` passes all 4
+  - [x] GREEN: Counter name catalog documented in `openspec/specs/observability/spec.md` (or referenced from REQ-22 spec) — no silent rename across `decision-code-linking` → `vector-semantic-search` boundary
 - **Commit:** `feat(observability): 6 vector_* counters with REQ-8 naming + req22 BDD feature`
 
 ### T1.8 — Update `pyproject.toml` with `[vectors]` optional extra
@@ -228,9 +228,9 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `pyproject.toml` (modify — add `vectors = ["sqlite-vec>=0.1.0,<0.2", "sentence-transformers>=3.0", "torch>=2.1"]` under `[project.optional-dependencies]`)
 - **Dependencies:** none
 - **Acceptance criteria:**
-  - [ ] `pip install -e .[vectors]` installs `sqlite-vec`, `sentence-transformers`, `torch` (verify on Python 3.13)
-  - [ ] `pip install -e .` (default) does NOT install any of the above
-  - [ ] `sqlite-vec` pinned to `<0.2` (avoids int8 KNN API churn in 0.2.x)
+  - [x] `pip install -e .[vectors]` installs `sqlite-vec`, `sentence-transformers`, `torch` (verify on Python 3.13)
+  - [x] `pip install -e .` (default) does NOT install any of the above
+  - [x] `sqlite-vec` pinned to `<0.2` (avoids int8 KNN API churn in 0.2.x)
 - **Commit:** `chore(deps): add [vectors] extra with sentence-transformers + sqlite-vec + torch-cpu`
 
 ### T1.9 — BDD feature `req17_semantic_search.feature` + step defs
@@ -297,11 +297,11 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `tests/unit/test_embedding_provider.py` (extend — test lazy import + ImportError path)
 - **Dependencies:** T1.3 (ABC), PR#1 merged to `main`
 - **Acceptance criteria:**
-  - [ ] RED: `test_sentence_transformers_raises_when_torch_missing` fails; `test_sentence_transformers_lazy_import_does_not_load_torch_at_module_level` fails
-  - [ ] GREEN: `SentenceTransformersProvider("sentence-transformers/all-MiniLM-L6-v2").dim == 384` and `.model_version == "sentence-transformers/all-MiniLM-L6-v2"`
-  - [ ] GREEN: `SentenceTransformersProvider.__init__` raises `EmbeddingProviderUnavailable` with `"pip install flow-engineering[vectors]"` when `torch` is removed from `sys.modules` (REQ-19 scenario 3)
-  - [ ] GREEN: First `.embed(...)` call triggers torch + sentence_transformers load (verified via `sys.modules` introspection); subsequent calls reuse cached `self._model`
-  - [ ] GREEN: `import flow_engineering.embedding_provider` does NOT trigger torch load (REQ-19 scenario 2)
+  - [x] RED: `test_sentence_transformers_raises_when_torch_missing` fails; `test_sentence_transformers_lazy_import_does_not_load_torch_at_module_level` fails
+  - [x] GREEN: `SentenceTransformersProvider("sentence-transformers/all-MiniLM-L6-v2").dim == 384` and `.model_version == "sentence-transformers/all-MiniLM-L6-v2"`
+  - [x] GREEN: `SentenceTransformersProvider.__init__` raises `EmbeddingProviderUnavailable` with `"pip install flow-engineering[vectors]"` when `torch` is removed from `sys.modules` (REQ-19 scenario 3)
+  - [x] GREEN: First `.embed(...)` call triggers torch + sentence_transformers load (verified via `sys.modules` introspection); subsequent calls reuse cached `self._model`
+  - [x] GREEN: `import flow_engineering.embedding_provider` does NOT trigger torch load (REQ-19 scenario 2)
 - **Commit:** `feat(embedding): SentenceTransformersProvider with lazy torch import + EmbeddingProviderUnavailable`
 
 ### T2.2 — BDD feature `req19_embedding_provider.feature` + step defs
@@ -314,13 +314,13 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `tests/bdd/test_vector_search_steps.py` (extend)
 - **Dependencies:** T2.1
 - **Acceptance criteria:**
-  - [ ] Feature file contains 4 scenarios matching spec REQ-19:
+  - [x] Feature file contains 4 scenarios matching spec REQ-19:
     1. `MockEmbeddingProvider` returns deterministic 384-dim vectors
     2. `import flow_engineering.embedding_provider` does not trigger torch import
     3. `SentenceTransformersProvider` raises `ImportError` when torch missing
     4. Embedding output shape is `(N, 384)` for N inputs (including empty list → `(0, 384)`)
-  - [ ] Step defs use `subprocess` + `sys.modules` introspection to verify import isolation
-  - [ ] `pytest tests/bdd/req19_embedding_provider.feature -v` passes all 4 scenarios
+  - [x] Step defs use `subprocess` + `sys.modules` introspection to verify import isolation
+  - [x] `pytest tests/bdd/req19_embedding_provider.feature -v` passes all 4 scenarios
 - **Commit:** `test(bdd): req19_embedding_provider feature with 4 scenarios`
 
 ### T2.3 — BDD feature `req20_sqlite_vec_storage.feature` + step defs
@@ -333,14 +333,14 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `tests/bdd/test_vector_search_steps.py` (extend)
 - **Dependencies:** T1.6 (`SqliteVecStore` impl)
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-20:
+  - [x] Feature file contains 5 scenarios matching spec REQ-20:
     1. Add → search round-trip returns added observation as top-1
     2. Delete removes observation from search results
     3. `count()` reflects add/delete accurately
     4. Vector BLOB size matches 384 × 4 = 1536 bytes
     5. Search returns top-k ordered by ascending distance
-  - [ ] Step defs use `SqliteVecStore(":memory:")` for fast isolated tests
-  - [ ] `pytest tests/bdd/req20_sqlite_vec_storage.feature -v` passes all 5 scenarios
+  - [x] Step defs use `SqliteVecStore(":memory:")` for fast isolated tests
+  - [x] `pytest tests/bdd/req20_sqlite_vec_storage.feature -v` passes all 5 scenarios
 - **Commit:** `test(bdd): req20_sqlite_vec_storage feature with 5 scenarios`
 
 ### T2.4 — Add `--semantic` flag to `flow search` CLI (REQ-17 scenarios 3, 4)
