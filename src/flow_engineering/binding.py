@@ -20,12 +20,22 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 CODE_REFS_MARKER: Final[str] = "<!-- code_refs -->"
 SUPPORTED_SCHEMA: Final[int] = 1
 Source = Literal["manual", "auto_suggest", "backfill", "unbound"]
 ALLOWED_SOURCES: Final[tuple[str, ...]] = ("manual", "auto_suggest", "backfill", "unbound")
+
+_REQUIRED_NODE_FIELDS: Final[tuple[str, ...]] = (
+    "project",
+    "id",
+    "label",
+    "file",
+    "line",
+    "confidence",
+    "source",
+)
 
 
 @dataclass(frozen=True)
@@ -53,29 +63,57 @@ class ParseError(ValueError):
         self.offset = offset
 
 
-def _split_marker(content: str) -> tuple[str, str]:
-    """Return (prose, marker_block) where marker_block starts with the marker line.
+def _find_block_body(content: str) -> tuple[int, str] | None:
+    """Locate the body that follows the trailing ``<!-- code_refs -->`` marker.
 
-    If no marker is present, returns (content, ""). The marker may appear
-    anywhere; we keep everything up to and including the marker line in
-    ``marker_block``, and the JSON body (everything after the marker line
-    up to a trailing newline) is appended after.
+    Returns ``(body_offset, body_text)`` where ``body_offset`` is the 0-based
+    character index where the JSON body starts in ``content``. Returns
+    ``None`` when the marker is absent.
     """
-    idx = content.rfind(CODE_REFS_MARKER)
-    if idx < 0:
-        return content, ""
-    marker_end = idx + len(CODE_REFS_MARKER)
-    return content[:idx], content[idx:]
+    marker_idx = content.rfind(CODE_REFS_MARKER)
+    if marker_idx < 0:
+        return None
+    body_start = marker_idx + len(CODE_REFS_MARKER)
+    if body_start < len(content) and content[body_start] == "\n":
+        body_start += 1
+    body_text = content[body_start:].strip()
+    return body_start, body_text
 
 
 def split_prose_and_refs(content: str) -> tuple[str, str]:
     """Split content into (prose, block). The block is ``""`` when absent."""
-    prose, marker_block = _split_marker(content)
-    if not marker_block:
-        return prose, ""
-    # Normalise: the block must end with a newline; ensure trailing newline.
-    block = marker_block if marker_block.endswith("\n") else marker_block + "\n"
-    return prose, block
+    marker_idx = content.rfind(CODE_REFS_MARKER)
+    if marker_idx < 0:
+        return content, ""
+    raw_block = content[marker_idx:]
+    if not raw_block.endswith("\n"):
+        raw_block = raw_block + "\n"
+    prose = content[:marker_idx]
+    return prose, raw_block
+
+
+def _coerce_node(node: Any) -> CodeRef:
+    if not isinstance(node, dict):
+        raise ParseError("each node must be an object", offset=0)
+    missing = [f for f in _REQUIRED_NODE_FIELDS if f not in node]
+    if missing:
+        raise ParseError(f"node missing required field(s): {', '.join(missing)}", offset=0)
+    source = node.get("source", "manual")
+    if source not in ALLOWED_SOURCES:
+        raise ParseError(
+            f"unknown node source value: {source!r} "
+            f"(allowed: {', '.join(ALLOWED_SOURCES)})",
+            offset=0,
+        )
+    return CodeRef(
+        project=str(node["project"]),
+        id=str(node["id"]),
+        label=str(node["label"]),
+        file=str(node["file"]),
+        line=int(node["line"]),
+        confidence=float(node["confidence"]),
+        source=source,
+    )
 
 
 def _parse_nodes(payload: dict) -> list[CodeRef]:
@@ -84,32 +122,7 @@ def _parse_nodes(payload: dict) -> list[CodeRef]:
     nodes = payload.get("nodes", [])
     if not isinstance(nodes, list):
         raise ParseError("'nodes' must be a list", offset=0)
-    refs: list[CodeRef] = []
-    for node in nodes:
-        if not isinstance(node, dict):
-            raise ParseError("each node must be an object", offset=0)
-        node_source = node.get("source", "manual")
-        if node_source not in ALLOWED_SOURCES:
-            raise ParseError(
-                f"unknown node source value: {node_source!r} "
-                f"(allowed: {', '.join(ALLOWED_SOURCES)})",
-                offset=0,
-            )
-        try:
-            refs.append(
-                CodeRef(
-                    project=str(node["project"]),
-                    id=str(node["id"]),
-                    label=str(node["label"]),
-                    file=str(node["file"]),
-                    line=int(node["line"]),
-                    confidence=float(node["confidence"]),
-                    source=node_source,
-                )
-            )
-        except KeyError as exc:
-            raise ParseError(f"node missing required field: {exc.args[0]}", offset=0) from exc
-    return refs
+    return [_coerce_node(n) for n in nodes]
 
 
 def validate_block(body_json: str) -> list[CodeRef]:
@@ -126,10 +139,10 @@ def validate_block(body_json: str) -> list[CodeRef]:
             f"unsupported schema version: {schema!r} (expected {SUPPORTED_SCHEMA})",
             offset=0,
         )
-    source = payload.get("source", "manual")
-    if source not in ALLOWED_SOURCES:
+    block_source = payload.get("source", "manual")
+    if block_source not in ALLOWED_SOURCES:
         raise ParseError(
-            f"unknown source value: {source!r} "
+            f"unknown block source value: {block_source!r} "
             f"(allowed: {', '.join(ALLOWED_SOURCES)})",
             offset=0,
         )
@@ -142,32 +155,19 @@ def extract_code_refs(content: str) -> list[CodeRef]:
     Returns an empty list when the marker is absent (legacy content).
     Raises ``ParseError`` when the marker is present but the block is malformed.
     """
-    idx = content.rfind(CODE_REFS_MARKER)
-    if idx < 0:
+    found = _find_block_body(content)
+    if found is None:
         return []
-    # Find the body after the marker line.
-    marker_end = idx + len(CODE_REFS_MARKER)
-    # Skip the marker line's terminating newline if present.
-    body_start = marker_end
-    if body_start < len(content) and content[body_start] == "\n":
-        body_start += 1
-    # Body ends at next blank line or end of content.
-    body_end = len(content)
-    for stop in ("\n\n",):
-        candidate = content.find(stop, body_start)
-        if 0 <= candidate < body_end:
-            body_end = candidate
-    body = content[body_start:body_end].strip()
+    body_start, body = found
     if not body:
-        # Empty body — treat as unbound (no nodes).
         return []
     try:
         return validate_block(body)
     except ParseError as exc:
-        # Re-raise with the offset of the body within the original content.
-        if exc.offset < 0:
-            raise ParseError(str(exc), offset=body_start) from exc
-        raise ParseError(str(exc), offset=body_start + exc.offset) from exc
+        # Translate offsets that were relative to the body into offsets that
+        # are relative to the original content.
+        adjusted = body_start + exc.offset if exc.offset >= 0 else body_start
+        raise ParseError(str(exc), offset=adjusted) from exc
 
 
 def format_code_refs_block(refs: list[CodeRef], *, source: Source = "unbound") -> str:
