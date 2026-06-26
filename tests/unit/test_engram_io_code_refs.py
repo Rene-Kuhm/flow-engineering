@@ -378,5 +378,37 @@ class TestUpdateObservationMetadata:
             f"expected exactly 1 update_observation call, got {call_count['n']}"
         )
 
+    def test_update_metadata_replaces_malformed_block_defensively(self):
+        """A corrupt metadata JSON body MUST NOT block the write.
+
+        Defensive contract: ``_extract_metadata_fields`` returns ``{}`` on
+        malformed input, so the new keys become the entire block.
+        """
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        corrupt_meta = (
+            f"{METADATA_MARKER}\n"
+            "{not valid json whatsoever}\n"
+        )
+        obs = backend.mem_save(
+            title="seed",
+            content=PROSE_ONLY + VALID_BLOCK + corrupt_meta,
+            topic_key="sdd/my-change/propose",
+        )
+        obs_id = obs["id"]
+
+        client.update_observation_metadata(
+            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
+        )
+
+        saved = backend.observations[obs_id]["content"]
+        assert "not valid json whatsoever" not in saved, (
+            "corrupt metadata body should be replaced"
+        )
+        assert '"last_verified_at"' in saved
+        assert '"2026-06-25T22:30:00Z"' in saved
+        assert saved.count(METADATA_MARKER) == 1
+        assert VALID_BLOCK in saved
+
 
 import pytest  # noqa: E402

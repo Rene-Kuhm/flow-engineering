@@ -198,6 +198,19 @@ def _extract_metadata_fields(content: str) -> dict[str, Any]:
     return fields if isinstance(fields, dict) else {}
 
 
+def _scan_to_next_newline(content: str, start: int) -> int:
+    """Return offset from ``start`` to the next ``\\n`` (or end of content).
+
+    Used by ``_replace_or_append_metadata_block`` when the metadata body
+    fails to parse: the malformed JSON sits on a single line, so we strip
+    everything from the marker up to (and including) the next newline.
+    """
+    nl_idx = content.find("\n", start)
+    if nl_idx == -1:
+        return len(content) - start
+    return nl_idx - start
+
+
 def _format_metadata_block(fields: dict[str, Any]) -> str:
     """Return a canonical ``<!-- metadata -->`` block for the given fields."""
     payload = {"schema": _METADATA_SCHEMA, "fields": dict(fields)}
@@ -224,7 +237,7 @@ def _replace_or_append_metadata_block(content: str, new_block: str) -> str:
         try:
             _payload, json_end = json.JSONDecoder().raw_decode(content[body_start:])
         except json.JSONDecodeError:
-            json_end = 0
+            json_end = _scan_to_next_newline(content, body_start)
         block_end = body_start + json_end
         if block_end < len(content) and content[block_end] == "\n":
             block_end += 1
