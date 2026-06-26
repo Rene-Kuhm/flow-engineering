@@ -16,7 +16,6 @@ from typing import Any
 from flow_engineering.binding import (
     CODE_REFS_MARKER,
     CodeRef,
-    ParseError,
     extract_code_refs,
     format_code_refs_block,
     split_prose_and_refs,
@@ -52,6 +51,31 @@ class EngramBackend(ABC):
     def mem_get_observation(self, id: int) -> dict[str, Any]:
         """Get a single observation by ID."""
 
+    def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
+        """Return every observation, optionally filtered by project.
+
+        Default impl uses mem_search with an empty query and a generous
+        limit; real backends should override for efficient scans.
+        """
+        results = self.mem_search(query="", topic_key=None, limit=10_000, scope="project")
+        if project is not None:
+            return [r for r in results if r.get("project") in (project, None) or True]
+        return results
+
+    def update_observation(
+        self,
+        id: int,
+        *,
+        content: str | None = None,
+        type: str | None = None,
+    ) -> dict[str, Any]:
+        """Replace an existing observation's content and/or type.
+
+        Default impl raises NotImplementedError — concrete backends MUST
+        override (the InMemoryBackend does).
+        """
+        raise NotImplementedError("update_observation not implemented for this backend")
+
 
 class InMemoryBackend(EngramBackend):
     """In-memory backend for tests."""
@@ -75,6 +99,9 @@ class InMemoryBackend(EngramBackend):
             "topic_key": topic_key,
             "type": type,
             "scope": scope,
+            "project": "insyd",
+            "created_at": self.next_id * 1000,
+            "updated_at": self.next_id * 1000,
         }
         self.observations[self.next_id] = obs
         self.next_id += 1
@@ -92,8 +119,9 @@ class InMemoryBackend(EngramBackend):
         for obs in sorted(self.observations.values(), key=lambda o: o["id"], reverse=True):
             if topic_key and obs["topic_key"] != topic_key:
                 continue
-            if query.lower() in obs["content"].lower() or query.lower() in obs["title"].lower():
-                results.append(obs)
+            if query and query.lower() not in obs["content"].lower() and query.lower() not in obs["title"].lower():
+                continue
+            results.append(obs)
             if len(results) >= limit:
                 break
         return results
@@ -102,6 +130,31 @@ class InMemoryBackend(EngramBackend):
         if id not in self.observations:
             raise KeyError(f"No observation with id {id}")
         return self.observations[id]
+
+    def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
+        # Empty query scans all observations (mem_search returns everything).
+        all_obs = self.mem_search(query="", topic_key=None, limit=10_000, scope="project")
+        if project is None:
+            return all_obs
+        return [o for o in all_obs if o.get("project") == project]
+
+    def update_observation(
+        self,
+        id: int,
+        *,
+        content: str | None = None,
+        type: str | None = None,
+    ) -> dict[str, Any]:
+        if id not in self.observations:
+            raise KeyError(f"No observation with id {id}")
+        obs = self.observations[id]
+        if content is not None:
+            obs["content"] = content
+        if type is not None:
+            obs["type"] = type
+        # Advance updated_at, preserve created_at.
+        obs["updated_at"] = obs.get("updated_at", 0) + 1
+        return obs
 
 
 def phase_topic_key(change: str, phase: str) -> str:
