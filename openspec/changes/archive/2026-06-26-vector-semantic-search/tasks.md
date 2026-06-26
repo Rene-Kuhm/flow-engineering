@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from openspec/changes/vector-semantic-search/tasks.md -->
 # Tasks: vector-semantic-search
 
 **Change:** `vector-semantic-search`

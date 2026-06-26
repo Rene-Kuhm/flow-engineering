@@ -1,4 +1,4 @@
-<!-- Archived yyyy-mm-dd from openspec/changes/vector-semantic-search/spec.md -->
+<!-- Archived 2026-06-26 from openspec/changes/vector-semantic-search/spec.md -->
 # Spec: vector-semantic-search
 
 **Change:** `vector-semantic-search`
