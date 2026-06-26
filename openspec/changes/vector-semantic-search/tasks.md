@@ -243,14 +243,14 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/bdd/test_vector_search_steps.py` (extend — step defs for REQ-17)
 - **Dependencies:** T1.2 (InMemoryBackend gate), T1.4 (HybridBackend scaffold), T1.7 (counter fixtures)
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-17:
+  - [x] Feature file contains 5 scenarios matching spec REQ-17:
     1. Semantic search with both extra and env set returns results
     2. Semantic search without extra raises `VectorSearchDisabled` with install hint
     3. Semantic search without env var (extra present) raises `VectorSearchDisabled` with env hint
     4. CLI `--semantic` flag with extra missing exits non-zero with clear error (will activate fully in PR#2 T2.4; tested at library level here via direct backend call)
     5. `mem_search` (FTS5) still works unchanged when vectors disabled (zero regression)
-  - [ ] Step defs use `MockEmbeddingProvider` + `InMemoryVectorIndex` for semantic scenarios; real `InMemoryBackend` for prose regression
-  - [ ] `pytest tests/bdd/req17_semantic_search.feature -v` passes all 5 scenarios
+  - [x] Step defs use `MockEmbeddingProvider` + `InMemoryVectorIndex` for semantic scenarios; real `InMemoryBackend` for prose regression
+  - [x] `pytest tests/bdd/req17_semantic_search.feature -v` passes all 5 scenarios
 - **Commit:** `test(bdd): req17_semantic_search feature with 5 scenarios covering activation gate`
 
 ### T1.10 — BDD feature `req18_hybrid_scoring.feature` + step defs
@@ -263,15 +263,15 @@ Covers REQ-18 (hybrid scoring), REQ-19 (EmbeddingProvider ABC + lazy import), RE
   - `tests/bdd/test_vector_search_steps.py` (extend — step defs for REQ-18 with worked example numbers)
 - **Dependencies:** T1.5 (hybrid scoring implementation)
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-18:
+  - [x] Feature file contains 5 scenarios matching spec REQ-18:
     1. Hybrid with `alpha=0.5` ranks semantic + FTS blended (worked example: `obs1 ≈ 0.96`, `obs3 ≈ 0.39`, `obs2 ≈ 0.00`)
     2. Hybrid with `alpha=1.0` equals pure semantic (sanity)
     3. Hybrid with `alpha=0.0` equals pure FTS (sanity)
     4. `alpha=1.5` raises `ValueError` with `[0.0, 1.0]` in message
     5. Empty query returns `[]` without division-by-zero
-  - [ ] Step defs use `MockEmbeddingProvider` to control cosine values (hash-based deterministic); `InMemoryVectorIndex` for KNN
-  - [ ] Numeric assertions use `pytest.approx(..., abs=1e-3)` for float tolerance
-  - [ ] `pytest tests/bdd/req18_hybrid_scoring.feature -v` passes all 5 scenarios
+  - [x] Step defs use `MockEmbeddingProvider` to control cosine values (hash-based deterministic); `InMemoryVectorIndex` for KNN
+  - [x] Numeric assertions use `pytest.approx(..., abs=1e-3)` for float tolerance
+  - [x] `pytest tests/bdd/req18_hybrid_scoring.feature -v` passes all 5 scenarios
 - **Commit:** `test(bdd): req18_hybrid_scoring feature with 5 scenarios including worked example numbers`
 
 ### PR#1 totals (per prompt)
