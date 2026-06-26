@@ -12,6 +12,9 @@ phase (T1.5) implements the function so all of these pass.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from flow_engineering.binding import CodeRef
@@ -20,6 +23,7 @@ from flow_engineering.decision_drift import (
     DriftReport,
     Finding,
     classify_binding,
+    load_graph,
 )
 
 
@@ -206,3 +210,89 @@ def test_drift_report_defaults() -> None:
     assert r.class_counts == {}
     assert r.findings == []
     assert r.graph_unavailable is False
+
+
+# --- load_graph (T1.6 batch C, commit 1) --------------------------------
+
+
+def test_load_graph_returns_none_when_missing(tmp_path: Path) -> None:
+    """Missing graph path -> (None, None, None). Fail-open contract."""
+    nodes, id_map, mtime = load_graph(tmp_path / "does-not-exist.json")
+    assert nodes is None
+    assert id_map is None
+    assert mtime is None
+
+
+def test_load_graph_reads_valid_graph(tmp_path: Path) -> None:
+    """Valid graph.json -> populated maps + matching mtime."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "label": "Foo",
+                        "source_file": "src/foo.py",
+                        "source_location": "10",
+                    },
+                    {
+                        "id": "n2",
+                        "label": "Bar",
+                        "file": "src/bar.py",
+                        "line": 20,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    nodes, id_map, mtime = load_graph(graph_path)
+    assert nodes is not None
+    assert id_map is not None
+    assert mtime is not None
+    assert set(nodes) == {"n1", "n2"}
+    assert id_map["n1"] == ("src/foo.py", 10, "Foo")
+    assert id_map["n2"] == ("src/bar.py", 20, "Bar")
+    assert mtime == graph_path.stat().st_mtime
+
+
+def test_load_graph_returns_none_for_malformed_json(tmp_path: Path) -> None:
+    """Malformed JSON -> (None, None, None). Fail-open contract."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text("this is not json {", encoding="utf-8")
+    nodes, id_map, mtime = load_graph(graph_path)
+    assert nodes is None
+    assert id_map is None
+    assert mtime is None
+
+
+def test_load_graph_returns_none_for_unexpected_shape(tmp_path: Path) -> None:
+    """Top-level list (not dict) or 'nodes' missing -> (None, None, None)."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    nodes, id_map, mtime = load_graph(graph_path)
+    assert nodes is None
+    assert id_map is None
+    assert mtime is None
+
+
+def test_load_graph_skips_malformed_node_entries(tmp_path: Path) -> None:
+    """Per-node 'id' missing -> entry skipped, valid entries kept."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {"id": "ok", "label": "Ok", "file": "src/o.py", "line": 1},
+                    {"label": "NoId", "file": "src/x.py", "line": 9},
+                    "not-a-dict",
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    nodes, id_map, _ = load_graph(graph_path)
+    assert nodes is not None
+    assert set(nodes) == {"ok"}
+    assert id_map["ok"] == ("src/o.py", 1, "Ok")

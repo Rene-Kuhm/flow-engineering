@@ -26,11 +26,22 @@ which is the terminal signal when the graph itself is unavailable):
 
 from __future__ import annotations
 
+import json
+import re
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from flow_engineering.binding import CodeRef
+from flow_engineering import graphify_query
+from flow_engineering.binding import CodeRef, ParseError, extract_code_refs
+
+if TYPE_CHECKING:
+    from flow_engineering.engram_io import EngramBackend
+
+
+_LINE_PATTERN = re.compile(r"\d+")
 
 
 class DriftClass(str, Enum):
@@ -100,24 +111,91 @@ def classify_binding(
     return DriftClass.STILL_VALID
 
 
+def _parse_line(location: object) -> int:
+    """Best-effort line-int coercion for graph.json schema variants."""
+    if isinstance(location, int):
+        return location
+    if isinstance(location, str):
+        m = _LINE_PATTERN.search(location)
+        return int(m.group(0)) if m else 0
+    return 0
+
+
+def load_graph(graph_json_path: Path) -> tuple[dict | None, dict | None, float | None]:
+    """Load ``graph.json`` once for a drift scan (design #123 decision 1).
+
+    Returns a 3-tuple ``(current_nodes, current_id_map, graph_mtime)``. When
+    the path is missing, the JSON is malformed, or the top-level shape is
+    unexpected, returns ``(None, None, None)`` so callers fail-open.
+
+    - ``current_nodes``: ``dict[id, node_dict]`` — full node for inspection.
+    - ``current_id_map``: ``dict[id, (file, line, label)]`` — fast lookup
+      for ``classify_binding``. Tolerates both ``file/line`` and
+      ``source_file/source_location`` shapes.
+    - ``graph_mtime``: epoch seconds (float) of the snapshot, used for
+      audit correlation in the resulting ``DriftReport``.
+    """
+    try:
+        if not graph_json_path.exists():
+            return (None, None, None)
+        mtime = graph_json_path.stat().st_mtime
+        data = json.loads(graph_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return (None, None, None)
+    if not isinstance(data, dict):
+        return (None, None, None)
+    nodes = data.get("nodes", [])
+    if not isinstance(nodes, list):
+        return (None, None, None)
+    current_nodes: dict[str, dict] = {}
+    current_id_map: dict[str, tuple[str, int, str]] = {}
+    for n in nodes:
+        if not isinstance(n, dict) or "id" not in n:
+            continue
+        nid = str(n["id"])
+        current_nodes[nid] = n
+        file = str(n.get("file", n.get("source_file", "")))
+        line = _parse_line(n.get("line", n.get("source_location", 0)))
+        label = str(n.get("label", nid))
+        current_id_map[nid] = (file, line, label)
+    return (current_nodes, current_id_map, mtime)
+
+
+def _detect_contradicted(findings: list[Finding]) -> set[int]:
+    """Return indices of findings to reclassify as ``CONTRADICTED``.
+
+    Design #123 decision 2: same ``id`` bound by multiple findings whose
+    ``confidence`` gap exceeds ``0.4``. ``UNABLE_TO_VERIFY`` and
+    ``OBSOLETE`` are excluded — they have no real binding to contradict.
+    """
+    by_id: dict[str, list[tuple[int, float]]] = {}
+    for idx, f in enumerate(findings):
+        if f.drift_class in (DriftClass.UNABLE_TO_VERIFY, DriftClass.OBSOLETE):
+            continue
+        bid = f.binding.id
+        by_id.setdefault(bid, []).append((idx, f.binding.confidence))
+    contradicted: set[int] = set()
+    for entries in by_id.values():
+        if len(entries) < 2:
+            continue
+        confidences = [c for _, c in entries]
+        if max(confidences) - min(confidences) > 0.4:
+            for idx, _ in entries:
+                contradicted.add(idx)
+    return contradicted
+
+
 def scan_change(
     change_name: str,
     *,
     graph_json_path: Path,
+    backend: "EngramBackend | None" = None,
     include_obsolete: bool = False,
     since: float | None = None,
 ) -> DriftReport:
-    """Scan a change for decision-to-code drift.
+    """Scan a change for decision-to-code drift (REQ-9 + REQ-12).
 
-    Args:
-        change_name: The OpenSpec/SDD change identifier.
-        graph_json_path: Path to ``graph.json`` snapshot.
-        include_obsolete: When ``True``, run ``graphify_query`` for unbound
-            decisions to detect ``OBSOLETE``. Defaults ``False`` (opt-in
-            per design #123 decision 3 — LLM cost bound).
-        since: Epoch seconds; skip observations with ``updated_at`` < ``since``.
-
-    Returns:
-        ``DriftReport`` aggregating per-binding classifications.
+    Implementation lands in T1.6 batch C GREEN phase (commit 3). See the
+    RED tests in ``tests/unit/test_decision_drift.py`` for the contract.
     """
-    raise NotImplementedError("scan_change lands in T1.6 (batch C)")
+    raise NotImplementedError("scan_change lands in T1.6 (batch C) GREEN")
