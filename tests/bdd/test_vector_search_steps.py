@@ -39,6 +39,7 @@ Test isolation:
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -1373,4 +1374,280 @@ def then_distances_sorted_asc(vec_store_world):
     distances = [d for _obs, d in results]
     assert distances == sorted(distances), (
         f"Distances not ascending: {distances}"
+    )
+
+
+# =====================================================================
+# REQ-21 scenario bindings — flow reindex CLI
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "flow reindex on empty corpus completes with 0 indexed",
+)
+def test_req21_reindex_empty(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "flow reindex on 250 observations emits progress lines + done",
+)
+def test_req21_reindex_250_progress(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "Second flow reindex is idempotent",
+)
+def test_req21_reindex_idempotent(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "--dry-run reports count without writing",
+)
+def test_req21_reindex_dry_run(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "Crash mid-run: subsequent restart completes the corpus",
+)
+def test_req21_reindex_crash_resume(vec_reindex_world):
+    pass
+
+
+# =====================================================================
+# REQ-21 step definitions — flow reindex CLI
+# =====================================================================
+
+
+from click.testing import CliRunner as _CliRunner
+
+from flow_engineering.cli import main as _cli_main
+
+
+def _seed_reindex_corpus(backend: InMemoryBackend, n: int) -> None:
+    """Seed ``n`` synthetic observations directly into ``backend.observations``.
+
+    Mirrors the seed helper in ``tests/unit/test_cli_reindex.py`` so the BDD
+    fixtures exercise the same shape the unit tests use.
+    """
+    for i in range(1, n + 1):
+        backend.observations[i] = {
+            "id": i,
+            "title": f"obs-{i}",
+            "content": f"observation {i} content",
+            "topic_key": "sdd/test/phase",
+            "type": "architecture",
+            "scope": "project",
+            "project": "insyd",
+            "created_at": i * 1000,
+            "updated_at": i * 1000,
+        }
+    backend.next_id = max(backend.next_id, n + 1)
+
+
+@pytest.fixture
+def vec_reindex_world(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-21 ``flow reindex`` scenarios.
+
+    Wires the four CLI seams ``flow reindex`` depends on:
+    - ``_default_save_backend`` → test backend (so CLI reads our seed)
+    - ``_sqlite_vec_available`` → True (gate cleared)
+    - ``_vectors_sqlite_path`` → tmp file (no writes to ~/.flow)
+    - ``FLOW_METRICS_PATH`` → tmp file (no writes to ~/.flow)
+
+    The ``run_outputs`` list captures every CliRunner invocation so multi-run
+    scenarios (idempotent + crash-resume) can assert against each one.
+    """
+    metrics_path = tmp_path / "metrics.jsonl"
+    vectors_path = tmp_path / "vectors.sqlite"
+    monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
+    monkeypatch.delenv("FLOW_VECTOR_SEARCH", raising=False)
+
+    from flow_engineering import cli as cli_mod
+
+    backend = InMemoryBackend()
+    monkeypatch.setattr(cli_mod, "_default_save_backend", lambda: backend)
+    monkeypatch.setattr(cli_mod, "_sqlite_vec_available", lambda: True)
+    monkeypatch.setattr(cli_mod, "_vectors_sqlite_path", lambda: vectors_path)
+
+    runner = _CliRunner()
+
+    return {
+        "tmp_path": tmp_path,
+        "metrics_path": metrics_path,
+        "vectors_path": vectors_path,
+        "backend": backend,
+        "cli_mod": cli_mod,
+        "runner": runner,
+        "run_outputs": [],
+        "simulate_crash_after": None,
+    }
+
+
+# ---------- Given ----------
+
+
+@given("an empty InMemoryBackend")
+def given_empty_backend(vec_reindex_world):
+    pass
+
+
+@given("an InMemoryBackend seeded with 250 observations")
+def given_backend_250(vec_reindex_world):
+    _seed_reindex_corpus(vec_reindex_world["backend"], 250)
+
+
+@given(parsers.parse("an InMemoryBackend seeded with {n:d} observations"))
+def given_backend_n(vec_reindex_world, n: int):
+    _seed_reindex_corpus(vec_reindex_world["backend"], n)
+
+
+@given("the [vectors] extra is available")
+def given_vectors_extra_available(vec_reindex_world):
+    pass
+
+
+@given("a tmp-path SqliteVecStore")
+def given_tmp_store(vec_reindex_world):
+    """The vec_reindex_world fixture already wired _vectors_sqlite_path to tmp."""
+    pass
+
+
+@given("a simulated reindex crash after 100 of the first batch")
+def given_simulated_crash(vec_reindex_world):
+    """Patch ``_perform_reindex_batch`` so the FIRST call simulates a crash
+    after 100 rows of the first batch; the SECOND call (and onward) runs the
+    real worker. Mirrors the unit test pattern in ``test_cli_reindex.py``.
+    """
+    cli_mod = vec_reindex_world["cli_mod"]
+    original_perform = cli_mod._perform_reindex_batch
+    call_count = {"n": 0}
+
+    def _crash_on_first_call(*args: Any, **kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            kwargs["simulate_crash_after"] = 100
+        return original_perform(*args, **kwargs)
+
+    vec_reindex_world["cli_mod"] = cli_mod
+    cli_mod._perform_reindex_batch = _crash_on_first_call
+
+
+# ---------- When ----------
+
+
+@when("I run flow reindex")
+def when_run_reindex_default(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, [])
+
+
+@when("I run flow reindex again")
+def when_run_reindex_again(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, [])
+
+
+@when("I run flow reindex --batch-size 100")
+def when_run_reindex_batch_100(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--batch-size", "100"])
+
+
+@when("I run flow reindex --batch-size 100 (first run, partial)")
+def when_run_reindex_first_partial(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--batch-size", "100"])
+
+
+@when("I run flow reindex --batch-size 100 (second run, full)")
+def when_run_reindex_second_full(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--batch-size", "100"])
+
+
+@when("I run flow reindex --dry-run")
+def when_run_reindex_dry_run(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--dry-run"])
+
+
+def _invoke_reindex(world: dict[str, Any], extra_args: list[str]) -> None:
+    """Helper: invoke ``flow reindex`` with the given extra CLI args."""
+    runner = world["runner"]
+    result = runner.invoke(_cli_main, ["reindex", *extra_args])
+    world["run_outputs"].append(result)
+
+
+# ---------- Then ----------
+
+
+@then("the exit code is 0")
+def then_exit_code_zero(vec_reindex_world):
+    last = vec_reindex_world["run_outputs"][-1]
+    assert last.exit_code == 0, (
+        f"Expected exit code 0, got {last.exit_code}: "
+        f"stdout={last.stdout!r} stderr={last.stderr!r}"
+    )
+
+
+@then(parsers.parse('the output contains "{needle}"'))
+def then_reindex_output_contains(vec_reindex_world, needle: str):
+    last = vec_reindex_world["run_outputs"][-1]
+    combined = (last.output or "") + (last.stderr or "")
+    assert needle in combined, (
+        f"Expected {needle!r} in output, got:\n"
+        f"output={last.output!r}\nstderr={last.stderr!r}"
+    )
+
+
+@then(parsers.parse("the vector_index_size_observations gauge reads {n:d}"))
+def then_index_size_gauge(vec_reindex_world, n: int):
+    """Read the gauge from the metrics JSONL (sampled at reindex completion).
+
+    Falls back to ``SqliteVecStore.count()`` if the metrics file is empty
+    (defensive: tests that do not assert counters should still pass).
+    """
+    metrics_path = vec_reindex_world["metrics_path"]
+    if metrics_path.exists():
+        events: list[dict[str, Any]] = []
+        for line in metrics_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                events.append(json.loads(line))
+        gauge_events = [
+            e for e in events if e.get("name") == "vector_index_size_observations"
+        ]
+        if gauge_events:
+            value = int(gauge_events[-1].get("fields", {}).get("value", -1))
+            assert value == n, (
+                f"Expected vector_index_size_observations == {n}, got {value}"
+            )
+            return
+    # Fallback: read directly from the SqliteVecStore on disk (truth source).
+    sqlite_vec = pytest.importorskip("sqlite_vec")
+    from flow_engineering.vectors import SqliteVecStore
+
+    store = SqliteVecStore(vec_reindex_world["vectors_path"])
+    assert store.count() == n, (
+        f"Expected store.count() == {n}, got {store.count()}"
+    )
+
+
+@then(parsers.parse('the second output contains "{needle}"'))
+def then_second_output_contains(vec_reindex_world, needle: str):
+    outputs = vec_reindex_world["run_outputs"]
+    assert len(outputs) >= 2, (
+        f"Expected ≥2 reindex runs, got {len(outputs)}"
+    )
+    last = outputs[-1]
+    combined = (last.output or "") + (last.stderr or "")
+    assert needle in combined, (
+        f"Expected {needle!r} in second run output, got:\n"
+        f"output={last.output!r}\nstderr={last.stderr!r}"
     )
