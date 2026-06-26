@@ -55,7 +55,7 @@ def graphify_available(monkeypatch: pytest.MonkeyPatch) -> list[CodeRef]:
         _ref("src_auth_oauth_oauthhandler", "OAuthHandler", 0.4, "src/auth/oauth.py", 10),
     ]
     monkeypatch.setattr(
-        "flow_engineering.auto_suggest_code_refs.query_nodes",
+        "flow_engineering.auto_suggest_code_refs.graphify_query.query_nodes",
         lambda text, *, threshold=0.3, max_results=5: [
             r for r in candidates if r.confidence >= threshold
         ][:max_results],
@@ -67,7 +67,7 @@ def graphify_available(monkeypatch: pytest.MonkeyPatch) -> list[CodeRef]:
 def graphify_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patch graphify_query.query_nodes to return [] (fail-open signal)."""
     monkeypatch.setattr(
-        "flow_engineering.auto_suggest_code_refs.query_nodes",
+        "flow_engineering.auto_suggest_code_refs.graphify_query.query_nodes",
         lambda text, *, threshold=0.3, max_results=5: [],
     )
 
@@ -79,7 +79,7 @@ def graphify_error(monkeypatch: pytest.MonkeyPatch) -> None:
         raise RuntimeError("graphify crashed")
 
     monkeypatch.setattr(
-        "flow_engineering.auto_suggest_code_refs.query_nodes",
+        "flow_engineering.auto_suggest_code_refs.graphify_query.query_nodes",
         boom,
     )
 
@@ -124,7 +124,7 @@ class TestNoSuggestBypass:
             raise AssertionError("graphify_query.query_nodes must NOT be called")
 
         monkeypatch.setattr(
-            "flow_engineering.auto_suggest_code_refs.query_nodes",
+            "flow_engineering.auto_suggest_code_refs.graphify_query.query_nodes",
             should_not_be_called,
         )
         result = auto_suggest_code_refs("jwt auth", no_suggest=True)
