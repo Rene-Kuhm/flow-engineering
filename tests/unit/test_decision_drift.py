@@ -17,14 +17,16 @@ from pathlib import Path
 
 import pytest
 
-from flow_engineering.binding import CodeRef
+from flow_engineering.binding import CodeRef, format_code_refs_block
 from flow_engineering.decision_drift import (
     DriftClass,
     DriftReport,
     Finding,
     classify_binding,
     load_graph,
+    scan_change,
 )
+from flow_engineering.engram_io import InMemoryBackend
 
 
 def _ref(
@@ -296,3 +298,271 @@ def test_load_graph_skips_malformed_node_entries(tmp_path: Path) -> None:
     assert nodes is not None
     assert set(nodes) == {"ok"}
     assert id_map["ok"] == ("src/o.py", 1, "Ok")
+
+
+# --- scan_change + observability counters (T1.6 batch C, commit 2 RED) --
+
+
+METRICS_PATH_ENV = "FLOW_METRICS_PATH"
+
+
+def _ref_block(
+    *,
+    node_id: str,
+    label: str,
+    file: str,
+    line: int,
+    confidence: float,
+    source: str = "manual",
+) -> str:
+    """Build a content string with a valid `code_refs` block for one node."""
+    ref = CodeRef(
+        project="insyd",
+        id=node_id,
+        label=label,
+        file=file,
+        line=line,
+        confidence=confidence,
+        source=source,
+    )
+    return f"prose content\n{format_code_refs_block([ref], source=source)}"
+
+
+def _seed_change(backend: InMemoryBackend, *contents: str, change: str = "test") -> None:
+    """Seed observations under the standard sdd/{change}/ topic-key prefix."""
+    topic = f"sdd/{change}/spec"
+    for content in contents:
+        backend.mem_save(title="decision", content=content, topic_key=topic)
+
+
+def test_scan_change_graph_unavailable(tmp_path: Path) -> None:
+    """Missing graph.json -> DriftReport with graph_unavailable=True."""
+    missing = tmp_path / "graph.json"
+    report = scan_change("test", graph_json_path=missing)
+    assert report.graph_unavailable is True
+    assert report.graph_mtime is None
+    assert report.decisions_total == 0
+    assert report.bindings_total == 0
+    assert report.class_counts == {}
+    assert report.findings == []
+
+
+def test_scan_change_snapshot(tmp_path: Path) -> None:
+    """Available graph.json -> report carries mtime matching the file."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    backend = InMemoryBackend()
+    _seed_change(backend, "no refs here")
+
+    report = scan_change("test", graph_json_path=graph_path, backend=backend)
+
+    assert report.graph_unavailable is False
+    assert report.graph_mtime == graph_path.stat().st_mtime
+
+
+def test_scan_change_basic_aggregation(tmp_path: Path) -> None:
+    """Five decisions mixed -> correct class_counts + decisions_total.
+
+    Decisions 1-4 each carry one binding covering a different drift class.
+    Decision 5 carries no `code_refs` at all (counts as a decision, not a
+    binding) so decisions_total=5 while bindings_total=4.
+    """
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "n_valid",
+                        "label": "Valid",
+                        "source_file": "src/v.py",
+                        "source_location": "10",
+                    },
+                    {
+                        "id": "n_label",
+                        "label": "NewLabel",
+                        "source_file": "src/l.py",
+                        "source_location": "20",
+                    },
+                    {
+                        "id": "n_loc",
+                        "label": "Loc",
+                        "source_file": "src/loc_new.py",
+                        "source_location": "30",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    backend = InMemoryBackend()
+    _seed_change(
+        backend,
+        _ref_block(node_id="n_valid", label="Valid", file="src/v.py", line=10, confidence=0.9),
+        _ref_block(node_id="n_label", label="OldLabel", file="src/l.py", line=20, confidence=0.8),
+        _ref_block(node_id="n_loc", label="Loc", file="src/loc_old.py", line=1, confidence=0.7),
+        _ref_block(node_id="missing_id", label="Foo", file="src/x.py", line=1, confidence=0.6),
+        "decision with no code_refs at all",
+    )
+
+    report = scan_change("test", graph_json_path=graph_path, backend=backend)
+
+    assert report.graph_unavailable is False
+    assert report.decisions_total == 5
+    assert report.bindings_total == 4
+    assert report.class_counts.get(DriftClass.STILL_VALID) == 1
+    assert report.class_counts.get(DriftClass.LABEL_DRIFT) == 1
+    assert report.class_counts.get(DriftClass.STALE_LOCATION) == 1
+    assert report.class_counts.get(DriftClass.STALE_ID) == 1
+    assert len(report.findings) == 4
+
+
+def test_scan_change_obsolete_opt_in_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """include_obsolete=False (default) -> OBSOLETE never appears in findings."""
+    from flow_engineering import graphify_query
+
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    backend = InMemoryBackend()
+    _seed_change(backend, "decision prose with no code_refs")
+
+    # Even when graphify would return zero candidates, OFF means no OBSOLETE.
+    monkeypatch.setattr(graphify_query, "query_nodes", lambda *a, **kw: [])
+
+    report = scan_change(
+        "test", graph_json_path=graph_path, backend=backend, include_obsolete=False
+    )
+    obsolete = [f for f in report.findings if f.drift_class is DriftClass.OBSOLETE]
+    assert obsolete == []
+    assert report.graph_unavailable is False
+
+
+def test_scan_change_obsolete_opt_in_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """include_obsolete=True + zero graphify candidates -> OBSOLETE finding."""
+    from flow_engineering import graphify_query
+
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    backend = InMemoryBackend()
+    _seed_change(backend, "decision prose with no code_refs")
+
+    monkeypatch.setattr(graphify_query, "query_nodes", lambda *a, **kw: [])
+
+    report = scan_change(
+        "test", graph_json_path=graph_path, backend=backend, include_obsolete=True
+    )
+    obsolete = [f for f in report.findings if f.drift_class is DriftClass.OBSOLETE]
+    assert len(obsolete) == 1
+    assert obsolete[0].drift_class is DriftClass.OBSOLETE
+
+
+def test_scan_change_contradicted(tmp_path: Path) -> None:
+    """Two decisions binding the same id with confidence_gap > 0.4 -> CONTRADICTED."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "n_shared",
+                        "label": "Shared",
+                        "source_file": "src/s.py",
+                        "source_location": "10",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    backend = InMemoryBackend()
+    _seed_change(
+        backend,
+        _ref_block(node_id="n_shared", label="Shared", file="src/s.py", line=10, confidence=0.9),
+        _ref_block(node_id="n_shared", label="Shared", file="src/s.py", line=10, confidence=0.3),
+    )
+
+    report = scan_change("test", graph_json_path=graph_path, backend=backend)
+
+    contradicted = [f for f in report.findings if f.drift_class is DriftClass.CONTRADICTED]
+    assert len(contradicted) == 2
+    assert report.decisions_total == 2
+    assert report.bindings_total == 2
+    # CONTRADICTED replaces STILL_VALID in class_counts for these two findings.
+    assert report.class_counts.get(DriftClass.STILL_VALID, 0) == 0
+    assert report.class_counts.get(DriftClass.CONTRADICTED) == 2
+
+
+def test_scan_change_since_filter(tmp_path: Path) -> None:
+    """since=<ts> skips observations whose created_at < cutoff."""
+    graph_path = tmp_path / "graph.json"
+    graph_path.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    backend = InMemoryBackend()
+    _seed_change(backend, "obs-a prose", "obs-b prose")
+
+    # InMemoryBackend assigns created_at = next_id * 1000, so first save -> 1000,
+    # second -> 2000. since=1500 keeps only the second observation.
+    report = scan_change(
+        "test", graph_json_path=graph_path, backend=backend, since=1500.0
+    )
+    assert report.decisions_total == 1
+    assert report.graph_unavailable is False
+
+
+def test_observability_drift_counters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """record_drift_summary emits 7 named counters into the JSONL sink.
+
+    REQ-12: per invocation, exactly one JSONL line per counter is written.
+    Counts of zero for absent classes are still emitted so downstream
+    queries see a complete snapshot.
+    """
+    from flow_engineering import observability
+
+    metrics_path = tmp_path / "metrics.jsonl"
+    monkeypatch.setenv(METRICS_PATH_ENV, str(metrics_path))
+
+    report = DriftReport(
+        change_name="test",
+        scanned_at=0.0,
+        graph_mtime=1.0,
+        decisions_total=5,
+        bindings_total=7,
+        class_counts={
+            DriftClass.STILL_VALID: 3,
+            DriftClass.LABEL_DRIFT: 2,
+            DriftClass.STALE_ID: 1,
+        },
+    )
+    observability.record_drift_summary(report)
+
+    events = [
+        json.loads(line)
+        for line in metrics_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    names = [e["name"] for e in events]
+    assert names.count("drift_invoked_total") == 1
+    for counter in (
+        "drift_still_valid_total",
+        "drift_label_drift_total",
+        "drift_stale_location_total",
+        "drift_stale_id_total",
+        "drift_obsolete_total",
+        "drift_contradicted_total",
+    ):
+        assert names.count(counter) == 1, counter
+
+    by_name = {
+        e["name"]: e["fields"].get("count")
+        for e in events
+        if "count" in e.get("fields", {})
+    }
+    assert by_name["drift_still_valid_total"] == 3
+    assert by_name["drift_label_drift_total"] == 2
+    assert by_name["drift_stale_id_total"] == 1
+    assert by_name["drift_stale_location_total"] == 0
+    assert by_name["drift_obsolete_total"] == 0
+    assert by_name["drift_contradicted_total"] == 0
