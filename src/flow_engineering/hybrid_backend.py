@@ -1,4 +1,4 @@
-"""HybridBackend composition wrapper (vector-semantic-search PR#1 T1.4 + T1.5).
+"""HybridBackend composition wrapper (vector-semantic-search PR#1 T1.4 + T1.5 + T1.7).
 
 REQ-17 + REQ-18 + design D2 + D7: HybridBackend wraps any inner EngramBackend
 and adds semantic / hybrid retrieval on top, without altering the legacy
@@ -8,7 +8,7 @@ T1.4 (batch B) introduced the composition wrapper that forwarded all
 prose-path methods to ``inner`` and deferred ``mem_search_semantic`` +
 ``mem_search_hybrid`` with ``NotImplementedError``.
 
-T1.5 (this batch — C) implements the hybrid scoring formula from design D7:
+T1.5 (batch C) implements the hybrid scoring formula from design D7:
 
     score = α · cosine_sim + (1 − α) · normalize_bm25(fts)
 
@@ -17,16 +17,23 @@ the FTS result set per query. ``α`` defaults to ``0.5``; valid range is
 ``[0.0, 1.0]``. ``mem_search_semantic`` is a thin delegate to
 ``mem_search_hybrid(query, k, alpha=1.0)``.
 
+T1.7 (batch D1) wires observability — every ``mem_search_hybrid`` (and the
+``mem_search_semantic`` alias) invocation emits the REQ-22 counter batch via
+:func:`observability.record_vector_summary` with ``trigger="programmatic"``.
+The CLI layer (PR#2 T2.4) sets ``trigger="cli"`` for its own invocations.
 Sync embed-on-save (the write-through side effect on ``mem_save``) lands
-in a later batch — T1.5 only ships retrieval scoring.
+in a later batch.
 """
 
 from __future__ import annotations
 
+import contextlib
+import time
 from typing import Any
 
 import numpy as np
 
+from flow_engineering import observability
 from flow_engineering.embedding_provider import EmbeddingProvider
 from flow_engineering.engram_io import EngramBackend
 
@@ -141,10 +148,42 @@ class HybridBackend(EngramBackend):
 
         Each result dict carries ``observation_id``, ``score``, ``rank`` per
         REQ-17 contract, plus the inner observation fields for convenience.
+
+        Every successful invocation emits the REQ-22 vector counter batch via
+        :func:`observability.record_vector_summary` with ``trigger="programmatic"``.
+        The CLI layer (PR#2 T2.4) calls with ``trigger="cli"`` instead. The
+        observability helper is fail-open (mirrors ``increment``) so a broken
+        metrics sink can never break retrieval.
         """
         if not (0.0 <= alpha <= 1.0):
             raise ValueError(f"alpha must be in [0.0, 1.0], got {alpha}")
 
+        start = time.perf_counter()
+        results = self._compute_hybrid_results(query, k=k, alpha=alpha)
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        with contextlib.suppress(Exception):
+            # Observability MUST be fail-open — never let metrics break retrieval.
+            observability.record_vector_summary(
+                invoked=1,
+                results_returned=len(results),
+                latency_ms=elapsed_ms,
+                index_size=self._safe_index_size(),
+                trigger="programmatic",
+            )
+        return results
+
+    def _compute_hybrid_results(
+        self,
+        query: str,
+        *,
+        k: int,
+        alpha: float,
+    ) -> list[dict[str, Any]]:
+        """Inner worker for hybrid scoring (separated from observability wiring).
+
+        Returns the ranked list. Does NOT touch metrics — callers wrap this
+        with their preferred counter trigger tag.
+        """
         candidates = self._inner.mem_search(query, limit=max(k * 2, k))
         if not candidates:
             return []
@@ -183,6 +222,25 @@ class HybridBackend(EngramBackend):
             base["rank"] = rank
             results.append(base)
         return results
+
+    def _safe_index_size(self) -> int:
+        """Best-effort lookup of the current embedding index size for the gauge.
+
+        Returns 0 when the index is unavailable (e.g. SqliteVecStore not
+        yet wired up in this batch, or the inner backend is not a
+        vector-enabled hybrid). The gauge is sampled at render time, so a
+        zero here is the documented safe default.
+        """
+        index = getattr(self, "_index", None)
+        if index is None:
+            return 0
+        count_fn = getattr(index, "count", None)
+        if not callable(count_fn):
+            return 0
+        try:
+            return int(count_fn())
+        except Exception:
+            return 0
 
     # --- helpers (exposed as staticmethods for direct unit testing) ---
 

@@ -24,13 +24,14 @@ the integration tests verify the counters actually fire on a real hybrid call.
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import pytest
 
 from flow_engineering import observability
-
+from flow_engineering.embedding_provider import MockEmbeddingProvider
+from flow_engineering.engram_io import InMemoryBackend
+from flow_engineering.hybrid_backend import HybridBackend
 
 # ---------- helpers ----------
 
@@ -287,8 +288,10 @@ class TestReindexCounters:
 class TestRecordVectorSummaryContract:
     """``record_vector_summary`` is the one-stop helper for vector metrics."""
 
-    def test_helper_emits_exactly_six_jsonl_lines(self, metrics_path: Path) -> None:
-        # One search call: 6 counters → 6 JSONL lines on disk.
+    def test_helper_emits_exactly_six_jsonl_lines_when_reindex_present(
+        self, metrics_path: Path
+    ) -> None:
+        # When both reindex kwargs are supplied, all 6 counters fire → 6 lines.
         before = len(_read_metrics(metrics_path))
         observability.record_vector_summary(
             invoked=1,
@@ -296,9 +299,14 @@ class TestRecordVectorSummaryContract:
             latency_ms=33,
             index_size=50,
             trigger="cli",
+            reindex_observations=250,
+            reindex_duration_seconds=12.0,
         )
         after = len(_read_metrics(metrics_path))
         assert after - before == 6
+
+        names = {e["name"] for e in _read_metrics(metrics_path)[before:after]}
+        assert names == set(observability.VECTOR_COUNTER_NAMES)
 
     def test_helper_emits_only_relevant_lines_when_reindex_kw_unused(
         self, metrics_path: Path
@@ -337,10 +345,6 @@ class TestHybridBackendCounterIntegration:
     def test_hybrid_search_emits_invoked_counter_with_programmatic_trigger(
         self, metrics_path: Path
     ) -> None:
-        from flow_engineering.engram_io import InMemoryBackend
-        from flow_engineering.embedding_provider import MockEmbeddingProvider
-        from flow_engineering.hybrid_backend import HybridBackend
-
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
@@ -366,10 +370,6 @@ class TestHybridBackendCounterIntegration:
     def test_hybrid_search_semantic_emits_invoked_counter(
         self, metrics_path: Path
     ) -> None:
-        from flow_engineering.engram_io import InMemoryBackend
-        from flow_engineering.embedding_provider import MockEmbeddingProvider
-        from flow_engineering.hybrid_backend import HybridBackend
-
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
@@ -390,10 +390,6 @@ class TestHybridBackendCounterIntegration:
     def test_hybrid_search_does_not_emit_reindex_only_counters(
         self, metrics_path: Path
     ) -> None:
-        from flow_engineering.engram_io import InMemoryBackend
-        from flow_engineering.embedding_provider import MockEmbeddingProvider
-        from flow_engineering.hybrid_backend import HybridBackend
-
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
@@ -412,10 +408,6 @@ class TestHybridBackendCounterIntegration:
     def test_latency_is_positive_for_real_search(
         self, metrics_path: Path
     ) -> None:
-        from flow_engineering.engram_io import InMemoryBackend
-        from flow_engineering.embedding_provider import MockEmbeddingProvider
-        from flow_engineering.hybrid_backend import HybridBackend
-
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
