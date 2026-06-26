@@ -29,7 +29,6 @@ from flow_engineering.embedding_provider import (
 from flow_engineering.engram_io import EngramBackend, InMemoryBackend
 from flow_engineering.hybrid_backend import HybridBackend
 
-
 # --- Test fixtures (REQ-18 worked example + helper coverage) ----------------
 
 
@@ -343,16 +342,25 @@ def _build_worked_example():
       - obs3 has semantic 0.30 and FTS score 0.10 (hybrid = 0.15)
       - obs2 has semantic 0.00 and FTS score 0.20 (hybrid = 0.125)
     Insertion order is obs1 → obs2 → obs3 so id order is 1, 2, 3.
+
+    All three observations contain the FTS query substring "drift detection"
+    so they all appear in the candidate set returned by ``InMemoryBackend.mem_search``.
+    The per-observation FTS scores are then overridden via ``ScoredInMemoryBackend``
+    to hit the design D7 worked example values (0.50 / 0.20 / 0.10).
     """
     inner = InMemoryBackend()
     obs1 = inner.mem_save(
         title="obs1", content="drift detection strategy", topic_key="sdd/test/spec"
     )
     obs2 = inner.mem_save(
-        title="obs2", content="drift alarm", topic_key="sdd/test/spec"
+        title="obs2",
+        content="drift alarm drift detection",
+        topic_key="sdd/test/spec",
     )
     obs3 = inner.mem_save(
-        title="obs3", content="logging best practices", topic_key="sdd/test/spec"
+        title="obs3",
+        content="logging best practices drift detection",
+        topic_key="sdd/test/spec",
     )
 
     # Wrap with the scored test backend that attaches _fts_score.
@@ -374,8 +382,8 @@ def _build_worked_example():
         {
             "drift detection": q_vec,
             "drift detection strategy": obs1_vec,
-            "drift alarm": obs2_vec,
-            "logging best practices": obs3_vec,
+            "drift alarm drift detection": obs2_vec,
+            "logging best practices drift detection": obs3_vec,
         }
     )
     return scored, provider, obs1, obs2, obs3
@@ -507,18 +515,15 @@ class TestHybridAlphaBoundaries:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"alpha must be in \[0\.0, 1\.0\], got 1\.5"):
             hb.mem_search_hybrid("any query", alpha=1.5)
-        assert "[0.0, 1.0]" in str(exc_info.value)
-        assert "1.5" in str(exc_info.value)
 
     def test_hybrid_alpha_negative_raises_value_error(self) -> None:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match=r"alpha must be in \[0\.0, 1\.0\], got -0\.1"):
             hb.mem_search_hybrid("any query", alpha=-0.1)
-        assert "[0.0, 1.0]" in str(exc_info.value)
 
     def test_hybrid_alpha_out_of_range_does_no_embedding_work(self) -> None:
         # Validation MUST happen before any embedding call.
@@ -527,7 +532,7 @@ class TestHybridAlphaBoundaries:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"alpha must be in \[0\.0, 1\.0\]"):
             hb.mem_search_hybrid("any query", alpha=2.0)
 
 
