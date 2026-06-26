@@ -426,9 +426,7 @@ class TestSearchKFlag:
 
         result = runner.invoke(main, ["search", "--semantic", "--k", "2", "drift"])
         assert result.exit_code == 0, result.output
-        # At most 2 results in the table.
-        payload = json.loads(result.output) if "--json" not in result.output else None
-        # We just confirm the command succeeded; the exact row count is asserted in the JSON test.
+        # Just confirm the command succeeded; the exact row count is asserted in the JSON test.
 
     def test_search_k_json_returns_at_most_k(
         self,

@@ -119,16 +119,24 @@ class HybridBackend(EngramBackend):
     # --- REQ-17 + REQ-18 retrieval methods (T1.5) ---
 
     def mem_search_semantic(
-        self, query: str, k: int = 10
+        self, query: str, k: int = 10, *, trigger: str = "programmatic"
     ) -> list[dict[str, Any]]:
-        """Pure semantic search (REQ-17). Delegates to ``mem_search_hybrid(alpha=1.0)``."""
-        return self.mem_search_hybrid(query, k=k, alpha=1.0)
+        """Pure semantic search (REQ-17). Delegates to ``mem_search_hybrid(alpha=1.0)``.
+
+        ``trigger`` controls the observability tag (REQ-22). Defaults to
+        ``"programmatic"`` for direct library use; the CLI layer passes
+        ``trigger="cli"`` so dashboards can separate user invocations from
+        background work.
+        """
+        return self.mem_search_hybrid(query, k=k, alpha=1.0, trigger=trigger)
 
     def mem_search_hybrid(
         self,
         query: str,
         k: int = 10,
         alpha: float = 0.5,
+        *,
+        trigger: str = "programmatic",
     ) -> list[dict[str, Any]]:
         """Hybrid semantic + FTS search (REQ-18, design D7 linear combo).
 
@@ -150,10 +158,10 @@ class HybridBackend(EngramBackend):
         REQ-17 contract, plus the inner observation fields for convenience.
 
         Every successful invocation emits the REQ-22 vector counter batch via
-        :func:`observability.record_vector_summary` with ``trigger="programmatic"``.
-        The CLI layer (PR#2 T2.4) calls with ``trigger="cli"`` instead. The
-        observability helper is fail-open (mirrors ``increment``) so a broken
-        metrics sink can never break retrieval.
+        :func:`observability.record_vector_summary` with the requested
+        ``trigger`` tag (``"programmatic"`` by default; ``"cli"`` when invoked
+        from the CLI layer). The observability helper is fail-open (mirrors
+        ``increment``) so a broken metrics sink can never break retrieval.
         """
         if not (0.0 <= alpha <= 1.0):
             raise ValueError(f"alpha must be in [0.0, 1.0], got {alpha}")
@@ -163,12 +171,13 @@ class HybridBackend(EngramBackend):
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         with contextlib.suppress(Exception):
             # Observability MUST be fail-open — never let metrics break retrieval.
+            safe_trigger = trigger if trigger in observability.VECTOR_TRIGGER_VALUES else "programmatic"
             observability.record_vector_summary(
                 invoked=1,
                 results_returned=len(results),
                 latency_ms=elapsed_ms,
                 index_size=self._safe_index_size(),
-                trigger="programmatic",
+                trigger=safe_trigger,
             )
         return results
 
