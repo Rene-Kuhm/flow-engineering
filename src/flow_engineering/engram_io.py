@@ -285,6 +285,51 @@ class InMemoryBackend(EngramBackend):
         """
         raise VectorSearchDisabled()
 
+    def mem_search_federated(
+        self,
+        query: str,
+        projects: list[str] | None = None,
+        *,
+        limit: int = 10,
+        since: str | None = None,
+        type_filter: list[str] | None = None,
+        scope: str = "project",
+    ) -> list[dict[str, Any]]:
+        """Federated multi-project search over the in-memory dict (REQ-23).
+
+        REQ-23 (cross-project-federation): filters observations by ``projects``
+        (list membership), ``since`` (lexicographic ``>=`` on
+        ``YYYY-MM-DD HH:MM:SS`` TEXT), and ``type_filter`` (exact match,
+        case-sensitive). ``projects=None`` ⇒ no project filter (search all).
+        ``projects=[]`` ⇒ ``ValueError`` (fail fast — mirrors the SQLite
+        ``IN ()`` syntax error guard from design D1). Non-empty ``projects``
+        restricts to membership in the list. Results are sorted by id
+        descending (newest first) then truncated to ``limit``.
+
+        Substring match against title + content mirrors ``mem_search`` so
+        unit tests do not require SQLite FTS5.
+        """
+        if projects is not None and len(projects) == 0:
+            raise ValueError("projects must be None or non-empty list")
+        results: list[dict[str, Any]] = []
+        for obs in sorted(
+            self.observations.values(), key=lambda o: o["id"], reverse=True
+        ):
+            if projects is not None and obs.get("project") not in projects:
+                continue
+            if since is not None and str(obs.get("created_at", "")) < since:
+                continue
+            if type_filter is not None and obs.get("type") not in type_filter:
+                continue
+            if query:
+                q = query.lower()
+                if q not in obs.get("content", "").lower() and q not in obs.get("title", "").lower():
+                    continue
+            results.append(obs)
+            if len(results) >= limit:
+                break
+        return results
+
 
 def phase_topic_key(change: str, phase: str) -> str:
     """Build the topic_key for a change phase observation."""
