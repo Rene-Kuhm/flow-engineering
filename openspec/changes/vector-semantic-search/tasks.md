@@ -397,14 +397,14 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `tests/bdd/test_vector_search_steps.py` (extend)
 - **Dependencies:** T2.5
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-21:
+  - [x] Feature file contains 5 scenarios matching spec REQ-21:
     1. `flow reindex` on empty corpus completes with 0 indexed
     2. `flow reindex` on 250 observations emits progress lines + done
     3. Second `flow reindex` is idempotent (no-op)
     4. `--dry-run` reports count without writing
     5. Crash mid-run — restart completes from last committed batch
-  - [ ] Step defs use `CliRunner` + seeded `InMemoryBackend` + temp `SqliteVecStore`
-  - [ ] `pytest tests/bdd/req21_reindex.feature -v` passes all 5 scenarios
+  - [x] Step defs use `CliRunner` + seeded `InMemoryBackend` + temp `SqliteVecStore`
+  - [x] `pytest tests/bdd/req21_reindex.feature -v` passes all 5 scenarios
 - **Commit:** `test(bdd): req21_reindex feature with 5 scenarios`
 
 ### T2.7 — CHANGELOG.md v0.4.0 entry + 6 SKILL.md "Vector search hook" prose updates
@@ -422,9 +422,9 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `~/.config/opencode/skills/sdd-archive/SKILL.md` (runtime)
 - **Dependencies:** all PR#2 tasks
 - **Acceptance criteria:**
-  - [ ] `CHANGELOG.md` v0.4.0 entry lists: `--semantic` / `--hybrid` / `--alpha` / `--k` flags, `flow reindex` subcommand, `HybridBackend` composition, `sqlite-vec` storage, `sentence-transformers` provider, `[vectors]` extra, 6 new `vector_*` counters
-  - [ ] 6 SKILL.md prose updates name all 6 REQs (REQ-17..22) and reference `sqlite-vec` + `sentence-transformers` + `[vectors]` extra in their respective "Vector search hook" sections
-  - [ ] CHANGELOG entry follows the `[0.3.0]` format (Added / Tests / Notes sections)
+  - [x] `CHANGELOG.md` v0.4.0 entry lists: `--semantic` / `--hybrid` / `--alpha` / `--k` flags, `flow reindex` subcommand, `HybridBackend` composition, `sqlite-vec` storage, `sentence-transformers` provider, `[vectors]` extra, 6 new `vector_*` counters
+  - [x] 6 SKILL.md prose updates name all 6 REQs (REQ-17..22) and reference `sqlite-vec` + `sentence-transformers` + `[vectors]` extra in their respective "Vector search hook" sections
+  - [x] CHANGELOG entry follows the `[0.3.0]` format (Added / Tests / Notes sections)
 - **Commit:** `docs(release): CHANGELOG v0.4.0 entry + 6 SKILL.md vector search hooks`
 
 ### PR#2 totals (per prompt)
