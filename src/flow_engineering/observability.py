@@ -13,8 +13,16 @@ Counters used by REQ-6 (PR#2 batch 1):
 - ``bindings_confirmed_total`` -- incremented by the count of confirmed bindings
   (so a batch of 3 confirmations contributes 3 to the total).
 
-REQ-8 closure in PR#2 batch 2 will add derived counters (``manual_count``,
-``avg_bindings_per_observation``, ``backfill_coverage``) on top of this sink.
+REQ-8 close in PR#2 batch 2 adds:
+- ``inspect_invoked_total`` -- one event per ``flow inspect`` call.
+- ``inspect_render_ms`` -- one event per render with ``elapsed_ms`` field.
+- ``backfill_observations_total`` -- total observations scanned for coverage.
+- ``backfill_with_refs_total`` -- observations that carry ``source: backfill``.
+
+Plus the helper ``backfill_coverage(backend)`` that returns the ratio of
+backfilled observations to total observations (rounded to 3 decimals),
+and ``record_backfill_coverage(observations_total, with_refs)`` that
+increments the two coverage counters in a single call.
 """
 
 from __future__ import annotations
@@ -23,13 +31,19 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 DEFAULT_METRICS_DIR: Path = Path.home() / ".flow-engineering"
 DEFAULT_METRICS_FILE: str = "metrics.jsonl"
 METRICS_PATH_ENV: str = "FLOW_METRICS_PATH"
 
 _DEFAULT_PATH: Path = DEFAULT_METRICS_DIR / DEFAULT_METRICS_FILE
+
+# REQ-8 close (PR#2 batch 2): stale threshold for freshness rendering.
+STALE_DAYS_THRESHOLD: int = 30
+
+if TYPE_CHECKING:
+    from flow_engineering.engram_io import EngramBackend
 
 
 def default_metrics_path() -> Path:
@@ -104,3 +118,93 @@ def read_all(path: Path | None = None) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             continue
     return events
+
+
+# ---------- Derived helpers (REQ-8 close, PR#2 batch 2) ----------
+
+
+def _extract_block_source(content: str) -> str | None:
+    """Return the ``source`` field from the trailing code_refs block.
+
+    Returns ``None`` when the marker is absent or the block is malformed.
+    Defensive: this is called by ``backfill_coverage`` which iterates the
+    whole observation set, so any single bad row MUST NOT poison the scan.
+    """
+    from flow_engineering.binding import CODE_REFS_MARKER
+
+    marker_idx = content.rfind(CODE_REFS_MARKER)
+    if marker_idx < 0:
+        return None
+    body = content[marker_idx + len(CODE_REFS_MARKER):].strip()
+    if not body:
+        return None
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    source = payload.get("source")
+    return source if isinstance(source, str) else None
+
+
+def backfill_coverage(backend: EngramBackend) -> float:
+    """Return the ratio of backfill-sourced observations to total observations.
+
+    The scan iterates every observation the backend exposes via
+    ``iter_observations()`` and counts those whose trailing ``code_refs``
+    block carries ``source: backfill``. Malformed blocks are skipped
+    (fail-open). The result is rounded to 3 decimal places.
+
+    Returns ``0.0`` when no observations exist.
+    """
+    observations = backend.iter_observations()
+    if not observations:
+        return 0.0
+    total = len(observations)
+    with_refs = sum(
+        1 for o in observations if _extract_block_source(str(o.get("content", ""))) == "backfill"
+    )
+    return round(with_refs / total, 3)
+
+
+def record_backfill_coverage(*, observations_total: int, with_refs: int) -> None:
+    """Increment the two backfill-coverage counters in one call."""
+    increment("backfill_observations_total", count=observations_total)
+    increment("backfill_with_refs_total", count=with_refs)
+
+
+# ---------- Freshness helpers (REQ-7) ----------
+
+
+def _format_age(elapsed_ms: int) -> str:
+    """Render an age in milliseconds as a short human string.
+
+    Examples: ``"12m ago"``, ``"3d ago"``, ``"60d ago (stale)"``.
+    """
+    seconds = max(0, elapsed_ms) // 1000
+    if seconds < 60:
+        return f"{seconds}s ago"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    suffix = " (stale)" if days > STALE_DAYS_THRESHOLD else ""
+    return f"{days}d ago{suffix}"
+
+
+def compute_freshness(updated_at_ms: int | None, *, now_ms: int | None = None) -> str:
+    """Return the freshness label for an observation's ``updated_at``.
+
+    Returns ``"never"`` when ``updated_at_ms`` is missing or non-positive.
+    The label is short (``"5d ago"``, ``"60d ago (stale)"``) so it fits the
+    inspect table column.
+    """
+    if updated_at_ms is None or updated_at_ms <= 0:
+        return "never"
+    if now_ms is None:
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    return _format_age(now_ms - updated_at_ms)
