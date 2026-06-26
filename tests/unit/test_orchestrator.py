@@ -65,9 +65,13 @@ class TestApplyChange:
         backend = InMemoryBackend()
         _make_change_with_tasks(tmp_path, status=ChangeStatus.TASKED)
         apply_change("test-change", tmp_path, backend=backend)
-        progress = json.loads(backend.mem_search(
+        # The saved content now ends with a code_refs block; parse only the
+        # JSON prose part.
+        raw = backend.mem_search(
             query="T1.1", topic_key="sdd/test-change/apply-progress"
-        )[0]["content"])
+        )[0]["content"]
+        prose = raw.split("<!-- code_refs -->")[0]
+        progress = json.loads(prose)
         assert "T1.1" in progress["tasks"]
         assert progress["tasks"]["T1.1"]["status"] == "in_progress"
 

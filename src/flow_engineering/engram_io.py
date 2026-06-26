@@ -1,6 +1,10 @@
 """Engram I/O wrapper for flow-engineering.
 
 REQ-8: Cross-session recovery via Engram topic keys.
+REQ-3 (decision-code-linking PR#1): ``save_phase`` appends an unbound
+``code_refs`` block when the marker is absent, preserves valid blocks, and
+rejects malformed blocks before writing. ``load_code_refs`` returns the
+parsed bindings for a phase.
 """
 
 from __future__ import annotations
@@ -8,6 +12,15 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from typing import Any
+
+from flow_engineering.binding import (
+    CODE_REFS_MARKER,
+    CodeRef,
+    extract_code_refs,
+    format_code_refs_block,
+    split_prose_and_refs,
+    validate_block,
+)
 
 
 class EngramBackend(ABC):
@@ -38,6 +51,31 @@ class EngramBackend(ABC):
     def mem_get_observation(self, id: int) -> dict[str, Any]:
         """Get a single observation by ID."""
 
+    def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
+        """Return every observation, optionally filtered by project.
+
+        Default impl uses mem_search with an empty query and a generous
+        limit; real backends should override for efficient scans.
+        """
+        results = self.mem_search(query="", topic_key=None, limit=10_000, scope="project")
+        if project is not None:
+            return [r for r in results if r.get("project") in (project, None) or True]
+        return results
+
+    def update_observation(
+        self,
+        id: int,
+        *,
+        content: str | None = None,
+        type: str | None = None,
+    ) -> dict[str, Any]:
+        """Replace an existing observation's content and/or type.
+
+        Default impl raises NotImplementedError — concrete backends MUST
+        override (the InMemoryBackend does).
+        """
+        raise NotImplementedError("update_observation not implemented for this backend")
+
 
 class InMemoryBackend(EngramBackend):
     """In-memory backend for tests."""
@@ -61,6 +99,9 @@ class InMemoryBackend(EngramBackend):
             "topic_key": topic_key,
             "type": type,
             "scope": scope,
+            "project": "insyd",
+            "created_at": self.next_id * 1000,
+            "updated_at": self.next_id * 1000,
         }
         self.observations[self.next_id] = obs
         self.next_id += 1
@@ -78,8 +119,9 @@ class InMemoryBackend(EngramBackend):
         for obs in sorted(self.observations.values(), key=lambda o: o["id"], reverse=True):
             if topic_key and obs["topic_key"] != topic_key:
                 continue
-            if query.lower() in obs["content"].lower() or query.lower() in obs["title"].lower():
-                results.append(obs)
+            if query and query.lower() not in obs["content"].lower() and query.lower() not in obs["title"].lower():
+                continue
+            results.append(obs)
             if len(results) >= limit:
                 break
         return results
@@ -88,6 +130,31 @@ class InMemoryBackend(EngramBackend):
         if id not in self.observations:
             raise KeyError(f"No observation with id {id}")
         return self.observations[id]
+
+    def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
+        # Empty query scans all observations (mem_search returns everything).
+        all_obs = self.mem_search(query="", topic_key=None, limit=10_000, scope="project")
+        if project is None:
+            return all_obs
+        return [o for o in all_obs if o.get("project") == project]
+
+    def update_observation(
+        self,
+        id: int,
+        *,
+        content: str | None = None,
+        type: str | None = None,
+    ) -> dict[str, Any]:
+        if id not in self.observations:
+            raise KeyError(f"No observation with id {id}")
+        obs = self.observations[id]
+        if content is not None:
+            obs["content"] = content
+        if type is not None:
+            obs["type"] = type
+        # Advance updated_at, preserve created_at.
+        obs["updated_at"] = obs.get("updated_at", 0) + 1
+        return obs
 
 
 def phase_topic_key(change: str, phase: str) -> str:
@@ -108,12 +175,22 @@ class EngramClient:
         self.backend = backend
 
     def save_phase(self, phase: str, content: str, title: str | None = None) -> dict[str, Any]:
-        """Save a phase artifact (explore/propose/design/spec/tasks/apply-progress/etc)."""
+        """Save a phase artifact (explore/propose/design/spec/tasks/apply-progress/etc).
+
+        ``code_refs`` block handling (REQ-3):
+        - When the marker is absent, append an empty ``unbound`` block so
+          downstream readers can rely on the block being present.
+        - When the marker IS present, validate the block via
+          ``binding.validate_block``. Malformed or unknown-schema blocks
+          raise ``ParseError`` and prevent the write (no row is written).
+        - A valid existing block is preserved as-is.
+        """
         if title is None:
             title = f"{self.change}/{phase}"
+        new_content = self._ensure_code_refs_block(content)
         return self.backend.mem_save(
             title=title,
-            content=content,
+            content=new_content,
             topic_key=phase_topic_key(self.change, phase),
             type="architecture",
         )
@@ -127,6 +204,53 @@ class EngramClient:
         content = self.backend.mem_get_observation(results[0]["id"])["content"]
         return content if isinstance(content, str) else str(content)
 
+    def load_code_refs(self, phase: str) -> list[CodeRef] | None:
+        """Return the parsed ``code_refs`` bindings for a phase.
+
+        Returns ``None`` when no observation exists for the phase. Returns
+        an empty list when the phase exists but the marker is absent (legacy
+        content). Raises ``ParseError`` only when the marker is present but
+        the block is malformed; callers may swallow that to render a row
+        with the parse-error note (REQ-7 scenario).
+        """
+        content = self.load_phase(phase)
+        if content is None:
+            return None
+        if CODE_REFS_MARKER not in content:
+            return []
+        return extract_code_refs(content)
+
+    def load_phase_prose(self, phase: str) -> str | None:
+        """Load the phase content with the trailing ``code_refs`` block stripped.
+
+        Useful for callers that need the prose portion (e.g. JSON parsing
+        of apply-progress). Returns ``None`` when the phase is missing.
+        """
+        content = self.load_phase(phase)
+        if content is None:
+            return None
+        prose, _block = split_prose_and_refs(content)
+        return prose
+
+    @staticmethod
+    def _ensure_code_refs_block(content: str) -> str:
+        """Return content guaranteed to end with a valid ``code_refs`` block.
+
+        - Marker absent  -> append an empty unbound block.
+        - Marker present -> validate the existing block (raises ParseError
+          on bad JSON / unknown schema); preserve as-is when valid.
+        """
+        if CODE_REFS_MARKER in content:
+            # Existing block — validate before write. Raises ParseError on failure.
+            prose, block = split_prose_and_refs(content)
+            body = block[len(CODE_REFS_MARKER):].strip()
+            if body:
+                validate_block(body)  # raises ParseError on bad shape
+            # Preserve prose + block byte-for-byte.
+            return content
+        # Append a fresh unbound block.
+        return content + format_code_refs_block([], source="unbound")
+
     def save_progress(
         self,
         task_id: str,
@@ -134,7 +258,7 @@ class EngramClient:
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Save apply-progress for a specific task. Merge with existing if present."""
-        existing = self.load_phase("apply-progress") or "{}"
+        existing = self.load_phase_prose("apply-progress") or "{}"
         try:
             data = json.loads(existing)
         except json.JSONDecodeError:

@@ -82,7 +82,9 @@ def apply_change(
     completed: set[str] = set()
     if backend is not None:
         client = EngramClient(change, backend)
-        progress_json = client.load_phase("apply-progress")
+        # Use load_phase_prose to strip the trailing code_refs block that
+        # save_phase now appends; otherwise json.loads fails with "Extra data".
+        progress_json = client.load_phase_prose("apply-progress")
         if progress_json:
             try:
                 progress = json.loads(progress_json)
