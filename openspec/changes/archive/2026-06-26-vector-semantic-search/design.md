@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from openspec/changes/vector-semantic-search/design.md -->
 # Design: vector-semantic-search
 
 ## Technical Approach

@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from openspec/changes/vector-semantic-search/proposal.md -->
 # Proposal: vector-semantic-search
 
 ## Intent
