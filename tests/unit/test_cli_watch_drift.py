@@ -41,6 +41,35 @@ runner = CliRunner()
 # ---------- Fixtures ----------
 
 
+def _patch_start_watch(
+    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
+) -> None:
+    """Stub ``flow_engineering.cli.start_watch`` so the test captures kwargs.
+
+    The CLI imports ``start_watch`` at module load time, so monkey-patching
+    the daemon module attribute alone is not enough — we MUST patch the
+    reference held by ``flow_engineering.cli``.
+    """
+    import flow_engineering.cli as cli_mod
+
+    def _stub(
+        change: str, target: Path, *,
+        drift: bool = False,
+        graph_json_path: Path | None = None,
+        backend: Any = None,
+        on_summary: Any = None,
+    ) -> tuple[bool, str]:
+        captured["change"] = change
+        captured["target"] = target
+        captured["drift"] = drift
+        captured["graph_json_path"] = graph_json_path
+        captured["backend"] = backend
+        captured["on_summary"] = on_summary
+        return True, "stubbed message"
+
+    monkeypatch.setattr(cli_mod, "start_watch", _stub)
+
+
 @pytest.fixture
 def metrics_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "metrics.jsonl"
@@ -109,21 +138,7 @@ class TestDriftFlagWiring:
         _make_change(tmp_path)
         _patch_observer(monkeypatch)
         captured: dict[str, Any] = {}
-
-        def _stub(
-            change: str, target: Path, *,
-            drift: bool = False,
-            graph_json_path: Path | None = None,
-            backend: Any = None,
-            on_summary: Any = None,
-        ) -> tuple[bool, str]:
-            captured["change"] = change
-            captured["target"] = target
-            captured["drift"] = drift
-            captured["graph_json_path"] = graph_json_path
-            return True, "stubbed message"
-
-        monkeypatch.setattr(daemon, "start_watch", _stub)
+        _patch_start_watch(monkeypatch, captured)
 
         result = runner.invoke(
             cli_main, ["watch", "my-change", "--in", str(tmp_path), "--drift"],
@@ -138,12 +153,7 @@ class TestDriftFlagWiring:
         _make_change(tmp_path)
         _patch_observer(monkeypatch)
         captured: dict[str, Any] = {}
-
-        def _stub(change: str, target: Path, *, drift: bool = False, **kw: Any) -> tuple[bool, str]:
-            captured["drift"] = drift
-            return True, "stubbed message"
-
-        monkeypatch.setattr(daemon, "start_watch", _stub)
+        _patch_start_watch(monkeypatch, captured)
 
         result = runner.invoke(
             cli_main, ["watch", "my-change", "--in", str(tmp_path)],
@@ -159,16 +169,7 @@ class TestDriftFlagWiring:
         _make_change(tmp_path)
         _patch_observer(monkeypatch)
         captured: dict[str, Any] = {}
-
-        def _stub(
-            change: str, target: Path, *,
-            drift: bool = False, graph_json_path: Path | None = None, **kw: Any
-        ) -> tuple[bool, str]:
-            captured["drift"] = drift
-            captured["graph_json_path"] = graph_json_path
-            return True, "stubbed"
-
-        monkeypatch.setattr(daemon, "start_watch", _stub)
+        _patch_start_watch(monkeypatch, captured)
 
         result = runner.invoke(
             cli_main,
@@ -206,7 +207,7 @@ class TestDriftCounters:
         recorded: list[DriftReport] = []
         monkeypatch.setattr(observability, "record_drift_summary", lambda r: recorded.append(r))
 
-        captured_summary: list[str] = []
+        import flow_engineering.cli as cli_mod
 
         def _stub(
             change: str, target: Path, *, drift: bool = False,
@@ -222,7 +223,7 @@ class TestDriftCounters:
                 )
             return True, "stubbed"
 
-        monkeypatch.setattr(daemon, "start_watch", _stub)
+        monkeypatch.setattr(cli_mod, "start_watch", _stub)
 
         result = runner.invoke(
             cli_main,
@@ -263,6 +264,8 @@ class TestStdoutSummary:
         monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
         monkeypatch.setattr(observability, "record_drift_summary", lambda r: None)
 
+        import flow_engineering.cli as cli_mod
+
         def _stub(
             change: str, target: Path, *, drift: bool = False,
             graph_json_path: Path | None = None, on_summary: Any = None, **kw: Any
@@ -276,7 +279,7 @@ class TestStdoutSummary:
                 )
             return True, "stubbed"
 
-        monkeypatch.setattr(daemon, "start_watch", _stub)
+        monkeypatch.setattr(cli_mod, "start_watch", _stub)
 
         result = runner.invoke(
             cli_main,
