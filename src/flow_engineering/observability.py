@@ -19,6 +19,20 @@ REQ-8 close in PR#2 batch 2 adds:
 - ``backfill_observations_total`` -- total observations scanned for coverage.
 - ``backfill_with_refs_total`` -- observations that carry ``source: backfill``.
 
+REQ-22 (vector-semantic-search PR#1 T1.7) adds six ``vector_*`` counters:
+- ``vector_search_invoked_total`` (tagged ``trigger=cli|programmatic``)
+- ``vector_search_results_returned_total``
+- ``vector_search_latency_ms`` (histogram via per-event ``elapsed_ms``)
+- ``vector_index_size_observations`` (gauge)
+- ``reindex_observations_total``
+- ``reindex_duration_seconds``
+
+The naming follows the REQ-8 convention: ``_total`` suffix for counters,
+``_ms`` / ``_seconds`` suffix for timing, no suffix on gauges. A change that
+renames any of these would silently break ``flow metrics`` consumers across
+the decision-code-linking → vector-semantic-search boundary, so the names are
+exposed via :data:`VECTOR_COUNTER_NAMES` for downstream discovery.
+
 Plus the helper ``backfill_coverage(backend)`` that returns the ratio of
 backfilled observations to total observations (rounded to 3 decimals),
 and ``record_backfill_coverage(observations_total, with_refs)`` that
@@ -41,6 +55,25 @@ _DEFAULT_PATH: Path = DEFAULT_METRICS_DIR / DEFAULT_METRICS_FILE
 
 # REQ-8 close (PR#2 batch 2): stale threshold for freshness rendering.
 STALE_DAYS_THRESHOLD: int = 30
+
+
+# ---------- REQ-22 vector counter catalog ----------
+
+
+VECTOR_COUNTER_NAMES: list[str] = [
+    "vector_search_invoked_total",
+    "vector_search_results_returned_total",
+    "vector_search_latency_ms",
+    "vector_index_size_observations",
+    "reindex_observations_total",
+    "reindex_duration_seconds",
+]
+"""Canonical list of REQ-22 vector counter names (REQ-22 scenario 4 contract).
+
+The list is the single source of truth for ``flow metrics`` consumers and
+for future changes that add to the catalog. The order matches the table in
+``openspec/changes/vector-semantic-search/spec.md`` REQ-22.
+"""
 
 if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
@@ -250,3 +283,61 @@ def record_drift_summary(report: "DriftReport") -> None:
         "drift_unable_to_verify_total",
         count=1 if report.graph_unavailable else 0,
     )
+
+
+# ---------- Vector summary (REQ-22) ----------
+
+
+#: Valid ``trigger`` values for ``vector_search_invoked_total`` events.
+VECTOR_TRIGGER_VALUES: frozenset[str] = frozenset({"cli", "programmatic"})
+
+
+def record_vector_summary(
+    *,
+    invoked: int,
+    results_returned: int,
+    latency_ms: int,
+    index_size: int,
+    trigger: str,
+    reindex_observations: int | None = None,
+    reindex_duration_seconds: float | None = None,
+) -> None:
+    """Emit the REQ-22 vector metrics in a single call (parallels ``record_drift_summary``).
+
+    Always emits the four search-related counters:
+    - ``vector_search_invoked_total{trigger=<cli|programmatic>}``
+    - ``vector_search_results_returned_total``
+    - ``vector_search_latency_ms`` with ``elapsed_ms`` field
+    - ``vector_index_size_observations`` with ``value`` field
+
+    Additionally emits the two reindex counters when ``reindex_observations``
+    is provided (callers that wrap a ``flow reindex`` invocation pass this):
+    - ``reindex_observations_total`` with ``count`` field
+    - ``reindex_duration_seconds`` with ``value`` field
+
+    Defensive: negative numeric inputs are clamped to 0 so a bad latency
+    sample cannot produce NaN / negative JSON values. Invalid ``trigger``
+    values fall back to ``"programmatic"`` so the catalog invariant holds.
+    Failures are absorbed by :func:`increment` — this helper never raises.
+    """
+    safe_invoked = max(0, int(invoked))
+    safe_results = max(0, int(results_returned))
+    safe_latency = max(0, int(latency_ms))
+    safe_index_size = max(0, int(index_size))
+    safe_trigger = trigger if trigger in VECTOR_TRIGGER_VALUES else "programmatic"
+
+    increment("vector_search_invoked_total", count=safe_invoked, trigger=safe_trigger)
+    increment("vector_search_results_returned_total", count=safe_results)
+    increment("vector_search_latency_ms", elapsed_ms=safe_latency)
+    increment("vector_index_size_observations", value=safe_index_size)
+
+    if reindex_observations is not None:
+        increment(
+            "reindex_observations_total",
+            count=max(0, int(reindex_observations)),
+        )
+    if reindex_duration_seconds is not None:
+        increment(
+            "reindex_duration_seconds",
+            value=max(0.0, float(reindex_duration_seconds)),
+        )

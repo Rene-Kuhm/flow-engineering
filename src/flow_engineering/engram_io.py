@@ -32,8 +32,32 @@ METADATA_MARKER: str = "<!-- metadata -->"
 _METADATA_SCHEMA: int = 1
 
 
+class VectorSearchDisabled(RuntimeError):
+    """Raised when vector / hybrid search is called without the activation gate.
+
+    REQ-17: the message MUST include the install hint so users without the
+    ``[vectors]`` extra get an actionable error. Subclassing ``RuntimeError``
+    lets callers isolate gate failures from genuine bugs in semantic search
+    code paths.
+    """
+
+    def __init__(self, message: str | None = None) -> None:
+        if message is None:
+            message = (
+                "Vector search disabled. "
+                "Install with: pip install flow-engineering[vectors]"
+            )
+        super().__init__(message)
+
+
 class EngramBackend(ABC):
-    """Abstract Engram backend. Real implementation calls MCP, tests use in-memory."""
+    """Abstract Engram backend. Real implementation calls MCP, tests use in-memory.
+
+    ABC v1.1 — added ``mem_search_semantic`` and ``mem_search_hybrid`` as default
+    ``NotImplementedError`` (NON-BREAKING; mirrors the ``update_observation``
+    precedent further below). Third-party subclasses import unchanged; they
+    only break at call-time of the new methods.
+    """
 
     @abstractmethod
     def mem_save(
@@ -59,6 +83,37 @@ class EngramBackend(ABC):
     @abstractmethod
     def mem_get_observation(self, id: int) -> dict[str, Any]:
         """Get a single observation by ID."""
+
+    def mem_search_semantic(
+        self, query: str, k: int = 10
+    ) -> list[dict[str, Any]]:
+        """Semantic search by embedding similarity (v1.1 — NON-BREAKING default).
+
+        Subclasses that do not override this method get a call-time
+        ``NotImplementedError``; instantiation is unaffected. The
+        ``InMemoryBackend`` test fixture overrides this to raise
+        ``VectorSearchDisabled`` with an actionable install hint.
+        """
+        raise NotImplementedError(
+            "vector search requires explicit backend impl — see [vectors] extra"
+        )
+
+    def mem_search_hybrid(
+        self,
+        query: str,
+        k: int = 10,
+        alpha: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """Hybrid semantic + BM25 search (v1.1 — NON-BREAKING default).
+
+        Subclasses that do not override this method get a call-time
+        ``NotImplementedError``; instantiation is unaffected. The
+        ``InMemoryBackend`` test fixture overrides this to raise
+        ``VectorSearchDisabled`` with an actionable install hint.
+        """
+        raise NotImplementedError(
+            "vector search requires explicit backend impl — see [vectors] extra"
+        )
 
     def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
         """Return every observation, optionally filtered by project.
@@ -164,6 +219,30 @@ class InMemoryBackend(EngramBackend):
         # Advance updated_at, preserve created_at.
         obs["updated_at"] = obs.get("updated_at", 0) + 1
         return obs
+
+    def mem_search_semantic(
+        self, query: str, k: int = 10
+    ) -> list[dict[str, Any]]:
+        """InMemoryBackend is the prose test fixture — vector search is opt-in.
+
+        REQ-17: ``InMemoryBackend`` raises ``VectorSearchDisabled`` with the
+        install hint when vector / hybrid methods are called. The prose
+        ``mem_search`` path stays unchanged so existing tests are unaffected.
+        """
+        raise VectorSearchDisabled()
+
+    def mem_search_hybrid(
+        self,
+        query: str,
+        k: int = 10,
+        alpha: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """InMemoryBackend is the prose test fixture — vector search is opt-in.
+
+        REQ-17: see ``mem_search_semantic`` above. Hybrid scoring is only
+        available via a real vector-enabled backend.
+        """
+        raise VectorSearchDisabled()
 
 
 def phase_topic_key(change: str, phase: str) -> str:
