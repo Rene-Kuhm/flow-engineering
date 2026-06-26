@@ -353,13 +353,13 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `tests/unit/test_cli_search_semantic.py` (NEW)
 - **Dependencies:** T1.7 (counters), PR#1 merged
 - **Acceptance criteria:**
-  - [ ] RED: `test_cli_search_semantic_missing_extra_exits_nonzero` fails; `test_cli_search_hybrid_with_alpha_param` fails
-  - [ ] GREEN: `flow search --semantic "drift detection"` exits non-zero with stderr `pip install flow-engineering[vectors]` when extra missing (REQ-17 scenario 4); NO traceback printed
-  - [ ] GREEN: `flow search --semantic "..."` works one-shot when extra present + env unset (REQ-17 gate state row 3)
-  - [ ] GREEN: `flow search --hybrid "..." --alpha 0.7 --k 5` works; `alpha` validated `[0.0, 1.0]`
-  - [ ] GREEN: Default `flow search "..."` (no flag) remains byte-identical to v0.3.0 (REQ-17 scenario 5 zero regression)
-  - [ ] GREEN: `_default_save_backend()` returns `HybridBackend` ONLY when BOTH extra present AND `FLOW_VECTOR_SEARCH=1` (gate state row 4); otherwise returns inner unchanged
-  - [ ] Counter `vector_search_invoked_total{trigger=cli}` increments per CLI invocation
+  - [x] RED: `test_cli_search_semantic_missing_extra_exits_nonzero` fails; `test_cli_search_hybrid_with_alpha_param` fails
+  - [x] GREEN: `flow search --semantic "drift detection"` exits non-zero with stderr `pip install flow-engineering[vectors]` when extra missing (REQ-17 scenario 4); NO traceback printed
+  - [x] GREEN: `flow search --semantic "..."` works one-shot when extra present + env unset (REQ-17 gate state row 3)
+  - [x] GREEN: `flow search --hybrid "..." --alpha 0.7 --k 5` works; `alpha` validated `[0.0, 1.0]`
+  - [x] GREEN: Default `flow search "..."` (no flag) remains byte-identical to v0.3.0 (REQ-17 scenario 5 zero regression)
+  - [x] GREEN: `_default_save_backend()` returns `HybridBackend` ONLY when BOTH extra present AND `FLOW_VECTOR_SEARCH=1` (gate state row 4); otherwise returns inner unchanged
+  - [x] Counter `vector_search_invoked_total{trigger=cli}` increments per CLI invocation
 - **Commit:** `feat(cli): --semantic / --hybrid / --alpha / --k flags on flow search with gate validation`
 
 ### T2.5 — Implement `flow reindex` command (REQ-21)
@@ -373,18 +373,18 @@ Covers REQ-17 CLI surface (`flow search --semantic|--hybrid`) and REQ-21 (`flow 
   - `tests/unit/test_cli_reindex.py` (NEW)
 - **Dependencies:** T2.1 (`SentenceTransformersProvider`), T1.6 (`SqliteVecStore`), T1.7 (counters)
 - **Acceptance criteria:**
-  - [ ] RED: 5 fixtures for REQ-21 scenarios fail (empty corpus, 250 obs progress, idempotent, --dry-run, crash-resume)
-  - [ ] GREEN: `flow reindex` on empty corpus exits 0 with stderr `reindex: done — 0 observations indexed` (REQ-21 scenario 1)
-  - [ ] GREEN: `flow reindex --batch-size=100` on 250 obs emits 3 progress lines + 1 done line (REQ-21 scenario 2):
+  - [x] RED: 5 fixtures for REQ-21 scenarios fail (empty corpus, 250 obs progress, idempotent, --dry-run, crash-resume)
+  - [x] GREEN: `flow reindex` on empty corpus exits 0 with stderr `reindex: done — 0 observations indexed` (REQ-21 scenario 1)
+  - [x] GREEN: `flow reindex --batch-size=100` on 250 obs emits 3 progress lines + 1 done line (REQ-21 scenario 2):
     - `reindex: 100/250 (40%) embedded`
     - `reindex: 200/250 (80%) embedded`
     - `reindex: 250/250 (100%) embedded`
     - `reindex: done — 250 observations indexed in T seconds`
-  - [ ] GREEN: Second `flow reindex` is idempotent: counter delta = 0; `INSERT OR REPLACE` keyed on `(observation_id, model_version)` (REQ-21 scenario 3)
-  - [ ] GREEN: `flow reindex --dry-run` reports count without writing (REQ-21 scenario 4)
-  - [ ] GREEN: Crash mid-run — restart completes from last committed batch (REQ-21 scenario 5): transactions commit per batch; no separate checkpoint log
-  - [ ] GREEN: Counter `reindex_observations_total` increments by batch size per completed batch; `reindex_duration_seconds` set on completion
-  - [ ] GREEN: `SentenceTransformersProvider.embed_batch(texts)` returns `(N, 384)` array via single `model.encode()` call (batched, ~10x faster than per-text)
+  - [x] GREEN: Second `flow reindex` is idempotent: counter delta = 0; `INSERT OR REPLACE` keyed on `(observation_id, model_version)` (REQ-21 scenario 3)
+  - [x] GREEN: `flow reindex --dry-run` reports count without writing (REQ-21 scenario 4)
+  - [x] GREEN: Crash mid-run — restart completes from last committed batch (REQ-21 scenario 5): transactions commit per batch; no separate checkpoint log
+  - [x] GREEN: Counter `reindex_observations_total` increments by batch size per completed batch; `reindex_duration_seconds` set on completion
+  - [x] GREEN: `SentenceTransformersProvider.embed_batch(texts)` returns `(N, 384)` array via single `model.encode()` call (batched, ~10x faster than per-text)
 - **Commit:** `feat(cli): flow reindex subcommand with streaming progress + idempotent INSERT OR REPLACE`
 
 ### T2.6 — BDD feature `req21_reindex.feature` + step defs
