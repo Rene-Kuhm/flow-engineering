@@ -53,10 +53,10 @@ class VectorSearchDisabled(RuntimeError):
 class EngramBackend(ABC):
     """Abstract Engram backend. Real implementation calls MCP, tests use in-memory.
 
-    ABC v1.1 — added ``mem_search_semantic`` and ``mem_search_hybrid`` as default
-    ``NotImplementedError`` (NON-BREAKING; mirrors the ``update_observation``
-    precedent further below). Third-party subclasses import unchanged; they
-    only break at call-time of the new methods.
+    ABC v1.2 — added ``mem_search_federated`` as default ``NotImplementedError``
+    (NON-BREAKING; mirrors ``mem_search_semantic`` / ``mem_search_hybrid`` from
+    v1.1 and the ``update_observation`` precedent further below). Third-party
+    subclasses import unchanged; they only break at call-time of the new method.
     """
 
     @abstractmethod
@@ -119,6 +119,37 @@ class EngramBackend(ABC):
         """
         raise NotImplementedError(
             "vector search requires explicit backend impl — see [vectors] extra"
+        )
+
+    def mem_search_federated(
+        self,
+        query: str,
+        projects: list[str] | None = None,
+        *,
+        limit: int = 10,
+        since: str | None = None,
+        type_filter: list[str] | None = None,
+        scope: str = "project",
+    ) -> list[dict[str, Any]]:
+        """Federated multi-project search (v1.2 — NON-BREAKING default).
+
+        REQ-23 (cross-project-federation): search across N project tags in a
+        single FTS5 pass with optional ``project IN (...)``, ``created_at >=``
+        and ``type IN (...)`` filters. ``projects=None`` ⇒ no project filter
+        (search all). ``projects=[]`` ⇒ short-circuit ``[]`` (SQLite rejects
+        ``IN ()`` as a syntax error). Non-empty ``projects`` ⇒ parameterised
+        ``IN (?, ?, ...)``. ``since`` is lexicographic against the
+        ``YYYY-MM-DD HH:MM:SS`` TEXT format. ``type_filter`` is exact-match
+        (case-sensitive). Each returned row MUST preserve the ``project``
+        field for caller attribution.
+
+        Subclasses that do not override this method get a call-time
+        ``NotImplementedError``; instantiation is unaffected. The
+        ``InMemoryBackend`` test fixture overrides this to filter the
+        in-memory dict (no SQLite required for unit tests).
+        """
+        raise NotImplementedError(
+            "federated search requires explicit backend impl — EngramBackend v1.2"
         )
 
     def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
