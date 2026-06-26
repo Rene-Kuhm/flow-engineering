@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from openspec/changes/decision-reality-drift/design.md -->
 # Design: decision-reality-drift
 
 ## Technical Approach
