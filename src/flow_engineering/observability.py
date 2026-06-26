@@ -214,7 +214,7 @@ def compute_freshness(updated_at_ms: int | None, *, now_ms: int | None = None) -
 
 
 def record_drift_summary(report: "DriftReport") -> None:
-    """Increment 7 drift counters from a ``DriftReport`` (REQ-12).
+    """Increment 8 drift counters from a ``DriftReport`` (REQ-12).
 
     Emits one JSONL line per counter; counts of zero for absent classes
     are still emitted so the sink captures a complete snapshot per
@@ -222,13 +222,19 @@ def record_drift_summary(report: "DriftReport") -> None:
     ``increment``) and never raises.
 
     Counters:
-    - ``drift_invoked_total``        — one per scan, tagged with the change.
-    - ``drift_still_valid_total``    — bindings classified STILL_VALID.
-    - ``drift_label_drift_total``    — LABEL_DRIFT count.
-    - ``drift_stale_location_total`` — STALE_LOCATION count.
-    - ``drift_stale_id_total``       — STALE_ID count.
-    - ``drift_obsolete_total``       — OBSOLETE count.
-    - ``drift_contradicted_total``   — CONTRADICTED count.
+    - ``drift_invoked_total``           — one per scan, tagged with the change.
+    - ``drift_still_valid_total``       — bindings classified STILL_VALID.
+    - ``drift_label_drift_total``       — LABEL_DRIFT count.
+    - ``drift_stale_location_total``    — STALE_LOCATION count.
+    - ``drift_stale_id_total``          — STALE_ID count.
+    - ``drift_obsolete_total``          — OBSOLETE count.
+    - ``drift_contradicted_total``      — CONTRADICTED count.
+    - ``drift_unable_to_verify_total``  — 1 when ``graph_unavailable`` else 0.
+
+    The ``drift_unable_to_verify_total`` counter was missing from the
+    PR#1 implementation (only 7 counters were emitted); PR#2 batch G
+    adds it so the REQ-12 contract is complete and the missing-graph
+    BDD scenario can assert counter increments.
     """
     from flow_engineering.decision_drift import DriftClass
 
@@ -240,3 +246,7 @@ def record_drift_summary(report: "DriftReport") -> None:
     increment("drift_stale_id_total", count=counts.get(DriftClass.STALE_ID, 0))
     increment("drift_obsolete_total", count=counts.get(DriftClass.OBSOLETE, 0))
     increment("drift_contradicted_total", count=counts.get(DriftClass.CONTRADICTED, 0))
+    increment(
+        "drift_unable_to_verify_total",
+        count=1 if report.graph_unavailable else 0,
+    )

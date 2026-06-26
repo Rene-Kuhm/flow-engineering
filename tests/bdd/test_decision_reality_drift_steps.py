@@ -11,6 +11,11 @@ fail-open promise are exercised end-to-end. Graphify is patched at the
 ``flow_engineering.graphify_query.query_nodes`` level so OBSOLETE tests
 do not invoke the real binary.
 
+PR#2 batch G (T2.3) extends this file with the ``req15_drift_daemon``
+scenarios — three REQ-15 acceptance cases that exercise the daemon's
+``handle_apply_progress_event`` seam (the pure function invoked by the
+watchdog handler when an apply-progress write is observed).
+
 Test isolation:
 - Each scenario gets a fresh ``tmp_path`` and a fresh ``InMemoryBackend``.
 - ``FLOW_METRICS_PATH`` is pointed at a tmp file via monkeypatch so the
@@ -473,4 +478,294 @@ def no_finding_has_class(drift_world, klass: str) -> None:
     assert matches == [], (
         f"no findings should be class {klass}; found "
         f"{[f['binding']['id'] for f in matches]}"
+    )
+
+
+# ============================================================
+# PR#2 batch G (T2.3): req15_drift_daemon scenarios (REQ-15)
+# ============================================================
+
+
+@pytest.fixture
+def drift_daemon_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    """Per-scenario scratch state for the REQ-15 daemon seam scenarios.
+
+    Distinct from ``drift_world`` (REQ-9 scenarios) — these scenarios
+    invoke the daemon's pure seam ``handle_apply_progress_event``
+    directly rather than going through the ``flow drift`` CLI. Each
+    scenario gets its own ``metrics_path``, ``InMemoryBackend``,
+    ``summaries`` list, and graph_path.
+    """
+    metrics_path = tmp_path / "metrics.jsonl"
+    monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
+    return {
+        "metrics_path": metrics_path,
+        "graph_path": tmp_path / "graph.json",
+        "summaries": [],
+        "change": "auth-refactor",
+        "backend": None,
+        "exception": None,
+        "report": None,
+    }
+
+
+@scenario(
+    "../bdd/req15_drift_daemon.feature",
+    "Drift detected -> event-log summary line emitted",
+)
+def test_drift_daemon_emits_summary_on_drift(drift_daemon_world):
+    pass
+
+
+@scenario(
+    "../bdd/req15_drift_daemon.feature",
+    "No drift -> no event-log summary line",
+)
+def test_drift_daemon_silent_when_no_merge(drift_daemon_world):
+    pass
+
+
+@scenario(
+    "../bdd/req15_drift_daemon.feature",
+    "Missing graph -> daemon survives with one-time unable_to_verify log",
+)
+def test_drift_daemon_survives_missing_graph(drift_daemon_world):
+    pass
+
+
+def _seed_drifted_backend(drift_daemon_world: dict) -> None:
+    """Seed an ``InMemoryBackend`` with one observation whose binding's
+    file:line differs from graph.json — produces STALE_LOCATION."""
+    backend = InMemoryBackend()
+    cref = CodeRef(
+        project="insyd", id="n1", label="L1",
+        file="src/old.py", line=10,
+        confidence=0.9, source="manual",
+    )
+    content = (
+        "## Decision\nOld binding location.\n"
+        + format_code_refs_block([cref], source="manual")
+    )
+    backend.mem_save(
+        title=f"{drift_daemon_world['change']}/phase_0",
+        content=content,
+        topic_key=f"sdd/{drift_daemon_world['change']}/phase_0",
+    )
+    drift_daemon_world["backend"] = backend
+    drift_daemon_world["graph_path"].write_text(
+        json.dumps(
+            {"nodes": [{"id": "n1", "label": "L1", "file": "src/new.py", "line": 42}]}
+        ),
+        encoding="utf-8",
+    )
+
+
+def _seed_valid_backend(drift_daemon_world: dict) -> None:
+    """Seed an ``InMemoryBackend`` with one observation whose binding's
+    file:line matches graph.json — produces STILL_VALID when scanned."""
+    backend = InMemoryBackend()
+    cref = CodeRef(
+        project="insyd", id="n1", label="L1",
+        file="src/x.py", line=1,
+        confidence=0.9, source="manual",
+    )
+    content = (
+        "## Decision\nValid binding.\n"
+        + format_code_refs_block([cref], source="manual")
+    )
+    backend.mem_save(
+        title=f"{drift_daemon_world['change']}/phase_0",
+        content=content,
+        topic_key=f"sdd/{drift_daemon_world['change']}/phase_0",
+    )
+    drift_daemon_world["backend"] = backend
+    drift_daemon_world["graph_path"].write_text(
+        json.dumps(
+            {"nodes": [{"id": "n1", "label": "L1", "file": "src/x.py", "line": 1}]}
+        ),
+        encoding="utf-8",
+    )
+
+
+# ---------- Given steps (REQ-15) ----------
+
+
+@given(parsers.parse('a change "{change}" with drifted bindings'))
+def daemon_change_with_drifted_bindings(drift_daemon_world, change: str) -> None:
+    """Seed an InMemoryBackend whose binding points to an older file:line
+    than the current graph.json node. ``scan_change`` will classify the
+    binding as STALE_LOCATION, so the daemon emits a 'drift: ...' summary."""
+    drift_daemon_world["change"] = change
+    _seed_drifted_backend(drift_daemon_world)
+
+
+@given(parsers.parse('a change "{change}" with valid bindings'))
+def daemon_change_with_valid_bindings(drift_daemon_world, change: str) -> None:
+    """Seed an InMemoryBackend whose binding matches graph.json — used by
+    the no-drift scenario, where no merged task is present so no scan runs."""
+    drift_daemon_world["change"] = change
+    _seed_valid_backend(drift_daemon_world)
+
+
+@given(parsers.parse('a change "{change}"'))
+def daemon_change_bare(drift_daemon_world, change: str) -> None:
+    """Bare change name — no backend / graph seeded (used by the
+    missing-graph scenario where the graph is absent anyway)."""
+    drift_daemon_world["change"] = change
+
+
+@given("a graph.json file")
+def daemon_graph_file(drift_daemon_world) -> None:
+    """Ensure a (possibly empty) graph.json file exists at the per-scenario path.
+
+    Most scenarios seed the graph in their drift/valid binding setup step;
+    this step just guarantees the file is present so subsequent reads don't
+    raise FileNotFoundError."""
+    if not drift_daemon_world["graph_path"].exists():
+        drift_daemon_world["graph_path"].write_text(
+            json.dumps({"nodes": []}), encoding="utf-8"
+        )
+
+
+@given("the graph.json file is absent")
+def daemon_graph_absent(drift_daemon_world) -> None:
+    """Delete the graph.json file so the daemon's scan_change returns a
+    terminal ``graph_unavailable=True`` DriftReport (REQ-15 missing-graph
+    resilience)."""
+    drift_daemon_world["graph_path"].unlink(missing_ok=True)
+
+
+# ---------- When step (REQ-15) ----------
+
+
+@when(
+    parsers.parse(
+        'the daemon processes an apply-progress payload with task "{task_id}" status "{status}"'
+    )
+)
+def daemon_processes_payload(
+    drift_daemon_world, task_id: str, status: str
+) -> None:
+    """Invoke ``daemon.handle_apply_progress_event`` with a synthesized
+    apply-progress payload. The seam runs ``scan_change`` (when the task
+    is merged), records drift counters, and emits a one-line summary
+    via ``on_summary``. Any exception is captured (the seam is supposed
+    to never raise, but the BDD scenario verifies the watcher stays
+    alive even on edge cases)."""
+    from flow_engineering import daemon
+
+    payload = {"tasks": {task_id: {"status": status}}}
+    try:
+        report = daemon.handle_apply_progress_event(
+            drift_daemon_world["change"],
+            payload,
+            graph_json_path=drift_daemon_world["graph_path"],
+            backend=drift_daemon_world["backend"],
+            on_summary=drift_daemon_world["summaries"].append,
+        )
+        drift_daemon_world["report"] = report
+    except Exception as exc:  # noqa: BLE001
+        drift_daemon_world["exception"] = exc
+
+
+# ---------- Then steps (REQ-15) ----------
+
+
+@then(parsers.parse('the summary line starts with "{prefix}"'))
+def summary_line_starts_with(drift_daemon_world, prefix: str) -> None:
+    """Assert the first emitted summary line begins with the given prefix.
+
+    Used by the drift-detected scenario to assert the line is something
+    like ``drift: auth-refactor ...``."""
+    summaries = drift_daemon_world["summaries"]
+    assert summaries, f"expected one summary line; got {summaries!r}"
+    assert summaries[0].startswith(prefix), (
+        f"expected summary to start with {prefix!r}; got {summaries[0]!r}"
+    )
+
+
+@then(parsers.parse('the summary line mentions "{substring}"'))
+def summary_line_mentions(drift_daemon_world, substring: str) -> None:
+    """Assert the first emitted summary line contains ``substring``."""
+    summaries = drift_daemon_world["summaries"]
+    assert summaries, f"expected one summary line; got {summaries!r}"
+    assert substring in summaries[0], (
+        f"expected summary to contain {substring!r}; got {summaries[0]!r}"
+    )
+
+
+@then("no summary line is emitted")
+def no_summary_line_emitted(drift_daemon_world) -> None:
+    """Assert no summary was emitted (silent path: no merged task)."""
+    summaries = drift_daemon_world["summaries"]
+    assert summaries == [], f"expected no summary; got {summaries!r}"
+
+
+@then(parsers.parse('the summary line contains "{substring}" exactly once'))
+def summary_line_contains_once(drift_daemon_world, substring: str) -> None:
+    """Assert exactly one summary line contains ``substring`` (used by the
+    missing-graph scenario to confirm ``unable_to_verify`` is logged once,
+    not zero or many times)."""
+    matches = [
+        s for s in drift_daemon_world["summaries"] if substring in s
+    ]
+    assert len(matches) == 1, (
+        f"expected exactly one summary containing {substring!r}; "
+        f"got {len(matches)} matches in {drift_daemon_world['summaries']!r}"
+    )
+
+
+@then("the daemon stays alive (no exception raised)")
+def daemon_stays_alive(drift_daemon_world) -> None:
+    """Assert no exception escaped ``handle_apply_progress_event``."""
+    exc = drift_daemon_world["exception"]
+    assert exc is None, f"daemon raised exception: {exc!r}"
+
+
+def _read_drift_events(metrics_path: Path) -> list[dict[str, Any]]:
+    """Return all JSONL counter events from the metrics sink."""
+    if not metrics_path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for line in metrics_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+@then(parsers.parse("the {counter_name} counter is {n:d}"))
+def counter_is_n(drift_daemon_world, counter_name: str, n: int) -> None:
+    """Sum the ``count`` field (default 1) across every JSONL line whose
+    ``name`` matches ``counter_name``. Asserts the running total is ``n``.
+
+    The metric JSONL shape is ``{"name": "<counter>", "fields": {"count":
+    <int>, ...}, "ts": "<ISO>"}``; lines without ``count`` contribute 1
+    (matching ``observability.increment``'s behavior)."""
+    events = _read_drift_events(drift_daemon_world["metrics_path"])
+    matches = [e for e in events if e.get("name") == counter_name]
+    actual = sum(int(e.get("fields", {}).get("count", 1)) for e in matches)
+    assert actual == n, (
+        f"expected {counter_name}={n}; got {actual} "
+        f"(counter names seen: {[e.get('name') for e in events]})"
+    )
+
+
+@then("no drift_*_total counter increments")
+def no_drift_counter_increments(drift_daemon_world) -> None:
+    """Assert the metrics sink contains no ``drift_*_total`` events
+    (used by the silent path: no merged task -> no counters fire)."""
+    events = _read_drift_events(drift_daemon_world["metrics_path"])
+    drift_events = [
+        e for e in events
+        if isinstance(e.get("name"), str) and e["name"].startswith("drift_")
+    ]
+    assert drift_events == [], (
+        f"expected no drift counter events; got "
+        f"{[e.get('name') for e in drift_events]}"
     )
