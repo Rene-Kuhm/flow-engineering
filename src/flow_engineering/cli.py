@@ -212,9 +212,35 @@ def archive(change: str, target: Path, diff: str, no_graphify: bool) -> None:
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
     default=Path.cwd(),
 )
-def watch(change: str, target: Path) -> None:
-    """Watch for exploration.md changes and auto-transition NEW -> EXPLORED."""
-    started, message = start_watch(change=change, target=target)
+@click.option(
+    "--drift", "drift_flag",
+    is_flag=True,
+    default=False,
+    help="REQ-15: also watch apply-progress writes; emit drift summary per merged task.",
+)
+@click.option(
+    "--graph-json", "graph_json",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Path to graph.json snapshot (default: ~/.flow-engineering/graph.json).",
+)
+def watch(change: str, target: Path, drift_flag: bool, graph_json: Path | None) -> None:
+    """Watch for exploration.md changes and auto-transition NEW -> EXPLORED.
+
+    With ``--drift`` (REQ-15), the watcher ALSO subscribes to apply-progress
+    writes and emits a one-line ``drift: <change> N findings (...)`` summary
+    to stdout on every event with at least one task in ``status: merged``.
+    Counters ``drift_*_total`` are incremented per event via
+    ``observability.record_drift_summary``. Missing ``graph.json`` emits
+    ``unable_to_verify: ...`` once and the watcher stays alive.
+    """
+    started, message = start_watch(
+        change=change,
+        target=target,
+        drift=drift_flag,
+        graph_json_path=graph_json,
+        on_summary=lambda line: click.echo(line),
+    )
     click.echo(message)
     if not started:
         sys.exit(1)
