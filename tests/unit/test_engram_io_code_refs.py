@@ -255,4 +255,160 @@ class TestSavePhaseAutoSuggest:
         assert '"source": "unbound"' in saved["content"]
 
 
+METADATA_MARKER = "<!-- metadata -->"
+
+
+class TestUpdateObservationMetadata:
+    """REQ-13, REQ-14 (PR#1 batch D): append/update trailing `<!-- metadata -->` block.
+
+    Invariants:
+    - `code_refs` block MUST remain byte-identical after a write-back.
+    - Existing metadata keys are preserved; new keys added; conflicting
+      keys overwritten (new wins).
+    - Single `update_observation` call per write-back (atomic).
+    - Fail-open: any exception during the read/merge/write cycle is
+      swallowed and logged to observability. The function MUST NOT raise.
+    """
+
+    def test_update_metadata_appends_new_block(self):
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        client.save_phase("propose", PROSE_ONLY + VALID_BLOCK)
+        obs_id = next(iter(backend.observations))
+
+        client.update_observation_metadata(
+            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
+        )
+
+        saved = backend.observations[obs_id]["content"]
+        assert METADATA_MARKER in saved
+        assert PROSE_ONLY in saved
+        assert VALID_BLOCK in saved
+        assert '"last_verified_at"' in saved
+        assert '"2026-06-25T22:30:00Z"' in saved
+        assert saved.count(METADATA_MARKER) == 1
+        assert saved.count(CODE_REFS_MARKER) == 1
+
+    def test_update_metadata_preserves_code_refs(self):
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        client.save_phase("propose", PROSE_ONLY + VALID_BLOCK)
+        obs_id = next(iter(backend.observations))
+
+        client.update_observation_metadata(
+            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
+        )
+
+        saved = backend.observations[obs_id]["content"]
+        marker_idx = saved.rfind(CODE_REFS_MARKER)
+        assert marker_idx >= 0
+        code_refs_block = saved[marker_idx:]
+        if not code_refs_block.endswith("\n"):
+            code_refs_block = code_refs_block + "\n"
+        assert code_refs_block == VALID_BLOCK
+
+    def test_update_metadata_merges_existing_keys(self):
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        existing_meta = (
+            f"{METADATA_MARKER}\n"
+            '{"schema": 1, "fields": '
+            '{"existing_key": "old_value", "conflict_key": "old"}}\n'
+        )
+        client.save_phase("propose", PROSE_ONLY + existing_meta)
+        obs_id = next(iter(backend.observations))
+
+        client.update_observation_metadata(
+            obs_id,
+            {"new_key": "new_value", "conflict_key": "new"},
+        )
+
+        saved = backend.observations[obs_id]["content"]
+        assert '"existing_key"' in saved
+        assert '"old_value"' in saved
+        assert '"new_key"' in saved
+        assert '"new_value"' in saved
+        assert saved.count('"conflict_key"') == 1
+        assert '"conflict_key": "new"' in saved
+        assert saved.count(METADATA_MARKER) == 1
+
+    def test_update_metadata_fail_open(self, monkeypatch, metrics_path):
+        from flow_engineering import observability
+
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        client.save_phase("propose", PROSE_ONLY + VALID_BLOCK)
+        obs_id = next(iter(backend.observations))
+
+        def boom(_observation_id):
+            raise RuntimeError("engram backend down")
+
+        monkeypatch.setattr(backend, "mem_get_observation", boom)
+
+        client.update_observation_metadata(
+            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
+        )
+
+        events = observability.read_all()
+        names = [e["name"] for e in events]
+        assert "update_observation_metadata_failed_total" in names, (
+            f"expected failure metric, got: {names}"
+        )
+
+    def test_update_metadata_atomic(self):
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        client.save_phase("propose", PROSE_ONLY + VALID_BLOCK)
+        obs_id = next(iter(backend.observations))
+
+        original_update = backend.update_observation
+        call_count = {"n": 0}
+
+        def counting_update(observation_id, **kwargs):
+            call_count["n"] += 1
+            return original_update(observation_id, **kwargs)
+
+        backend.update_observation = counting_update
+
+        client.update_observation_metadata(
+            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
+        )
+
+        assert call_count["n"] == 1, (
+            f"expected exactly 1 update_observation call, got {call_count['n']}"
+        )
+
+    def test_update_metadata_replaces_malformed_block_defensively(self):
+        """A corrupt metadata JSON body MUST NOT block the write.
+
+        Defensive contract: ``_extract_metadata_fields`` returns ``{}`` on
+        malformed input, so the new keys become the entire block.
+        """
+        backend = InMemoryBackend()
+        client = EngramClient("my-change", backend)
+        corrupt_meta = (
+            f"{METADATA_MARKER}\n"
+            "{not valid json whatsoever}\n"
+        )
+        obs = backend.mem_save(
+            title="seed",
+            content=PROSE_ONLY + VALID_BLOCK + corrupt_meta,
+            topic_key="sdd/my-change/propose",
+        )
+        obs_id = obs["id"]
+
+        client.update_observation_metadata(
+            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
+        )
+
+        saved = backend.observations[obs_id]["content"]
+        assert "not valid json whatsoever" not in saved, (
+            "corrupt metadata body should be replaced"
+        )
+        assert '"last_verified_at"' in saved
+        assert '"2026-06-25T22:30:00Z"' in saved
+        assert saved.count(METADATA_MARKER) == 1
+        assert VALID_BLOCK in saved
+
+
 import pytest  # noqa: E402
