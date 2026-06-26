@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-06-26
+
+### Added
+- `flow drift <change>` subcommand — scans Engram observations for binding drift and reports one of six classes (`still_valid`, `label_drift`, `stale_location`, `stale_id`, `obsolete`, `contradicted`) per REQ-12. Exits `0` (all `still_valid`), `1` (any drift), `2` (`unable_to_verify`) per REQ-11.
+- `flow watch --drift` flag — daemon subscribes to `apply-progress` writes and re-runs `scan_change` on `merged` status, emitting a summary line per detected change (REQ-15, REQ-16).
+- 8 new `drift_*_total` observability counters (`drift_still_valid_total`, `drift_label_drift_total`, `drift_stale_location_total`, `drift_stale_id_total`, `drift_obsolete_total`, `drift_contradicted_total`, `drift_unable_to_verify_total`, `drift_scan_total`) persisted alongside the existing `flow metrics` JSONL.
+
+### Closed (W2/W3 carry-forwards)
+- **W2** — REQ-8 counter reconciliation: spec counter names now match the 8 implementation counters shipped in v0.2.0.
+- **W3** — REQ-3 empty-block BDD: empty `code_refs` blocks are treated as `unbound` and counted via `unbound_observations_total`.
+
+### Tests
+- 385 / 385 tests passing (`uv run pytest -x --tb=short`).
+- 39 BDD scenarios across 9 feature files (`req1..req9` + `req15_drift_daemon`).
+- See `openspec/changes/archive/2026-06-26-decision-reality-drift/` for full spec, design, and task breakdown (post-archive).
+
+### Notes
+- `decision-reality-drift` shipped via two chained PRs (#1 core detector + counters + W2/W3, #2 verification wiring + `flow watch --drift` + REQ-15/REQ-16).
+- `sdd-verify` Step 6 gained a sub-step that surfaces `flow drift <change>` findings before declaring green.
+
 ## [0.2.0] - 2026-06-25
 
 ### Added
