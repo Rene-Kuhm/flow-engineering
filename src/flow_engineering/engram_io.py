@@ -305,8 +305,10 @@ class EngramClient:
             return content
 
         # No explicit block — decide whether to auto-suggest.
-        env_active = with_suggest or (
-            __import__("os").environ.get(_FLOW_AUTO_SUGGEST_ENV) == "1"
+        env_active = (
+            with_suggest
+            or __import__("os").environ.get(_FLOW_AUTO_SUGGEST_ENV) == "1"
+            or bool(is_tty)
         )
         if no_suggest:
             # Caller opted out — record the explicit manual intent.
