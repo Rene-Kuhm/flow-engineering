@@ -6,11 +6,13 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import click
 
-from flow_engineering import observability
+from flow_engineering import decision_drift, observability
 from flow_engineering.auto_suggest_code_refs import FLOW_AUTO_SUGGEST_ENV
 from flow_engineering.binding import (
     CODE_REFS_MARKER,
@@ -490,3 +492,217 @@ def metrics(json_flag: bool) -> None:
     name_width = max(len(name) for name in summary)
     for name in sorted(summary):
         click.echo(f"{name.ljust(name_width)}  {summary[name]}")
+
+
+# ---------- REQ-10/11/14: flow drift <change> ----------
+
+
+DEFAULT_GRAPH_JSON: Path = Path.home() / ".flow-engineering" / "graph.json"
+
+
+def _parse_since(raw: str | None) -> float | None:
+    """Parse a `--since` ISO 8601 timestamp into epoch seconds (float).
+
+    Returns ``None`` when ``raw`` is ``None`` or empty. Raises ``ValueError``
+    with a one-line human message on parse failure — the CLI catches the
+    exception and emits a stderr line + exit code ``2`` per REQ-10/REQ-11.
+    Accepts both naive and ``Z``/offset-aware ISO 8601 strings. Naive
+    timestamps (no tzinfo) are interpreted as UTC by default — the CLI runs
+    in any timezone, and `--since 2026-06-15` should mean a deterministic
+    instant, not a local-time midnight that drifts across CI machines.
+    """
+    if raw is None or raw.strip() == "":
+        return None
+    cleaned = raw.strip()
+    try:
+        if cleaned.endswith("Z"):
+            cleaned = cleaned[:-1] + "+00:00"
+        dt = datetime.fromisoformat(cleaned)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.timestamp()
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"--since must be ISO 8601 (e.g. 2026-06-15 or 2026-06-15T12:00:00Z); got {raw!r}: {exc}"
+        ) from exc
+
+
+def _drift_exit_code(report: decision_drift.DriftReport) -> int:
+    """Resolve the exit code per REQ-11: 2 wins over 1 wins over 0.
+
+    - 2 when ``graph_unavailable`` (terminal unable_to_verify state).
+    - 1 when any binding classifies as non-STILL_VALID.
+    - 0 when every binding (if any) is STILL_VALID.
+    """
+    if report.graph_unavailable:
+        return 2
+    for cls in report.class_counts:
+        if cls != decision_drift.DriftClass.STILL_VALID:
+            return 1
+    return 0
+
+
+def _serialize_drift_report(report: decision_drift.DriftReport) -> dict[str, Any]:
+    """Convert a :class:`DriftReport` into a JSON-safe ``dict``.
+
+    The ``findings`` list embeds :class:`CodeRef` dataclasses which the stdlib
+    JSON encoder cannot serialize — convert each to a flat dict and turn the
+    ``DriftClass`` keys/values into plain strings.
+    """
+    findings: list[dict[str, Any]] = []
+    for f in report.findings:
+        findings.append(
+            {
+                "decision_id": f.decision_id,
+                "binding": {
+                    "id": f.binding.id,
+                    "label": f.binding.label,
+                    "file": f.binding.file,
+                    "line": f.binding.line,
+                    "confidence": f.binding.confidence,
+                    "source": f.binding.source,
+                    "project": f.binding.project,
+                },
+                "drift_class": f.drift_class.value,
+                "detail": f.detail,
+            }
+        )
+    return {
+        "change_name": report.change_name,
+        "scanned_at": report.scanned_at,
+        "graph_mtime": report.graph_mtime,
+        "decisions_total": report.decisions_total,
+        "bindings_total": report.bindings_total,
+        "class_counts": {cls.value: count for cls, count in report.class_counts.items()},
+        "findings": findings,
+        "graph_unavailable": report.graph_unavailable,
+    }
+
+
+def _render_drift_table(report: decision_drift.DriftReport) -> str:
+    """Pretty-print a :class:`DriftReport` as a fixed-width text table."""
+    headers = ("decision_id", "binding.id", "binding.label", "drift_class", "detail")
+    lines: list[str] = []
+    lines.append("  ".join(h.upper() for h in headers))
+    lines.append("-" * 96)
+    if report.findings:
+        for f in report.findings:
+            detail = f.detail if f.detail else f.drift_class.value
+            lines.append(
+                f"{f.decision_id}  {f.binding.id}  {f.binding.label}  "
+                f"{f.drift_class.value}  {detail}"
+            )
+    else:
+        if report.graph_unavailable:
+            lines.append("(unable_to_verify: graph.json unavailable)")
+        else:
+            lines.append("(no bindings scanned)")
+    return "\n".join(lines)
+
+
+def _now_iso() -> str:
+    """Return UTC now as an ISO 8601 string with a ``Z`` suffix."""
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_back_findings(
+    report: decision_drift.DriftReport, change_name: str
+) -> int:
+    """Persist per-finding metadata via ``EngramClient.update_observation_metadata``.
+
+    Per REQ-14, a single-row failure MUST NOT abort the loop — each
+    ``update_observation_metadata`` call is wrapped in its own ``except``
+    clause that logs to observability and continues. Returns the count of
+    successful writes (used by tests to assert no partial abort).
+    """
+    backend = _default_save_backend()
+    client = EngramClient(change_name, backend)
+    success = 0
+    for finding in report.findings:
+        try:
+            observation_id = int(finding.decision_id)
+        except (TypeError, ValueError):
+            # decision_id is not int-castable (e.g. legacy observations with
+            # synthetic "unknown" id). Skip per-row without aborting.
+            observability.increment(
+                "drift_write_back_skipped_total",
+                reason="non_int_decision_id",
+            )
+            continue
+        try:
+            client.update_observation_metadata(
+                observation_id,
+                {
+                    "last_verified_at": _now_iso(),
+                    "last_drift_class": finding.drift_class.value,
+                },
+            )
+            success += 1
+        except Exception:
+            # Per-row error isolation — record and keep going.
+            observability.increment("drift_write_back_failed_total")
+            continue
+    return success
+
+
+@main.command()
+@click.argument("change_name")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit machine-readable JSON instead of a text table.")
+@click.option("--include-obsolete", is_flag=True, default=False,
+              help="Opt in to OBSOLETE classification (queries graphify).")
+@click.option("--write-back", is_flag=True, default=False,
+              help="Persist per-finding last_verified_at + last_drift_class metadata.")
+@click.option("--since", default=None,
+              help="Filter observations whose created_at >= this ISO 8601 timestamp.")
+@click.option("--graph-json", "graph_json", default=None,
+              type=click.Path(path_type=Path),
+              help="Path to graph.json snapshot "
+                   "(default: ~/.flow-engineering/graph.json).")
+def drift(
+    change_name: str,
+    as_json: bool,
+    include_obsolete: bool,
+    write_back: bool,
+    since: str | None,
+    graph_json: str | None,
+) -> None:
+    """Run drift detection for a change (REQ-10/11/14).
+
+    Exit codes: 0 = every binding STILL_VALID. 1 = any non-STILL_VALID class
+    found. 2 = graph unavailable OR --since parse error. Exit 2 wins over 1.
+    """
+    try:
+        since_ts = _parse_since(since)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(2)
+
+    graph_path = Path(graph_json) if graph_json else DEFAULT_GRAPH_JSON
+
+    report = decision_drift.scan_change(
+        change_name,
+        graph_json_path=graph_path,
+        include_obsolete=include_obsolete,
+        since=since_ts,
+    )
+
+    # Observability: record the summary BEFORE returning so the counters
+    # always reflect what was actually computed.
+    observability.record_drift_summary(report)
+
+    if write_back:
+        _write_back_findings(report, change_name)
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                _serialize_drift_report(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        click.echo(_render_drift_table(report))
+
+    sys.exit(_drift_exit_code(report))

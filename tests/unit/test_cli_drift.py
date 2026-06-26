@@ -422,12 +422,12 @@ class TestWriteBack:
 
         update_calls: list[tuple[int, dict[str, Any]]] = []
 
-        from flow_engineering.cli import _build_drift_runner
-
         # Patch the helper that drives update_observation_metadata. We assert the
         # helper is invoked with the right observation_id + payload by mocking
-        # the function the CLI calls internally.
-        from flow_engineering import engram_io
+        # the EngramClient that the CLI uses internally. The CLI imports
+        # EngramClient by name into flow_engineering.cli, so the patch must
+        # target the local binding (NOT engram_io.EngramClient).
+        import flow_engineering.cli as cli_mod
 
         class _FakeClient:
             def __init__(self, change: str, backend: Any) -> None:
@@ -439,7 +439,7 @@ class TestWriteBack:
             ) -> None:
                 update_calls.append((observation_id, dict(metadata)))
 
-        monkeypatch.setattr(engram_io, "EngramClient", _FakeClient)
+        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
 
         result = runner.invoke(
             main,
@@ -473,7 +473,7 @@ class TestWriteBack:
 
         update_calls: list[int] = []
 
-        from flow_engineering import engram_io
+        import flow_engineering.cli as cli_mod
 
         class _FakeClient:
             def __init__(self, change: str, backend: Any) -> None:
@@ -487,7 +487,7 @@ class TestWriteBack:
                     raise RuntimeError("boom")
                 update_calls.append(observation_id)
 
-        monkeypatch.setattr(engram_io, "EngramClient", _FakeClient)
+        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
 
         result = runner.invoke(
             main,
@@ -515,7 +515,7 @@ class TestWriteBack:
 
         update_calls: list[int] = []
 
-        from flow_engineering import engram_io
+        import flow_engineering.cli as cli_mod
 
         class _FakeClient:
             def __init__(self, change: str, backend: Any) -> None:
@@ -527,7 +527,7 @@ class TestWriteBack:
             ) -> None:
                 update_calls.append(observation_id)
 
-        monkeypatch.setattr(engram_io, "EngramClient", _FakeClient)
+        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
 
         result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 1, result.output
