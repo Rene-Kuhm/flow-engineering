@@ -1,15 +1,22 @@
-"""Unit tests for embedding_provider.py (vector-semantic-search PR#1 T1.3).
+"""Unit tests for embedding_provider.py (vector-semantic-search PR#1 + PR#2).
 
 REQ-19: EmbeddingProvider ABC + lazy import contract.
 - MockEmbeddingProvider returns deterministic 384-dim vectors
 - Module import does NOT pull torch / sentence_transformers
 - EmbeddingProviderUnavailable is an ImportError subclass with install hint
 - Embedding shape is (N, 384); empty input returns (0, 384)
+
+PR#2 T2.1: SentenceTransformersProvider
+- Lazy torch import inside __init__; module-level import stays clean
+- EmbeddingProviderUnavailable raised when torch is missing
+- Model loading is lazy (only on first embed() call)
+- embed() returns shape (N, 384); empty list returns (0, 384)
 """
 
 from __future__ import annotations
 
 import sys
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -187,3 +194,246 @@ class TestEmbeddingProviderLazyImport:
         # process might have imported torch for an unrelated reason.)
         assert hasattr(EmbeddingProvider, "embed")
         assert hasattr(MockEmbeddingProvider, "embed")
+
+
+# ---------------------------------------------------------------------------
+# PR#2 T2.1 — SentenceTransformersProvider (lazy torch import)
+# ---------------------------------------------------------------------------
+
+
+def _ensure_torch_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Inject a MagicMock for torch if it isn't installed in the test env."""
+    if "torch" not in sys.modules:
+        monkeypatch.setitem(sys.modules, "torch", MagicMock())
+
+
+def _install_fake_sentence_transformers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[str], list[list[str]]]:
+    """Replace ``sentence_transformers`` with a deterministic fake.
+
+    Returns ``(model_construct_log, encode_arg_log)`` so tests can assert
+    that model construction only happens on first ``embed()`` and that
+    subsequent calls reuse the cached model.
+    """
+    model_construct_log: list[str] = []
+    encode_arg_log: list[list[str]] = []
+
+    class FakeModel:
+        def __init__(self, model_name: str) -> None:
+            model_construct_log.append(model_name)
+
+        def encode(self, texts, convert_to_numpy: bool = True):  # noqa: ARG002
+            encode_arg_log.append(list(texts))
+            arr = np.asarray(texts, dtype=object)
+            if arr.size == 0:
+                return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+            return np.zeros((len(texts), EMBEDDING_DIMS), dtype=np.float32)
+
+    mock_module = MagicMock()
+    mock_module.SentenceTransformer = FakeModel
+    monkeypatch.setitem(sys.modules, "sentence_transformers", mock_module)
+    return model_construct_log, encode_arg_log
+
+
+class TestSentenceTransformersProviderMetadata:
+    """REQ-19 T2.1 — provider metadata contract."""
+
+    def test_class_is_exportable_from_module(self) -> None:
+        # The class MUST be importable from the module — RED until impl lands.
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        assert isinstance(SentenceTransformersProvider, type)
+
+    def test_class_is_subclass_of_embedding_provider(self) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        assert issubclass(SentenceTransformersProvider, EmbeddingProvider)
+
+    def test_dim_attribute_is_384(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("custom-model-name")
+        assert provider.dim == EMBEDDING_DIMS == 384
+
+    def test_model_version_defaults_to_all_minilm(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider()
+        assert provider.model_version == "sentence-transformers/all-MiniLM-L6-v2"
+
+    def test_model_version_uses_constructor_arg(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("my-org/my-model")
+        assert provider.model_version == "my-org/my-model"
+
+
+class TestSentenceTransformersProviderMissingTorch:
+    """REQ-19 T2.1 — when torch is missing, construction raises the typed error."""
+
+    def test_raises_embedding_provider_unavailable_when_torch_missing(
+        self, monkeypatch
+    ) -> None:
+        # Patch builtins.__import__ so any ``import torch`` raises ImportError,
+        # even if a cached sys.modules entry exists.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "torch" or name.startswith("torch."):
+                raise ImportError(f"No module named {name!r}")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.delitem(sys.modules, "torch", raising=False)
+        monkeypatch.delitem(sys.modules, "sentence_transformers", raising=False)
+
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        with pytest.raises(EmbeddingProviderUnavailable) as exc_info:
+            SentenceTransformersProvider()
+        msg = str(exc_info.value)
+        assert "pip install flow-engineering[vectors]" in msg
+        # Spec: subclass of ImportError so callers can use a single except clause.
+        assert isinstance(exc_info.value, ImportError)
+
+    def test_raises_embedding_provider_unavailable_when_sentence_transformers_missing(
+        self, monkeypatch
+    ) -> None:
+        # If torch is present but sentence_transformers is not, still raise.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "sentence_transformers" or name.startswith(
+                "sentence_transformers."
+            ):
+                raise ImportError(f"No module named {name!r}")
+            return real_import(name, *args, **kwargs)
+
+        _ensure_torch_stub(monkeypatch)
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.delitem(sys.modules, "sentence_transformers", raising=False)
+
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        with pytest.raises(EmbeddingProviderUnavailable) as exc_info:
+            SentenceTransformersProvider()
+        assert "pip install flow-engineering[vectors]" in str(exc_info.value)
+
+
+class TestSentenceTransformersProviderLazyModelLoad:
+    """REQ-19 T2.1 — model loading is lazy (only on first embed())."""
+
+    def test_model_not_loaded_at_construction(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        construct_log, _encode_log = _install_fake_sentence_transformers(
+            monkeypatch
+        )
+        SentenceTransformersProvider("lazy-test-model")
+        assert construct_log == [], (
+            f"Model loaded at construction: {construct_log}"
+        )
+
+    def test_model_loaded_on_first_embed_call(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        construct_log, encode_log = _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("lazy-test-model")
+        provider.embed(["hello", "world"])
+        assert construct_log == ["lazy-test-model"], (
+            f"Expected exactly one construct on first embed, got {construct_log}"
+        )
+        assert encode_log == [["hello", "world"]]
+        assert provider._model is not None
+
+    def test_model_cached_across_subsequent_embed_calls(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        construct_log, encode_log = _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("lazy-test-model")
+        provider.embed(["first"])
+        provider.embed(["second", "third"])
+        provider.embed([])
+        assert construct_log == ["lazy-test-model"], (
+            f"Model re-instantiated: {construct_log}"
+        )
+        assert encode_log == [["first"], ["second", "third"]]
+
+    def test_embed_returns_n_by_384(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("shape-test")
+        out = provider.embed(["a", "b", "c", "d", "e"])
+        assert isinstance(out, np.ndarray)
+        assert out.shape == (5, EMBEDDING_DIMS)
+        assert out.dtype == np.float32
+
+    def test_embed_empty_list_returns_zero_384(self, monkeypatch) -> None:
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("shape-test")
+        out = provider.embed([])
+        assert out.shape == (0, EMBEDDING_DIMS)
+        assert out.dtype == np.float32
+
+    def test_embed_batch_delegates_to_embed(self, monkeypatch) -> None:
+        # Default EmbeddingProvider.embed_batch delegates to embed() — verify
+        # that sentence-transformers impl inherits that contract.
+        from flow_engineering.embedding_provider import SentenceTransformersProvider
+
+        _ensure_torch_stub(monkeypatch)
+        _install_fake_sentence_transformers(monkeypatch)
+        provider = SentenceTransformersProvider("batch-test")
+        out_single = provider.embed(["x", "y"])
+        out_batch = provider.embed_batch(["x", "y"])
+        assert out_single.shape == out_batch.shape == (2, EMBEDDING_DIMS)
+
+
+class TestSentenceTransformersProviderModuleImportClean:
+    """REQ-19 T2.1 — defining the class MUST NOT import torch at module level."""
+
+    def test_subprocess_module_import_does_not_pull_torch(self) -> None:
+        # The subprocess guarantees a fresh sys.modules at import time.
+        import subprocess
+
+        script = (
+            "import sys; "
+            "import flow_engineering.embedding_provider as m; "
+            "torch_loaded = 'torch' in sys.modules; "
+            "st_loaded = 'sentence_transformers' in sys.modules; "
+            "has_st = hasattr(m, 'SentenceTransformersProvider'); "
+            "print(f'torch={torch_loaded} st={st_loaded} has_st={has_st}'); "
+            "sys.exit(0 if (not torch_loaded and not st_loaded and has_st) else 1)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd="C:/dev/proyects/flow-engineering",
+        )
+        assert result.returncode == 0, (
+            f"Module-level import leaked heavy deps:\n"
+            f"stdout={result.stdout}\nstderr={result.stderr}"
+        )
+        assert "torch=False" in result.stdout
+        assert "st=False" in result.stdout
+        assert "has_st=True" in result.stdout

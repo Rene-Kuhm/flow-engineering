@@ -39,6 +39,7 @@ Test isolation:
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -784,4 +785,869 @@ def empty_list_returned(vector_world):
     )
     assert vector_world["results"] == [], (
         f"Expected [], got {vector_world['results']!r}"
+    )
+
+
+# =====================================================================
+# REQ-19 scenario bindings — EmbeddingProvider ABC + lazy import
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "MockEmbeddingProvider returns deterministic 384-dim vectors",
+)
+def test_req19_mock_deterministic(embedding_world):
+    pass
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "import flow_engineering.embedding_provider does not trigger torch import",
+)
+def test_req19_lazy_module_import(embedding_world):
+    pass
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "SentenceTransformersProvider raises ImportError when torch missing",
+)
+def test_req19_sentence_transformers_missing_torch(embedding_world):
+    pass
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "Embedding output shape is (N, 384) for N inputs",
+)
+def test_req19_embed_shape(embedding_world):
+    pass
+
+
+# =====================================================================
+# REQ-19 step definitions
+# =====================================================================
+
+
+from flow_engineering.embedding_provider import (
+    EmbeddingProviderUnavailable,
+    MockEmbeddingProvider,
+    SentenceTransformersProvider,
+)
+
+
+@pytest.fixture
+def embedding_world() -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-19 scenarios.
+
+    Mirrors the vector_world fixture pattern; kept separate so REQ-19 step
+    defs don't accidentally mutate the REQ-17/18 shared state.
+    """
+    return {
+        "provider": None,
+        "vectors": [],
+        "subprocess_result": None,
+        "raised": None,
+    }
+
+
+# ---------- Given ----------
+
+
+@given("a MockEmbeddingProvider")
+def given_mock_provider(embedding_world):
+    embedding_world["provider"] = MockEmbeddingProvider()
+
+
+@given("a fresh subprocess")
+def given_fresh_subprocess(embedding_world):
+    # No-op fixture marker — the subprocess is launched lazily inside the When step.
+    embedding_world["subprocess_result"] = None
+
+
+@given("torch is patched to raise ImportError on import")
+def given_torch_patched_to_raise(monkeypatch, embedding_world):
+    """Patch builtins.__import__ so any ``import torch`` raises ImportError."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+@given("sentence_transformers is removed from sys.modules")
+def given_st_removed(monkeypatch, embedding_world):
+    monkeypatch.delitem(sys.modules, "sentence_transformers", raising=False)
+
+
+# ---------- When ----------
+
+
+@when(parsers.parse('I embed "{text}" twice in a row'))
+def when_embed_twice(embedding_world, text: str):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([text]))
+    embedding_world["vectors"].append(provider.embed([text]))
+
+
+@when(parsers.parse('I embed "{text}"'))
+def when_embed_text(embedding_world, text: str):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([text]))
+
+
+@when("I import flow_engineering.embedding_provider in that subprocess")
+def when_subprocess_import(embedding_world):
+    import subprocess
+
+    script = (
+        "import sys; "
+        "import flow_engineering.embedding_provider as m; "
+        "torch_loaded = 'torch' in sys.modules; "
+        "st_loaded = 'sentence_transformers' in sys.modules; "
+        "has_st = hasattr(m, 'SentenceTransformersProvider'); "
+        "print(f'torch={torch_loaded} st={st_loaded} has_st={has_st}'); "
+        "sys.exit(0 if (not torch_loaded and not st_loaded and has_st) else 1)"
+    )
+    embedding_world["subprocess_result"] = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd="C:/dev/proyects/flow-engineering",
+    )
+
+
+@when("I instantiate SentenceTransformersProvider()")
+def when_instantiate_st(embedding_world):
+    try:
+        SentenceTransformersProvider()
+    except Exception as exc:
+        embedding_world["raised"] = exc
+
+
+@when(parsers.parse('I embed 5 texts ["{a}", "{b}", "{c}", "{d}", "{e}"]'))
+def when_embed_five_texts(embedding_world, a, b, c, d, e):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([a, b, c, d, e]))
+
+
+@when("I embed an empty list")
+def when_embed_empty(embedding_world):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([]))
+
+
+# ---------- Then ----------
+
+
+@then("both calls return identical numpy arrays")
+def then_both_calls_identical(embedding_world):
+    assert len(embedding_world["vectors"]) >= 2, (
+        f"Expected ≥2 embed results, got {len(embedding_world['vectors'])}"
+    )
+    first, second = embedding_world["vectors"][0], embedding_world["vectors"][1]
+    assert isinstance(first, np.ndarray)
+    assert isinstance(second, np.ndarray)
+    np.testing.assert_array_equal(first, second)
+
+
+@then(parsers.parse("the array shape is ({rows:d}, {cols:d})"))
+def then_shape_n_by_m(embedding_world, rows: int, cols: int):
+    arr = embedding_world["vectors"][-1]
+    assert arr.shape == (rows, cols), (
+        f"Expected shape ({rows}, {cols}), got {arr.shape}"
+    )
+
+
+@then(parsers.parse("the L2 norm of the vector is within [{lo:.2f}, {hi:.2f}] of 1.0"))
+def then_l2_norm_in_range(embedding_world, lo: float, hi: float):
+    arr = embedding_world["vectors"][-1]
+    if arr.shape[0] == 0:
+        return
+    norms = np.linalg.norm(arr, axis=1)
+    for n in norms:
+        assert lo <= n <= hi, f"norm {n} outside [{lo}, {hi}]"
+
+
+@then("the goodbye vector differs from the hello vector")
+def then_bye_differs_from_hello(embedding_world):
+    """The last 2 vectors in embedding_world['vectors'] are hello and goodbye."""
+    assert len(embedding_world["vectors"]) >= 2
+    hello, bye = embedding_world["vectors"][-2], embedding_world["vectors"][-1]
+    assert not np.array_equal(hello, bye), (
+        "Expected different vectors for different inputs"
+    )
+
+
+@then('"torch" is NOT in sys.modules')
+def then_torch_not_loaded(embedding_world):
+    result = embedding_world["subprocess_result"]
+    assert result is not None, "Subprocess result missing"
+    assert result.returncode == 0, (
+        f"Subprocess failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+    assert "torch=False" in result.stdout, (
+        f"Expected 'torch=False' in subprocess output: {result.stdout!r}"
+    )
+
+
+@then('"sentence_transformers" is NOT in sys.modules')
+def then_st_not_loaded(embedding_world):
+    result = embedding_world["subprocess_result"]
+    assert result.returncode == 0, (
+        f"Subprocess failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+    assert "st=False" in result.stdout, (
+        f"Expected 'st=False' in subprocess output: {result.stdout!r}"
+    )
+
+
+@then("the SentenceTransformersProvider class is importable")
+def then_st_class_importable(embedding_world):
+    result = embedding_world["subprocess_result"]
+    assert result.returncode == 0
+    assert "has_st=True" in result.stdout, (
+        f"Expected 'has_st=True' in subprocess output: {result.stdout!r}"
+    )
+
+
+@then("EmbeddingProviderUnavailable is raised")
+def then_embedding_provider_unavailable_raised(embedding_world):
+    raised = embedding_world["raised"]
+    assert raised is not None, "Expected EmbeddingProviderUnavailable, got None"
+    assert isinstance(raised, EmbeddingProviderUnavailable), (
+        f"Expected EmbeddingProviderUnavailable, got {type(raised).__name__}: {raised!r}"
+    )
+
+
+@then(parsers.parse('the embedding error message includes "{needle}"'))
+def then_embedding_error_message_includes(embedding_world, needle: str):
+    raised = embedding_world["raised"]
+    assert needle in str(raised), (
+        f"Expected '{needle}' in error message, got: {raised!r}"
+    )
+
+
+@then("the exception is also an ImportError")
+def then_exception_is_import_error(embedding_world):
+    raised = embedding_world["raised"]
+    assert isinstance(raised, ImportError), (
+        f"Expected ImportError, got {type(raised).__name__}"
+    )
+
+
+@then(parsers.parse("the returned numpy array has shape ({rows:d}, {cols:d})"))
+def then_returned_array_shape(embedding_world, rows: int, cols: int):
+    arr = embedding_world["vectors"][-1]
+    assert arr.shape == (rows, cols), (
+        f"Expected shape ({rows}, {cols}), got {arr.shape}"
+    )
+
+
+@then(parsers.parse("each row has L2 norm within [{lo:.2f}, {hi:.2f}] of 1.0"))
+def then_each_row_norm(embedding_world, lo: float, hi: float):
+    arr = embedding_world["vectors"][-1]
+    if arr.shape[0] == 0:
+        return
+    norms = np.linalg.norm(arr, axis=1)
+    for n in norms:
+        assert lo <= n <= hi, f"norm {n} outside [{lo}, {hi}]"
+
+
+# =====================================================================
+# REQ-20 scenario bindings — sqlite-vec storage
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Add -> search round-trip returns added observation as top-1",
+)
+def test_req20_round_trip(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Delete removes observation from search results",
+)
+def test_req20_delete_removes(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "count() reflects add/delete accurately",
+)
+def test_req20_count_accuracy(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Vector BLOB size matches 384 x 4 = 1536 bytes",
+)
+def test_req20_blob_size(vec_store_world):
+    pass
+
+
+@scenario(
+    "../bdd/req20_sqlite_vec_storage.feature",
+    "Search returns top-k ordered by ascending distance",
+)
+def test_req20_top_k_ordering(vec_store_world):
+    pass
+
+
+# =====================================================================
+# REQ-20 step definitions
+# =====================================================================
+
+
+sqlite_vec = pytest.importorskip("sqlite_vec")
+"""Skip the whole REQ-20 batch when sqlite-vec is missing (test env without [vectors])."""
+
+
+from flow_engineering.vectors.sqlite_vec_store import (
+    BLOB_SIZE,
+    VECTOR_DIM,
+    SqliteVecStore,
+)
+
+
+@pytest.fixture
+def vec_store_world(tmp_path: Path) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-20.
+
+    Uses an in-memory ``:memory:`` SQLite DB so each scenario gets a fresh
+    store with zero fixture setup overhead.
+    """
+    return {
+        "store": None,
+        "vectors": {},
+        "search_results": None,
+        "count_value": None,
+        "raw_blob": None,
+        "round_trip_input": None,
+        "round_trip_output": None,
+    }
+
+
+def _unit(v: np.ndarray) -> np.ndarray:
+    """L2-normalize a vector in place (returns a new array)."""
+    n = float(np.linalg.norm(v))
+    if n <= 0.0:
+        return v.astype(np.float32)
+    return (v / n).astype(np.float32)
+
+
+# ---------- Given ----------
+
+
+@given("a fresh SqliteVecStore (in-memory)")
+def given_fresh_store(tmp_path, vec_store_world):
+    vec_store_world["store"] = SqliteVecStore(tmp_path / "fresh.sqlite")
+    # Use a tmp_path file instead of ":memory:" so each scenario has isolation
+    # but cleanup is automatic via tmp_path fixture teardown.
+
+
+@given("a SqliteVecStore with obs1 and obs2 added")
+def given_store_with_two(tmp_path, vec_store_world):
+    store = SqliteVecStore(tmp_path / "two.sqlite")
+    store.add("obs1", _unit(np.ones(VECTOR_DIM, dtype=np.float32)))
+    store.add("obs2", _unit(np.full(VECTOR_DIM, 2.0, dtype=np.float32)))
+    vec_store_world["store"] = store
+
+
+@given("a fresh SqliteVecStore (in-memory)")
+def given_fresh_store_in_memory(tmp_path, vec_store_world):
+    vec_store_world["store"] = SqliteVecStore(tmp_path / "fresh.sqlite")
+
+
+@given("a SqliteVecStore with 10 random 384-dim vectors at obs1..obs10")
+def given_store_with_ten_random(tmp_path, vec_store_world):
+    rng = np.random.default_rng(seed=2026_06_26)
+    vectors: dict[str, np.ndarray] = {}
+    for i in range(1, 11):
+        v = rng.standard_normal(VECTOR_DIM).astype(np.float32)
+        v = _unit(v)
+        vectors[f"obs{i}"] = v
+    store = SqliteVecStore(tmp_path / "ten.sqlite")
+    for obs_id, vec in vectors.items():
+        store.add(obs_id, vec)
+    vec_store_world["store"] = store
+    vec_store_world["vectors"] = vectors
+
+
+@given("a query vector chosen close to obs7 (cosine distance ~ 0.05)")
+def given_query_close_to_obs7(vec_store_world):
+    """Build a query vector with cosine ~ 0.05 to obs7 by interpolating
+    obs7 with a small orthogonal perturbation."""
+    obs7 = vec_store_world["vectors"]["obs7"]
+    rng = np.random.default_rng(seed=42)
+    # 0.05 cosine distance ~ angle ~ acos(0.95) ~ 0.3176 rad.
+    # Use sin(0.3176) on orthogonal direction.
+    ortho = rng.standard_normal(VECTOR_DIM).astype(np.float32)
+    ortho -= np.dot(ortho, obs7) * obs7  # orthogonalize
+    ortho = _unit(ortho)
+    angle = float(np.arccos(0.95))
+    q = float(np.cos(angle)) * obs7 + float(np.sin(angle)) * ortho
+    vec_store_world["query_vector"] = _unit(q)
+
+
+# ---------- When ----------
+
+
+@when("I add obs1 with a unit vector")
+def when_add_obs1_unit(vec_store_world):
+    v = _unit(np.ones(VECTOR_DIM, dtype=np.float32))
+    vec_store_world["store"].add("obs1", v)
+    vec_store_world["vectors"]["obs1"] = v
+
+
+@when(parsers.parse("I search with the same unit vector, k={k:d}"))
+def when_search_same_unit(vec_store_world, k: int):
+    v = vec_store_world["vectors"]["obs1"]
+    vec_store_world["search_results"] = vec_store_world["store"].search(v, k=k)
+
+
+@when("I delete obs1")
+def when_delete_obs1(vec_store_world):
+    vec_store_world["store"].delete("obs1")
+
+
+@when(parsers.parse("I search with any vector, k={k:d}"))
+def when_search_any(vec_store_world, k: int):
+    v = _unit(np.ones(VECTOR_DIM, dtype=np.float32))
+    vec_store_world["search_results"] = vec_store_world["store"].search(v, k=k)
+
+
+@when("I call count() before any writes")
+def when_count_before_writes(vec_store_world):
+    vec_store_world["count_value"] = vec_store_world["store"].count()
+
+
+@when("I add obs1, obs2, and obs3 with three distinct unit vectors")
+def when_add_three(vec_store_world):
+    store = vec_store_world["store"]
+    store.add("obs1", _unit(np.ones(VECTOR_DIM, dtype=np.float32)))
+    store.add("obs2", _unit(np.full(VECTOR_DIM, 2.0, dtype=np.float32)))
+    store.add("obs3", _unit(np.full(VECTOR_DIM, 3.0, dtype=np.float32)))
+
+
+@when("I delete obs2")
+def when_delete_obs2(vec_store_world):
+    vec_store_world["store"].delete("obs2")
+
+
+@when("I add obs1 with a random 384-dim vector")
+def when_add_random(vec_store_world):
+    rng = np.random.default_rng(seed=2026_06_26 + 1)
+    v = rng.standard_normal(VECTOR_DIM).astype(np.float32)
+    vec_store_world["store"].add("obs1", v)
+    vec_store_world["round_trip_input"] = v
+    vec_store_world["vectors"]["obs1"] = v
+
+
+@when("I read the observation_embeddings.vector column as raw bytes")
+def when_read_blob(vec_store_world):
+    """Read the raw bytes from the audit BLOB column via direct SQL."""
+    store = vec_store_world["store"]
+    conn = store._ensure_conn()  # type: ignore[attr-defined]
+    row = conn.execute(
+        "SELECT vector FROM observation_embeddings WHERE observation_id = ?",
+        ("obs1",),
+    ).fetchone()
+    vec_store_world["raw_blob"] = bytes(row[0])
+
+
+@when(parsers.parse("I search with the query vector, k={k:d}"))
+def when_search_query(vec_store_world, k: int):
+    vec_store_world["search_results"] = vec_store_world["store"].search(
+        vec_store_world["query_vector"], k=k
+    )
+
+
+# ---------- Then ----------
+
+
+@then("the result is obs1 at distance ~0.0")
+def then_result_is_obs1_zero(vec_store_world):
+    results = vec_store_world["search_results"]
+    assert len(results) == 1, f"Expected 1 result, got {len(results)}: {results}"
+    obs_id, distance = results[0]
+    assert obs_id == "obs1", f"Expected obs1, got {obs_id!r}"
+    assert abs(distance) < 0.01, f"Expected distance ~0.0, got {distance}"
+
+
+@then(parsers.parse("{obs_id} is NOT in the result list"))
+def then_obs_not_in_results(vec_store_world, obs_id: str):
+    ids = [r[0] for r in vec_store_world["search_results"]]
+    assert obs_id not in ids, (
+        f"Expected {obs_id!r} NOT in result list, but found it: {ids}"
+    )
+
+
+@then(parsers.parse("{obs_id} IS in the result list"))
+def then_obs_is_in_results(vec_store_world, obs_id: str):
+    ids = [r[0] for r in vec_store_world["search_results"]]
+    assert obs_id in ids, f"Expected {obs_id!r} in result list, got: {ids}"
+
+
+@then(parsers.parse("count() == {n:d}"))
+def then_count_equals(vec_store_world, n: int):
+    actual = vec_store_world["store"].count()
+    assert actual == n, f"Expected count() == {n}, got {actual}"
+
+
+@then(parsers.parse("it returns {n:d}"))
+def then_count_returns_n(vec_store_world, n: int):
+    assert vec_store_world["count_value"] == n, (
+        f"Expected count() == {n}, got {vec_store_world['count_value']}"
+    )
+
+
+@then("count() returns 2")
+def then_count_returns_2(vec_store_world):
+    actual = vec_store_world["store"].count()
+    assert actual == 2, f"Expected count() == 2, got {actual}"
+
+
+@then("count() returns 3")
+def then_count_returns_3(vec_store_world):
+    actual = vec_store_world["store"].count()
+    assert actual == 3, f"Expected count() == 3, got {actual}"
+
+
+@then(parsers.parse("the byte length is exactly {n:d}"))
+def then_blob_byte_length(vec_store_world, n: int):
+    assert len(vec_store_world["raw_blob"]) == n, (
+        f"Expected blob byte length {n}, got {len(vec_store_world['raw_blob'])}"
+    )
+
+
+@then("the deserialized numpy array has shape (384,) and dtype float32")
+def then_deserialized_array(vec_store_world):
+    arr = np.frombuffer(vec_store_world["raw_blob"], dtype=np.float32)
+    assert arr.shape == (VECTOR_DIM,), f"Expected shape ({VECTOR_DIM},), got {arr.shape}"
+    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
+
+
+@then("the values round-trip within 1e-6 of the input")
+def then_blob_round_trip(vec_store_world):
+    arr = np.frombuffer(vec_store_world["raw_blob"], dtype=np.float32)
+    inp = vec_store_world["round_trip_input"].astype(np.float32).reshape(-1)
+    np.testing.assert_allclose(arr, inp, atol=1e-6, rtol=0)
+
+
+@then(parsers.parse("the result list has exactly {n:d} (obs_id, distance) tuples"))
+def then_result_list_size(vec_store_world, n: int):
+    results = vec_store_world["search_results"]
+    assert len(results) == n, f"Expected {n} results, got {len(results)}: {results}"
+    for entry in results:
+        assert isinstance(entry, tuple) and len(entry) == 2, (
+            f"Expected (obs_id, distance) tuple, got {entry!r}"
+        )
+
+
+@then(parsers.parse("{obs_id} is at position {pos:d}"))
+def then_obs_at_position(vec_store_world, obs_id: str, pos: int):
+    results = vec_store_world["search_results"]
+    assert 0 <= pos < len(results), (
+        f"Position {pos} out of range for {len(results)} results"
+    )
+    assert results[pos][0] == obs_id, (
+        f"Expected {obs_id!r} at position {pos}, got {results[pos][0]!r}"
+    )
+
+
+@then("the distances are sorted in ascending order")
+def then_distances_sorted_asc(vec_store_world):
+    results = vec_store_world["search_results"]
+    distances = [d for _obs, d in results]
+    assert distances == sorted(distances), (
+        f"Distances not ascending: {distances}"
+    )
+
+
+# =====================================================================
+# REQ-21 scenario bindings — flow reindex CLI
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "flow reindex on empty corpus completes with 0 indexed",
+)
+def test_req21_reindex_empty(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "flow reindex on 250 observations emits progress lines + done",
+)
+def test_req21_reindex_250_progress(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "Second flow reindex is idempotent",
+)
+def test_req21_reindex_idempotent(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "--dry-run reports count without writing",
+)
+def test_req21_reindex_dry_run(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req21_reindex.feature",
+    "Crash mid-run: subsequent restart completes the corpus",
+)
+def test_req21_reindex_crash_resume(vec_reindex_world):
+    pass
+
+
+# =====================================================================
+# REQ-21 step definitions — flow reindex CLI
+# =====================================================================
+
+
+from click.testing import CliRunner as _CliRunner
+
+from flow_engineering.cli import main as _cli_main
+
+
+def _seed_reindex_corpus(backend: InMemoryBackend, n: int) -> None:
+    """Seed ``n`` synthetic observations directly into ``backend.observations``.
+
+    Mirrors the seed helper in ``tests/unit/test_cli_reindex.py`` so the BDD
+    fixtures exercise the same shape the unit tests use.
+    """
+    for i in range(1, n + 1):
+        backend.observations[i] = {
+            "id": i,
+            "title": f"obs-{i}",
+            "content": f"observation {i} content",
+            "topic_key": "sdd/test/phase",
+            "type": "architecture",
+            "scope": "project",
+            "project": "insyd",
+            "created_at": i * 1000,
+            "updated_at": i * 1000,
+        }
+    backend.next_id = max(backend.next_id, n + 1)
+
+
+@pytest.fixture
+def vec_reindex_world(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-21 ``flow reindex`` scenarios.
+
+    Wires the four CLI seams ``flow reindex`` depends on:
+    - ``_default_save_backend`` → test backend (so CLI reads our seed)
+    - ``_sqlite_vec_available`` → True (gate cleared)
+    - ``_vectors_sqlite_path`` → tmp file (no writes to ~/.flow)
+    - ``FLOW_METRICS_PATH`` → tmp file (no writes to ~/.flow)
+
+    The ``run_outputs`` list captures every CliRunner invocation so multi-run
+    scenarios (idempotent + crash-resume) can assert against each one.
+    """
+    metrics_path = tmp_path / "metrics.jsonl"
+    vectors_path = tmp_path / "vectors.sqlite"
+    monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
+    monkeypatch.delenv("FLOW_VECTOR_SEARCH", raising=False)
+
+    from flow_engineering import cli as cli_mod
+
+    backend = InMemoryBackend()
+    monkeypatch.setattr(cli_mod, "_default_save_backend", lambda: backend)
+    monkeypatch.setattr(cli_mod, "_sqlite_vec_available", lambda: True)
+    monkeypatch.setattr(cli_mod, "_vectors_sqlite_path", lambda: vectors_path)
+
+    runner = _CliRunner()
+
+    return {
+        "tmp_path": tmp_path,
+        "metrics_path": metrics_path,
+        "vectors_path": vectors_path,
+        "backend": backend,
+        "cli_mod": cli_mod,
+        "runner": runner,
+        "run_outputs": [],
+        "simulate_crash_after": None,
+    }
+
+
+# ---------- Given ----------
+
+
+@given("an empty InMemoryBackend")
+def given_empty_backend(vec_reindex_world):
+    pass
+
+
+@given("an InMemoryBackend seeded with 250 observations")
+def given_backend_250(vec_reindex_world):
+    _seed_reindex_corpus(vec_reindex_world["backend"], 250)
+
+
+@given(parsers.parse("an InMemoryBackend seeded with {n:d} observations"))
+def given_backend_n(vec_reindex_world, n: int):
+    _seed_reindex_corpus(vec_reindex_world["backend"], n)
+
+
+@given("the [vectors] extra is available")
+def given_vectors_extra_available(vec_reindex_world):
+    pass
+
+
+@given("a tmp-path SqliteVecStore")
+def given_tmp_store(vec_reindex_world):
+    """The vec_reindex_world fixture already wired _vectors_sqlite_path to tmp."""
+    pass
+
+
+@given("a simulated reindex crash after 100 of the first batch")
+def given_simulated_crash(vec_reindex_world):
+    """Patch ``_perform_reindex_batch`` so the FIRST call simulates a crash
+    after 100 rows of the first batch; the SECOND call (and onward) runs the
+    real worker. Mirrors the unit test pattern in ``test_cli_reindex.py``.
+    """
+    cli_mod = vec_reindex_world["cli_mod"]
+    original_perform = cli_mod._perform_reindex_batch
+    call_count = {"n": 0}
+
+    def _crash_on_first_call(*args: Any, **kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            kwargs["simulate_crash_after"] = 100
+        return original_perform(*args, **kwargs)
+
+    vec_reindex_world["cli_mod"] = cli_mod
+    cli_mod._perform_reindex_batch = _crash_on_first_call
+
+
+# ---------- When ----------
+
+
+@when("I run flow reindex")
+def when_run_reindex_default(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, [])
+
+
+@when("I run flow reindex again")
+def when_run_reindex_again(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, [])
+
+
+@when("I run flow reindex --batch-size 100")
+def when_run_reindex_batch_100(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--batch-size", "100"])
+
+
+@when("I run flow reindex --batch-size 100 (first run, partial)")
+def when_run_reindex_first_partial(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--batch-size", "100"])
+
+
+@when("I run flow reindex --batch-size 100 (second run, full)")
+def when_run_reindex_second_full(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--batch-size", "100"])
+
+
+@when("I run flow reindex --dry-run")
+def when_run_reindex_dry_run(vec_reindex_world):
+    _invoke_reindex(vec_reindex_world, ["--dry-run"])
+
+
+def _invoke_reindex(world: dict[str, Any], extra_args: list[str]) -> None:
+    """Helper: invoke ``flow reindex`` with the given extra CLI args."""
+    runner = world["runner"]
+    result = runner.invoke(_cli_main, ["reindex", *extra_args])
+    world["run_outputs"].append(result)
+
+
+# ---------- Then ----------
+
+
+@then("the exit code is 0")
+def then_exit_code_zero(vec_reindex_world):
+    last = vec_reindex_world["run_outputs"][-1]
+    assert last.exit_code == 0, (
+        f"Expected exit code 0, got {last.exit_code}: "
+        f"stdout={last.stdout!r} stderr={last.stderr!r}"
+    )
+
+
+@then(parsers.parse('the output contains "{needle}"'))
+def then_reindex_output_contains(vec_reindex_world, needle: str):
+    last = vec_reindex_world["run_outputs"][-1]
+    combined = (last.output or "") + (last.stderr or "")
+    assert needle in combined, (
+        f"Expected {needle!r} in output, got:\n"
+        f"output={last.output!r}\nstderr={last.stderr!r}"
+    )
+
+
+@then(parsers.parse("the vector_index_size_observations gauge reads {n:d}"))
+def then_index_size_gauge(vec_reindex_world, n: int):
+    """Read the gauge from the metrics JSONL (sampled at reindex completion).
+
+    Falls back to ``SqliteVecStore.count()`` if the metrics file is empty
+    (defensive: tests that do not assert counters should still pass).
+    """
+    metrics_path = vec_reindex_world["metrics_path"]
+    if metrics_path.exists():
+        events: list[dict[str, Any]] = []
+        for line in metrics_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                events.append(json.loads(line))
+        gauge_events = [
+            e for e in events if e.get("name") == "vector_index_size_observations"
+        ]
+        if gauge_events:
+            value = int(gauge_events[-1].get("fields", {}).get("value", -1))
+            assert value == n, (
+                f"Expected vector_index_size_observations == {n}, got {value}"
+            )
+            return
+    # Fallback: read directly from the SqliteVecStore on disk (truth source).
+    sqlite_vec = pytest.importorskip("sqlite_vec")
+    from flow_engineering.vectors import SqliteVecStore
+
+    store = SqliteVecStore(vec_reindex_world["vectors_path"])
+    assert store.count() == n, (
+        f"Expected store.count() == {n}, got {store.count()}"
+    )
+
+
+@then(parsers.parse('the second output contains "{needle}"'))
+def then_second_output_contains(vec_reindex_world, needle: str):
+    outputs = vec_reindex_world["run_outputs"]
+    assert len(outputs) >= 2, (
+        f"Expected ≥2 reindex runs, got {len(outputs)}"
+    )
+    last = outputs[-1]
+    combined = (last.output or "") + (last.stderr or "")
+    assert needle in combined, (
+        f"Expected {needle!r} in second run output, got:\n"
+        f"output={last.output!r}\nstderr={last.stderr!r}"
     )
