@@ -785,3 +785,276 @@ def empty_list_returned(vector_world):
     assert vector_world["results"] == [], (
         f"Expected [], got {vector_world['results']!r}"
     )
+
+
+# =====================================================================
+# REQ-19 scenario bindings — EmbeddingProvider ABC + lazy import
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "MockEmbeddingProvider returns deterministic 384-dim vectors",
+)
+def test_req19_mock_deterministic(embedding_world):
+    pass
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "import flow_engineering.embedding_provider does not trigger torch import",
+)
+def test_req19_lazy_module_import(embedding_world):
+    pass
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "SentenceTransformersProvider raises ImportError when torch missing",
+)
+def test_req19_sentence_transformers_missing_torch(embedding_world):
+    pass
+
+
+@scenario(
+    "../bdd/req19_embedding_provider.feature",
+    "Embedding output shape is (N, 384) for N inputs",
+)
+def test_req19_embed_shape(embedding_world):
+    pass
+
+
+# =====================================================================
+# REQ-19 step definitions
+# =====================================================================
+
+
+from flow_engineering.embedding_provider import (
+    EmbeddingProviderUnavailable,
+    MockEmbeddingProvider,
+    SentenceTransformersProvider,
+)
+
+
+@pytest.fixture
+def embedding_world() -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-19 scenarios.
+
+    Mirrors the vector_world fixture pattern; kept separate so REQ-19 step
+    defs don't accidentally mutate the REQ-17/18 shared state.
+    """
+    return {
+        "provider": None,
+        "vectors": [],
+        "subprocess_result": None,
+        "raised": None,
+    }
+
+
+# ---------- Given ----------
+
+
+@given("a MockEmbeddingProvider")
+def given_mock_provider(embedding_world):
+    embedding_world["provider"] = MockEmbeddingProvider()
+
+
+@given("a fresh subprocess")
+def given_fresh_subprocess(embedding_world):
+    # No-op fixture marker — the subprocess is launched lazily inside the When step.
+    embedding_world["subprocess_result"] = None
+
+
+@given("torch is patched to raise ImportError on import")
+def given_torch_patched_to_raise(monkeypatch, embedding_world):
+    """Patch builtins.__import__ so any ``import torch`` raises ImportError."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+@given("sentence_transformers is removed from sys.modules")
+def given_st_removed(monkeypatch, embedding_world):
+    monkeypatch.delitem(sys.modules, "sentence_transformers", raising=False)
+
+
+# ---------- When ----------
+
+
+@when(parsers.parse('I embed "{text}" twice in a row'))
+def when_embed_twice(embedding_world, text: str):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([text]))
+    embedding_world["vectors"].append(provider.embed([text]))
+
+
+@when(parsers.parse('I embed "{text}"'))
+def when_embed_text(embedding_world, text: str):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([text]))
+
+
+@when("I import flow_engineering.embedding_provider in that subprocess")
+def when_subprocess_import(embedding_world):
+    import subprocess
+
+    script = (
+        "import sys; "
+        "import flow_engineering.embedding_provider as m; "
+        "torch_loaded = 'torch' in sys.modules; "
+        "st_loaded = 'sentence_transformers' in sys.modules; "
+        "has_st = hasattr(m, 'SentenceTransformersProvider'); "
+        "print(f'torch={torch_loaded} st={st_loaded} has_st={has_st}'); "
+        "sys.exit(0 if (not torch_loaded and not st_loaded and has_st) else 1)"
+    )
+    embedding_world["subprocess_result"] = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd="C:/dev/proyects/flow-engineering",
+    )
+
+
+@when("I instantiate SentenceTransformersProvider()")
+def when_instantiate_st(embedding_world):
+    try:
+        SentenceTransformersProvider()
+    except Exception as exc:
+        embedding_world["raised"] = exc
+
+
+@when(parsers.parse('I embed 5 texts ["{a}", "{b}", "{c}", "{d}", "{e}"]'))
+def when_embed_five_texts(embedding_world, a, b, c, d, e):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([a, b, c, d, e]))
+
+
+@when("I embed an empty list")
+def when_embed_empty(embedding_world):
+    provider = embedding_world["provider"]
+    embedding_world["vectors"].append(provider.embed([]))
+
+
+# ---------- Then ----------
+
+
+@then("both calls return identical numpy arrays")
+def then_both_calls_identical(embedding_world):
+    assert len(embedding_world["vectors"]) >= 2, (
+        f"Expected ≥2 embed results, got {len(embedding_world['vectors'])}"
+    )
+    first, second = embedding_world["vectors"][0], embedding_world["vectors"][1]
+    assert isinstance(first, np.ndarray)
+    assert isinstance(second, np.ndarray)
+    np.testing.assert_array_equal(first, second)
+
+
+@then(parsers.parse("the array shape is ({rows:d}, {cols:d})"))
+def then_shape_n_by_m(embedding_world, rows: int, cols: int):
+    arr = embedding_world["vectors"][-1]
+    assert arr.shape == (rows, cols), (
+        f"Expected shape ({rows}, {cols}), got {arr.shape}"
+    )
+
+
+@then(parsers.parse("the L2 norm of the vector is within [{lo:.2f}, {hi:.2f}] of 1.0"))
+def then_l2_norm_in_range(embedding_world, lo: float, hi: float):
+    arr = embedding_world["vectors"][-1]
+    if arr.shape[0] == 0:
+        return
+    norms = np.linalg.norm(arr, axis=1)
+    for n in norms:
+        assert lo <= n <= hi, f"norm {n} outside [{lo}, {hi}]"
+
+
+@then("the goodbye vector differs from the hello vector")
+def then_bye_differs_from_hello(embedding_world):
+    """The last 2 vectors in embedding_world['vectors'] are hello and goodbye."""
+    assert len(embedding_world["vectors"]) >= 2
+    hello, bye = embedding_world["vectors"][-2], embedding_world["vectors"][-1]
+    assert not np.array_equal(hello, bye), (
+        "Expected different vectors for different inputs"
+    )
+
+
+@then('"torch" is NOT in sys.modules')
+def then_torch_not_loaded(embedding_world):
+    result = embedding_world["subprocess_result"]
+    assert result is not None, "Subprocess result missing"
+    assert result.returncode == 0, (
+        f"Subprocess failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+    assert "torch=False" in result.stdout, (
+        f"Expected 'torch=False' in subprocess output: {result.stdout!r}"
+    )
+
+
+@then('"sentence_transformers" is NOT in sys.modules')
+def then_st_not_loaded(embedding_world):
+    result = embedding_world["subprocess_result"]
+    assert result.returncode == 0, (
+        f"Subprocess failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+    assert "st=False" in result.stdout, (
+        f"Expected 'st=False' in subprocess output: {result.stdout!r}"
+    )
+
+
+@then("the SentenceTransformersProvider class is importable")
+def then_st_class_importable(embedding_world):
+    result = embedding_world["subprocess_result"]
+    assert result.returncode == 0
+    assert "has_st=True" in result.stdout, (
+        f"Expected 'has_st=True' in subprocess output: {result.stdout!r}"
+    )
+
+
+@then("EmbeddingProviderUnavailable is raised")
+def then_embedding_provider_unavailable_raised(embedding_world):
+    raised = embedding_world["raised"]
+    assert raised is not None, "Expected EmbeddingProviderUnavailable, got None"
+    assert isinstance(raised, EmbeddingProviderUnavailable), (
+        f"Expected EmbeddingProviderUnavailable, got {type(raised).__name__}: {raised!r}"
+    )
+
+
+@then(parsers.parse('the embedding error message includes "{needle}"'))
+def then_embedding_error_message_includes(embedding_world, needle: str):
+    raised = embedding_world["raised"]
+    assert needle in str(raised), (
+        f"Expected '{needle}' in error message, got: {raised!r}"
+    )
+
+
+@then("the exception is also an ImportError")
+def then_exception_is_import_error(embedding_world):
+    raised = embedding_world["raised"]
+    assert isinstance(raised, ImportError), (
+        f"Expected ImportError, got {type(raised).__name__}"
+    )
+
+
+@then(parsers.parse("the returned numpy array has shape ({rows:d}, {cols:d})"))
+def then_returned_array_shape(embedding_world, rows: int, cols: int):
+    arr = embedding_world["vectors"][-1]
+    assert arr.shape == (rows, cols), (
+        f"Expected shape ({rows}, {cols}), got {arr.shape}"
+    )
+
+
+@then(parsers.parse("each row has L2 norm within [{lo:.2f}, {hi:.2f}] of 1.0"))
+def then_each_row_norm(embedding_world, lo: float, hi: float):
+    arr = embedding_world["vectors"][-1]
+    if arr.shape[0] == 0:
+        return
+    norms = np.linalg.norm(arr, axis=1)
+    for n in norms:
+        assert lo <= n <= hi, f"norm {n} outside [{lo}, {hi}]"
