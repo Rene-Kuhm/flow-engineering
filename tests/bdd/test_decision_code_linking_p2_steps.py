@@ -12,6 +12,7 @@ level so tests run in any environment (no real binary needed).
 from __future__ import annotations
 
 import json
+import time as _time
 from pathlib import Path
 from typing import Any
 
@@ -376,9 +377,6 @@ def persisted_block_contains_candidate(world) -> None:
 # =====================================================================
 # REQ-7 (PR#2 batch 2): flow inspect <change>
 # =====================================================================
-
-
-import time as _time
 
 
 @pytest.fixture

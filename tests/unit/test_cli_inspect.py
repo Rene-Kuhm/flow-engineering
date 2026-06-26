@@ -222,8 +222,9 @@ class TestInspectFreshness:
         self, seeded_backend, metrics_path, monkeypatch
     ) -> None:
         """An observation saved recently shows 'Xd ago' (no stale warning)."""
-        from flow_engineering.binding import CodeRef
         import time
+
+        from flow_engineering.binding import CodeRef
 
         _, _seed, _ = seeded_backend
         cref = CodeRef(project="insyd", id="n_recent", label="R",

@@ -23,7 +23,6 @@ import pytest
 from flow_engineering.binding import format_code_refs_block
 from flow_engineering.engram_io import InMemoryBackend
 
-
 METRICS_PATH_ENV = "FLOW_METRICS_PATH"
 
 
