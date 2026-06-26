@@ -1,0 +1,11 @@
+{
+  "change": "bootstrap",
+  "status": "NEW",
+  "created_at": "2026-06-25T22:13:59.533834+00:00",
+  "updated_at": "2026-06-25T22:13:59.533835+00:00",
+  "transitions": [],
+  "drift_baseline": {},
+  "cross_projects": [],
+  "token_cost": 0,
+  "token_budget": 100000
+}
