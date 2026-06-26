@@ -21,7 +21,7 @@ from flow_engineering.scaffold import (
     render_new_project,
     scaffold_change,
 )
-from flow_engineering.state import ChangeStatus, StateMachine
+from flow_engineering.state import StateMachine
 
 
 @click.group()

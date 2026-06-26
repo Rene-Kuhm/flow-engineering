@@ -29,8 +29,9 @@ Public surface (PR#2 batch 1):
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 from flow_engineering import graphify_query, observability
 from flow_engineering.binding import CodeRef

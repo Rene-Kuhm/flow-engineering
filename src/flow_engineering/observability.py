@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +51,7 @@ def _resolve_path() -> Path:
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO 8601 string with a 'Z' suffix."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def increment(name: str, **fields: Any) -> None:
@@ -82,7 +82,7 @@ def flush() -> None:
     so this is a no-op reserved for future buffered writers. Kept as part
     of the public contract so callers can insert it before exit.
     """
-    return None
+    return
 
 
 def read_all(path: Path | None = None) -> list[dict[str, Any]]:

@@ -16,11 +16,9 @@ fail until the GREEN commit implements observability.py.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
-
 
 METRICS_PATH_ENV = "FLOW_METRICS_PATH"
 

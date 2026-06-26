@@ -15,6 +15,8 @@ from typing import Any
 
 from flow_engineering.auto_suggest_code_refs import (
     FLOW_AUTO_SUGGEST_ENV as _FLOW_AUTO_SUGGEST_ENV,
+)
+from flow_engineering.auto_suggest_code_refs import (
     auto_suggest_code_refs,
 )
 from flow_engineering.binding import (
