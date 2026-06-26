@@ -208,3 +208,35 @@ def compute_freshness(updated_at_ms: int | None, *, now_ms: int | None = None) -
     if now_ms is None:
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
     return _format_age(now_ms - updated_at_ms)
+
+
+# ---------- Drift summary (REQ-12, PR#1 batch 1) ----------
+
+
+def record_drift_summary(report: "DriftReport") -> None:
+    """Increment 7 drift counters from a ``DriftReport`` (REQ-12).
+
+    Emits one JSONL line per counter; counts of zero for absent classes
+    are still emitted so the sink captures a complete snapshot per
+    ``flow drift`` invocation. The helper is fail-open (mirrors
+    ``increment``) and never raises.
+
+    Counters:
+    - ``drift_invoked_total``        — one per scan, tagged with the change.
+    - ``drift_still_valid_total``    — bindings classified STILL_VALID.
+    - ``drift_label_drift_total``    — LABEL_DRIFT count.
+    - ``drift_stale_location_total`` — STALE_LOCATION count.
+    - ``drift_stale_id_total``       — STALE_ID count.
+    - ``drift_obsolete_total``       — OBSOLETE count.
+    - ``drift_contradicted_total``   — CONTRADICTED count.
+    """
+    from flow_engineering.decision_drift import DriftClass
+
+    counts = report.class_counts
+    increment("drift_invoked_total", change=report.change_name)
+    increment("drift_still_valid_total", count=counts.get(DriftClass.STILL_VALID, 0))
+    increment("drift_label_drift_total", count=counts.get(DriftClass.LABEL_DRIFT, 0))
+    increment("drift_stale_location_total", count=counts.get(DriftClass.STALE_LOCATION, 0))
+    increment("drift_stale_id_total", count=counts.get(DriftClass.STALE_ID, 0))
+    increment("drift_obsolete_total", count=counts.get(DriftClass.OBSOLETE, 0))
+    increment("drift_contradicted_total", count=counts.get(DriftClass.CONTRADICTED, 0))

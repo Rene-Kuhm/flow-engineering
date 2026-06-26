@@ -28,3 +28,9 @@ Feature: engram_io save_observation honors the code_refs marker
     When save_phase is called for "propose"
     Then it raises ParseError mentioning "schema"
     And no observation row was written
+
+  Scenario: Save with valid empty block writes as source: unbound
+    Given an observation with no code_refs marker
+    When I call save_phase with content containing "<!-- code_refs -->\n{\"schema\": 1, \"nodes\": [], \"source\": \"unbound\"}"
+    Then the saved observation has a code_refs block with source: unbound
+    And the prose is unchanged

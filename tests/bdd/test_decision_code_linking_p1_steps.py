@@ -109,6 +109,11 @@ def test_save_schema_rejected(world):  # noqa: F811
     pass
 
 
+@scenario("../bdd/req3_engram_io.feature", "Save with valid empty block writes as source: unbound")
+def test_save_empty_block_unbound(world):  # noqa: F811
+    pass
+
+
 # req4_backfill.feature
 @scenario("../bdd/req4_backfill.feature", "Dry-run reports counts without writing")
 def test_backfill_dry_run(world):  # noqa: F811
@@ -358,6 +363,18 @@ def do_save_phase(world, phase):
         world["saved_content"] = obs["content"]
 
 
+@when(parsers.parse('I call save_phase with content containing "{content}"'))
+def do_save_phase_with_content(world, content):
+    decoded = content.encode().decode("unicode_escape")
+    world["content"] = decoded
+    client = world["client"]
+    assert client is not None
+    client.save_phase(world["phase"], decoded)
+    backend = world["backend"]
+    obs = list(backend.observations.values())[0]
+    world["saved_content"] = obs["content"]
+
+
 @when("the backfill script runs in dry-run mode")
 def do_backfill_dry(world):
     from scripts.backfill_code_refs import run
@@ -514,6 +531,20 @@ def then_parse_error_mentions(world, text):
     exc = world["raised"]
     assert exc is not None and isinstance(exc, ParseError)
     assert text.lower() in str(exc).lower()
+
+
+@then("the saved observation has a code_refs block with source: unbound")
+def then_saved_has_unbound_block(world):
+    refs = extract_code_refs(world["saved_content"])
+    assert refs == []
+    assert '"source": "unbound"' in world["saved_content"]
+
+
+@then("the prose is unchanged")
+def then_prose_unchanged(world):
+    prose = world["content"].split(CODE_REFS_MARKER, 1)[0]
+    saved_prose = world["saved_content"].split(CODE_REFS_MARKER, 1)[0]
+    assert prose == saved_prose
 
 
 @then("the result reports would_change = 2 and applied = 0")
