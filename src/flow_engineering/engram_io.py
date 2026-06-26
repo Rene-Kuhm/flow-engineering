@@ -28,6 +28,9 @@ from flow_engineering.binding import (
     validate_block,
 )
 
+METADATA_MARKER: str = "<!-- metadata -->"
+_METADATA_SCHEMA: int = 1
+
 
 class EngramBackend(ABC):
     """Abstract Engram backend. Real implementation calls MCP, tests use in-memory."""
@@ -168,6 +171,74 @@ def phase_topic_key(change: str, phase: str) -> str:
     return f"sdd/{change}/{phase}"
 
 
+def _extract_metadata_fields(content: str) -> dict[str, Any]:
+    """Parse existing `<!-- metadata -->` JSON body and return its ``fields``.
+
+    Returns ``{}`` when the marker is absent OR when the body is malformed
+    (defensive — a corrupt metadata block must not block a fresh write).
+    Uses ``raw_decode`` so trailing content (e.g. a ``code_refs`` block
+    appearing after the metadata block) does not corrupt the parse.
+    """
+    marker_idx = content.rfind(METADATA_MARKER)
+    if marker_idx < 0:
+        return {}
+    body_start = marker_idx + len(METADATA_MARKER)
+    if body_start < len(content) and content[body_start] == "\n":
+        body_start += 1
+    body = content[body_start:].lstrip()
+    if not body:
+        return {}
+    try:
+        payload, _end = json.JSONDecoder().raw_decode(body)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    fields = payload.get("fields", {})
+    return fields if isinstance(fields, dict) else {}
+
+
+def _format_metadata_block(fields: dict[str, Any]) -> str:
+    """Return a canonical ``<!-- metadata -->`` block for the given fields."""
+    payload = {"schema": _METADATA_SCHEMA, "fields": dict(fields)}
+    body = json.dumps(payload, ensure_ascii=False, separators=(", ", ": "))
+    return f"{METADATA_MARKER}\n{body}\n"
+
+
+def _replace_or_append_metadata_block(content: str, new_block: str) -> str:
+    """Replace the existing ``<!-- metadata -->`` block or insert one.
+
+    Layout invariant: ``code_refs`` is always the LAST block in content.
+    Metadata is placed immediately before the ``code_refs`` block (when
+    present) or appended at end of content (when no ``code_refs`` exists).
+
+    When the metadata block already exists anywhere in the content, it is
+    located via ``raw_decode`` and replaced in place — preserving the
+    prose and any trailing ``code_refs`` block byte-for-byte.
+    """
+    if METADATA_MARKER in content:
+        marker_idx = content.rfind(METADATA_MARKER)
+        body_start = marker_idx + len(METADATA_MARKER)
+        if body_start < len(content) and content[body_start] == "\n":
+            body_start += 1
+        try:
+            _payload, json_end = json.JSONDecoder().raw_decode(content[body_start:])
+        except json.JSONDecodeError:
+            json_end = 0
+        block_end = body_start + json_end
+        if block_end < len(content) and content[block_end] == "\n":
+            block_end += 1
+        head = content[:marker_idx].rstrip("\n")
+        tail = content[block_end:].lstrip("\n")
+        if tail:
+            return head + "\n\n" + new_block + "\n" + tail
+        return head + "\n\n" + new_block
+    if CODE_REFS_MARKER in content:
+        prose, code_refs_block = split_prose_and_refs(content)
+        return prose + new_block + code_refs_block
+    return content.rstrip("\n") + "\n\n" + new_block
+
+
 def cross_session_topic_key() -> str:
     """Topic key for cross-session flow searches."""
     return "sdd/flow-engineering"
@@ -281,6 +352,44 @@ class EngramClient:
             return None
         prose, _block = split_prose_and_refs(content)
         return prose
+
+    def update_observation_metadata(
+        self, observation_id: int, metadata: dict[str, Any]
+    ) -> None:
+        """Append/update a trailing ``<!-- metadata -->`` block.
+
+        Distinct marker from ``<!-- code_refs -->``: this one carries
+        observability metadata (e.g. ``last_verified_at``,
+        ``last_drift_class``) and never mutates the ``code_refs`` block.
+        The ``code_refs`` block is preserved byte-identical.
+
+        Semantics:
+        - If the marker is absent, a fresh block is appended AFTER any
+          existing ``code_refs`` block (or at end of content when none).
+        - If the marker is present, the existing JSON body is parsed; new
+          keys win on conflict, existing keys are preserved.
+        - Malformed existing metadata JSON is treated as an empty block
+          (defensive — the new keys overwrite the corrupt body).
+        - A single ``update_observation`` call performs the write.
+
+        Fail-open: any exception during the read/parse/write cycle is
+        swallowed and logged to observability. This method never raises.
+        """
+        from flow_engineering import observability
+
+        try:
+            current = self.backend.mem_get_observation(observation_id)
+            content = current["content"] if isinstance(current, dict) else str(current)
+
+            existing_fields = _extract_metadata_fields(content)
+            merged = {**existing_fields, **metadata}
+
+            new_block = _format_metadata_block(merged)
+            updated = _replace_or_append_metadata_block(content, new_block)
+            self.backend.update_observation(observation_id, content=updated)
+        except Exception:
+            observability.increment("update_observation_metadata_failed_total")
+            return
 
     @staticmethod
     def _ensure_code_refs_block(content: str) -> str:
