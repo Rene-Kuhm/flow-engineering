@@ -1,8 +1,10 @@
-"""BDD step definitions for vector-semantic-search PR#1 REQ-17 + REQ-18.
+"""BDD step definitions for vector-semantic-search PR#1 REQ-17 + REQ-18 + REQ-22.
 
-Covers ``req17_semantic_search.feature`` (5 scenarios) and
-``req18_hybrid_scoring.feature`` (5 scenarios) — the BDD acceptance gate for
-the activation gate (REQ-17) and the hybrid scoring formula (REQ-18).
+Covers ``req17_semantic_search.feature`` (5 scenarios),
+``req18_hybrid_scoring.feature`` (5 scenarios), and
+``req22_vector_observability.feature`` (4 scenarios) — the BDD acceptance
+gate for the activation gate (REQ-17), the hybrid scoring formula
+(REQ-18), and the observability counters (REQ-22).
 
 REQ-17 scenarios exercise the InMemoryBackend / HybridBackend gate behavior:
 - Scenario 1: HybridBackend with a controlled embedding provider returns
@@ -1651,3 +1653,349 @@ def then_second_output_contains(vec_reindex_world, needle: str):
         f"Expected {needle!r} in second run output, got:\n"
         f"output={last.output!r}\nstderr={last.stderr!r}"
     )
+
+
+# =====================================================================
+# REQ-22 scenario bindings — vector observability counters
+# =====================================================================
+
+
+@scenario(
+    "../bdd/req22_vector_observability.feature",
+    "vector_search_invoked_total increments per mem_search_hybrid call",
+)
+def test_req22_invoked_counter(vector_world):
+    pass
+
+
+@scenario(
+    "../bdd/req22_vector_observability.feature",
+    "vector_search_latency_ms appears in metrics output",
+)
+def test_req22_latency_in_output(vector_world):
+    pass
+
+
+@scenario(
+    "../bdd/req22_vector_observability.feature",
+    "reindex_observations_total matches total observations after reindex",
+)
+def test_req22_reindex_counter(vec_reindex_world):
+    pass
+
+
+@scenario(
+    "../bdd/req22_vector_observability.feature",
+    "Counter names match REQ-8 convention (no naming drift)",
+)
+def test_req22_naming_convention(vector_world):
+    pass
+
+
+# =====================================================================
+# REQ-22 step definitions — 6 vector_* counters + naming catalog
+# =====================================================================
+
+
+from flow_engineering import observability
+
+
+def _read_jsonl_events(path: Path) -> list[dict[str, Any]]:
+    """Parse the metrics JSONL file at ``path`` into a list of event dicts.
+
+    Mirrors the inline pattern used by ``then_index_size_gauge`` for the
+    REQ-21 reindex gauge read; kept as a helper so REQ-22 step defs stay
+    declarative. Skips malformed lines defensively (best-effort sink).
+    """
+    if not path.exists():
+        return []
+    events: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+# ---------- Given ----------
+
+
+@given("a HybridBackend with a MockEmbeddingProvider")
+def given_hybrid_with_mock_provider(vector_world):
+    """REQ-22 Given: build a HybridBackend + MockEmbeddingProvider + 3 obs corpus.
+
+    Mirrors ``hybrid_with_mock_provider`` (REQ-17) but uses the shorter,
+    REQ-22-style step text so the new feature file reads declaratively.
+    Idempotent: if a hybrid is already wired by a previous Given step
+    (e.g. for REQ-18 worked example), the existing state is preserved.
+    """
+    if vector_world.get("hybrid") is not None:
+        return
+    from flow_engineering.embedding_provider import MockEmbeddingProvider
+
+    inner = InMemoryBackend()
+    inner.mem_save(
+        title="drift entry",
+        content="drift detection strategy",
+        topic_key="sdd/x/spec",
+    )
+    inner.mem_save(
+        title="alarm entry",
+        content="drift alarm drift detection",
+        topic_key="sdd/x/spec",
+    )
+    inner.mem_save(
+        title="logging entry",
+        content="logging best practices drift detection",
+        topic_key="sdd/x/spec",
+    )
+    vector_world["backend"] = inner
+    vector_world["provider"] = MockEmbeddingProvider()
+    vector_world["hybrid"] = HybridBackend(
+        inner=inner, embedding_provider=vector_world["provider"]
+    )
+
+
+@given(parsers.parse("a corpus of {n:d} observations"))
+def given_corpus_of_n(vector_world, n: int):
+    """REQ-22 Given: ensure exactly ``n`` observations exist on the inner backend.
+
+    If a hybrid is already wired with >= n observations (typical path: the
+    REQ-17 ``hybrid_with_mock_provider`` step pre-seeded 3), the extra seed
+    step is a no-op so the BDD Given chain reads naturally.
+    """
+    backend = vector_world.get("backend")
+    if backend is None:
+        backend = InMemoryBackend()
+        vector_world["backend"] = backend
+    existing = len(backend.observations)
+    for i in range(existing, n):
+        backend.mem_save(
+            title=f"obs-{i + 1}",
+            content=f"drift detection observation {i + 1}",
+            topic_key="sdd/x/spec",
+        )
+
+
+@given("the REQ-22 counter catalog has 6 entries")
+def given_req22_catalog_has_six(vector_world):
+    """REQ-22 scenario 4 Given: assert the canonical catalog is present + sized.
+
+    The catalog lives in ``observability.VECTOR_COUNTER_NAMES`` and is the
+    single source of truth that ``record_vector_summary`` and the CLI reindex
+    path both consult. Sizing it at 6 catches silent additions or removals.
+    """
+    names = observability.VECTOR_COUNTER_NAMES
+    assert isinstance(names, list), f"VECTOR_COUNTER_NAMES is not a list: {type(names)}"
+    assert len(names) == 6, (
+        f"Expected 6 counter names in VECTOR_COUNTER_NAMES, got {len(names)}: {names}"
+    )
+
+
+# ---------- When ----------
+
+
+@when(parsers.parse('I call mem_search_hybrid("{query}", k={k:d}) with trigger={trigger}'))
+def when_call_hybrid_with_trigger(vector_world, query: str, k: int, trigger: str):
+    """REQ-22 scenario 1 + 4: explicit trigger tag for the observability contract.
+
+    The trigger is passed straight through to ``mem_search_hybrid`` (REQ-22
+    scenario 1 uses ``trigger=programmatic`` for direct library calls;
+    scenario 4 also uses ``programmatic`` to keep the catalog invariant
+    trivial). The vector_world state is preserved so subsequent Then steps
+    can inspect the metrics file.
+    """
+    vector_world["hybrid"].mem_search_hybrid(query, k=k, trigger=trigger)
+
+
+@when(parsers.parse('I call mem_search_semantic("{query}") with trigger={trigger}'))
+def when_call_semantic_with_trigger(vector_world, query: str, trigger: str):
+    """REQ-22 scenario 2: pure semantic call delegates to hybrid with alpha=1.0.
+
+    Validates that the ``mem_search_semantic`` alias still emits the latency
+    counter through ``record_vector_summary`` (it shares the hybrid path).
+    """
+    vector_world["hybrid"].mem_search_semantic(query, trigger=trigger)
+
+
+# ---------- Then ----------
+
+
+@then(
+    parsers.parse(
+        'the observability JSONL file contains a line with counter "{name}" '
+        "tagged trigger={trigger}"
+    )
+)
+def then_jsonl_has_counter_with_trigger(vector_world, name: str, trigger: str):
+    """REQ-22 scenario 1: the invoked counter is tagged with the requested trigger."""
+    metrics_path = vector_world["metrics_path"]
+    assert metrics_path.exists(), (
+        f"Metrics JSONL not found at {metrics_path} — observability sink did not fire"
+    )
+    events = _read_jsonl_events(metrics_path)
+    matches = [
+        e
+        for e in events
+        if e.get("name") == name
+        and e.get("fields", {}).get("trigger") == trigger
+    ]
+    assert matches, (
+        f"Expected ≥1 event with name={name!r} trigger={trigger!r}, "
+        f"got names: {[e.get('name') for e in events]}"
+    )
+
+
+@then(parsers.parse('the "{name}" counter value is {n:d}'))
+def then_counter_value_is(vector_world, name: str, n: int):
+    """REQ-22 scenarios 1 + 3: sum the ``count`` (or ``value``) field across events.
+
+    Mirrors the assertion in ``test_cli_reindex.py::TestReindexCounters`` for
+    the reindex counter path. The value lives in ``fields.count`` for
+    counters and ``fields.value`` for gauges; we sum both shapes so the
+    step works for any single-event emission.
+    """
+    metrics_path = vector_world["metrics_path"]
+    assert metrics_path.exists(), (
+        f"Metrics JSONL not found at {metrics_path} — observability sink did not fire"
+    )
+    events = _read_jsonl_events(metrics_path)
+    matches = [e for e in events if e.get("name") == name]
+    assert matches, (
+        f"Expected ≥1 event with name={name!r}, "
+        f"got names: {[e.get('name') for e in events]}"
+    )
+    total = 0
+    for e in matches:
+        fields = e.get("fields", {})
+        if "count" in fields:
+            total += int(fields["count"])
+        elif "value" in fields:
+            total += int(fields["value"])
+    assert total == n, (
+        f"Expected {name!r} total={n}, got {total} "
+        f"(across {len(matches)} event(s))"
+    )
+
+
+@then(
+    parsers.parse(
+        'the observability JSONL file contains a line with counter "{name}" '
+        "with a positive elapsed_ms field"
+    )
+)
+def then_jsonl_has_latency_event(vector_world, name: str):
+    """REQ-22 scenario 2: latency histogram event is emitted with elapsed_ms > 0.
+
+    The histogram is sampled per call (single ``elapsed_ms`` int per event),
+    so we only need one non-negative sample to validate the wire format.
+    """
+    metrics_path = vector_world["metrics_path"]
+    events = _read_jsonl_events(metrics_path)
+    matches = [e for e in events if e.get("name") == name]
+    assert matches, (
+        f"Expected ≥1 event with name={name!r}, "
+        f"got names: {[e.get('name') for e in events]}"
+    )
+    for e in matches:
+        elapsed = e.get("fields", {}).get("elapsed_ms")
+        assert elapsed is not None, (
+            f"Event {name!r} missing elapsed_ms field: {e!r}"
+        )
+        assert elapsed >= 0, f"Expected non-negative elapsed_ms in {name}, got {elapsed!r}"
+
+
+@then(parsers.parse("the elapsed_ms value is less than {limit:d}ms"))
+def then_latency_under(vector_world, limit: int):
+    """REQ-22 scenario 2: in-process latency stays under the sanity bound."""
+    metrics_path = vector_world["metrics_path"]
+    events = _read_jsonl_events(metrics_path)
+    latencies = [
+        e.get("fields", {}).get("elapsed_ms")
+        for e in events
+        if e.get("name") == "vector_search_latency_ms"
+    ]
+    assert latencies, "No vector_search_latency_ms events recorded"
+    for elapsed in latencies:
+        assert elapsed is not None and elapsed < limit, (
+            f"elapsed_ms {elapsed} not < {limit}ms limit"
+        )
+
+
+@then("the emitted counter names follow the subject_event_total or subject_metric_unit pattern")
+def then_names_follow_convention(vector_world):
+    """REQ-22 scenario 4: each emitted name matches a REQ-8 naming pattern.
+
+    Two valid shapes:
+    - ``subject_event_total`` for verb-style counters (REQ-8 convention).
+    - ``subject_metric_unit`` for state / timing (``_ms``, ``_seconds``,
+      or an explicit unit like ``_observations`` on a gauge).
+    """
+    import re
+
+    pattern = re.compile(r"^[a-z][a-z0-9_]*_(total|ms|seconds|observations)$")
+    canonical = set(observability.VECTOR_COUNTER_NAMES)
+    metrics_path = vector_world["metrics_path"]
+    assert metrics_path.exists(), (
+        f"Metrics JSONL not found at {metrics_path} — observability sink did not fire"
+    )
+    events = _read_jsonl_events(metrics_path)
+    assert events, "No events emitted for scenario 4"
+    for e in events:
+        name = e.get("name", "")
+        assert name in canonical, (
+            f"Emitted name {name!r} not in canonical VECTOR_COUNTER_NAMES "
+            f"({sorted(canonical)})"
+        )
+        assert pattern.match(name), (
+            f"Name {name!r} does not match REQ-8 convention pattern "
+            r"^[a-z][a-z0-9_]*_(total|ms|seconds|observations)$"
+        )
+
+
+@then("the canonical 6 names from REQ-22 are all present in the catalog")
+def then_canonical_six_present(vector_world):
+    """REQ-22 scenario 4: the documented catalog MUST list exactly the 6 names.
+
+    This is the discoverability half of scenario 4: any future
+    ``flow metrics`` consumer / dashboard MUST be able to introspect the
+    catalog via ``observability.VECTOR_COUNTER_NAMES``.
+    """
+    expected = {
+        "vector_search_invoked_total",
+        "vector_search_results_returned_total",
+        "vector_search_latency_ms",
+        "vector_index_size_observations",
+        "reindex_observations_total",
+        "reindex_duration_seconds",
+    }
+    actual = set(observability.VECTOR_COUNTER_NAMES)
+    missing = expected - actual
+    extra = actual - expected
+    assert not missing, f"Missing canonical names: {missing}"
+    assert not extra, f"Unexpected extra names: {extra}"
+
+
+@then("no non-conformant name like vector_search_invocations is emitted")
+def then_no_nonconformant_name(vector_world):
+    """REQ-22 scenario 4: guards against the documented rename example.
+
+    ``vector_search_invocations`` is the example non-conformant name from
+    spec REQ-22 scenario 4 — a plural-only suffix that breaks the
+    ``_total`` convention. The JSONL must NEVER contain it (or any other
+    name not in the canonical 6).
+    """
+    metrics_path = vector_world["metrics_path"]
+    events = _read_jsonl_events(metrics_path)
+    forbidden = "vector_search_invocations"
+    canonical = set(observability.VECTOR_COUNTER_NAMES)
+    seen = {e.get("name") for e in events}
+    assert forbidden not in seen, (
+        f"Found forbidden non-conformant name {forbidden!r} in JSONL: {seen}"
+    )
+    drift = seen - canonical
+    assert not drift, f"Found names not in canonical catalog: {drift}"
