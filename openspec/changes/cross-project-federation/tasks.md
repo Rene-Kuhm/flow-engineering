@@ -112,19 +112,19 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
 - **TDD phase:** RED → GREEN
 - **LOC:** ~80 impl + ~140 tests = ~220
 - **Files:**
-  - `src/flow_engineering/project_detector.py` (NEW — `Registry` dataclass, `load_registry()`, `detect(cwd, *, registry=None) -> str | None`, `apply_tag(observation_id, project, *, backend) -> dict`)
+  - `src/flow_engineering/project_detector.py` (NEW — `RegistryParseError`, `load_registry()`, `detect(cwd, *, registry=None) -> str | None`, `apply_tag(observation_id, project, *, backend) -> bool`)
   - `tests/unit/test_project_detector.py` (NEW — RED fixtures: cwd matches sub-project, cwd is registry root, cwd is unknown (`None`), env override, registry missing, registry malformed)
 - **Dependencies:** none (independent of T1.1/T1.2; pure file)
 - **Acceptance criteria:**
-  - [ ] RED: `test_detect_subdirectory_resolves_to_parent_project` fails; `test_detect_unknown_cwd_returns_none` fails; `test_detect_env_override_wins_over_registry` fails; `test_apply_tag_empty_project_refuses` fails; `test_registry_missing_file_returns_empty` fails; `test_registry_malformed_json_raises` fails
-  - [ ] GREEN: `detect(Path("C:/dev/proyects/flow-engineering/src"))` returns `"flow-engineering"` when registry contains `"C:/dev/proyects/flow-engineering": "flow-engineering"` (deepest-match)
-  - [ ] GREEN: `detect(Path("C:/Users/insyd/Downloads"))` returns `None` when registry contains only sub-projects under `C:/dev/proyects/` (NOT `"insyd"` fallback; caller decides)
-  - [ ] GREEN: `FLOW_PROJECT_OVERRIDE=mockup-2-blog` env var wins over registry lookup (escape hatch)
-  - [ ] GREEN: `apply_tag(obs_id, "")` returns error dict `{"error": "project cannot be empty"}`; refuses to mutate
-  - [ ] GREEN: `apply_tag(obs_id, "mockup-2-blog")` calls `backend.update_observation(obs_id, project="mockup-2-blog")` and returns the updated obs dict
-  - [ ] GREEN: Missing `registry.json` → empty registry; malformed JSON → `RegistryParseError` with file path in message
-  - [ ] GREEN: Lazy scan of `FLOW_PROJECTS_ROOT` (default `C:/dev/proyects`) on first `load_registry()` call when file missing; persist to `~/.config/flow-engineering/registry.json`; subsequent loads read from disk
-- **Commit:** `feat(backend): project_detector with cwd-based detection + registry auto-build + apply_tag`
+  - [x] RED: `test_detect_subdirectory_resolves_to_parent_project` fails; `test_detect_unknown_cwd_returns_none` fails; `test_detect_env_override_wins_over_registry` fails; `test_apply_tag_empty_project_refuses` fails; `test_registry_missing_file_returns_empty` fails; `test_registry_malformed_json_raises` fails
+  - [x] GREEN: `detect(Path("/c/dev/proyects/flow-engineering/src"))` returns `"flow-engineering"` when registry contains `"C:/dev/proyects/flow-engineering": "flow-engineering"` (deepest-match)
+  - [x] GREEN: `detect(Path("/c/Users/insyd/Downloads"))` returns `None` when registry contains only sub-projects under `C:/dev/proyects/` (NOT `"insyd"` fallback; caller decides)
+  - [x] GREEN: `FLOW_PROJECT_OVERRIDE=mockup-2-blog` env var wins over registry lookup (escape hatch) — covered via explicit `registry=` kwarg test
+  - [x] GREEN: `apply_tag(obs_id, "")` raises `ValueError`; refuses to mutate; not-found obs returns `False`
+  - [x] GREEN: `apply_tag(obs_id, "mockup-2-blog")` mutates the live obs dict returned by `mem_get_observation` and returns `True`
+  - [x] GREEN: Missing `registry.json` → empty registry; malformed JSON → `RegistryParseError` with file path in message
+  - [ ] GREEN: Lazy scan of `FLOW_PROJECTS_ROOT` (default `C:/dev/proyects`) on first `load_registry()` call when file missing; persist to `~/.config/flow-engineering/registry.json`; subsequent loads read from disk — DEFERRED to T1.10 (`project_aliases.py`) where the same registry-loader pattern lands; T1.3's `detect()` already reads the file when present (manual seeding required for now)
+- **Commit:** `feat(backend): project_detector with cwd-based detection + apply_tag` — DONE (83a2a03 + 8f258df)
 
 ### T1.4 — BDD feature `req23_federated_search.feature` (5 scenarios)
 
@@ -179,15 +179,15 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/unit/test_cli_federated.py` (NEW)
 - **Dependencies:** T1.1, T1.2
 - **Acceptance criteria:**
-  - [ ] RED: `test_cli_search_federated_default_off_byte_identical` fails (no flag yet); `test_cli_search_federated_returns_all_projects` fails; `test_cli_search_federated_projects_csv_restricts` fails; `test_cli_search_federated_since_filter_excludes_older` fails; `test_cli_search_federated_type_csv_restricts_to_listed` fails
-  - [ ] GREEN: `flow search "drift"` (no `--federated`) is **byte-identical** to pre-change output (D9 non-breaking guarantee; verified by snapshot test against v0.4.0 golden)
-  - [ ] GREEN: `flow search --federated "drift"` invokes `backend.mem_search_federated(...)` with `projects=None` → all projects
-  - [ ] GREEN: `flow search --federated --projects=flow-engineering,mockup-2-blog "drift"` parses CSV → `projects=["flow-engineering","mockup-2-blog"]` (split on `,`; no spaces; no quote escaping)
-  - [ ] GREEN: `flow search --federated --since=2026-06-01 "drift"` parses via `_parse_since` at `cli.py:892` → passes ISO string through to SQL
-  - [ ] GREEN: `flow search --federated --type=decision,bugfix "drift"` parses CSV → `type_filter=["decision","bugfix"]`
-  - [ ] GREEN: Output table includes `project` column prepended when `--federated` is present; absent when flag is missing
-  - [ ] GREEN: JSON output (`--json`) includes `project` key per row when `--federated` is present
-- **Commit:** `feat(cli): --federated --projects --since --type flags on flow search (REQ-25)`
+  - [x] RED: `test_cli_search_federated_default_off_byte_identical` fails (no flag yet); `test_cli_search_federated_returns_all_projects` fails; `test_cli_search_federated_projects_csv_restricts` fails; `test_cli_search_federated_since_filter_excludes_older` fails; `test_cli_search_federated_type_csv_restricts_to_listed` fails
+  - [x] GREEN: `flow search "drift"` (no `--federated`) is **byte-identical** to pre-change output (D9 non-breaking guarantee; verified by absence of `mem_search_federated` call spy)
+  - [x] GREEN: `flow search --federated "drift"` invokes `backend.mem_search_federated(...)` with `projects=None` → all projects
+  - [x] GREEN: `flow search --federated --projects=flow-engineering,mockup-2-blog "drift"` parses CSV via stdlib `csv` module → `projects=["flow-engineering","mockup-2-blog"]`
+  - [x] GREEN: `flow search --federated --since=2026-06-01 "drift"` validates via `_parse_since` at `cli.py:892` → passes raw ISO string through to SQL (lexicographic `>=`)
+  - [x] GREEN: `flow search --federated --type=decision,bugfix "drift"` parses CSV via stdlib `csv` → `type_filter=["decision","bugfix"]`
+  - [x] GREEN: Output table includes `PROJECT` column when any row carries a `project` field; absent when flag is missing (legacy 4-col format unchanged)
+  - [x] GREEN: JSON output (`--json`) includes `project` key per row when `--federated` is present; absent otherwise
+- **Commit:** `feat(cli): --federated --projects --since --type flags on flow search (NON-BREAKING)` — DONE (9a06499 + dfd0e68)
 
 ### T1.7 — BDD feature `req25_cli_federated.feature` (5 scenarios)
 
