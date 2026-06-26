@@ -1,15 +1,19 @@
 """Unit tests for engram_io.py — cross-session memory wrapper.
 
 REQ-8: Cross-session recovery via Engram topic keys.
+REQ-17: Semantic search activation gate (vector-semantic-search PR#1 T1.2).
 """
 
 from __future__ import annotations
 
 import json
 
+import pytest
+
 from flow_engineering.engram_io import (
     EngramClient,
     InMemoryBackend,
+    VectorSearchDisabled,
     cross_session_topic_key,
     phase_topic_key,
 )
@@ -93,3 +97,55 @@ class TestCrossSession:
         client.save_phase("explore", "This is about Flow Engineering")
         results = client.search_cross_session("Flow Engineering")
         assert len(results) >= 1
+
+
+class TestVectorSearchDisabled:
+    """REQ-17: semantic search activation gate (vector-semantic-search PR#1 T1.2).
+
+    InMemoryBackend is the legacy prose test fixture. It MUST raise
+    VectorSearchDisabled (with the install hint) when vector/hybrid methods are
+    called, while mem_search (FTS5 prose) continues to work unchanged.
+    """
+
+    def test_inmemory_mem_search_semantic_raises_vector_search_disabled(self) -> None:
+        backend = InMemoryBackend()
+        with pytest.raises(VectorSearchDisabled) as exc_info:
+            backend.mem_search_semantic("any query")
+        assert "pip install flow-engineering[vectors]" in str(exc_info.value)
+
+    def test_inmemory_mem_search_hybrid_raises_vector_search_disabled(self) -> None:
+        backend = InMemoryBackend()
+        with pytest.raises(VectorSearchDisabled) as exc_info:
+            backend.mem_search_hybrid("any query", k=5, alpha=0.5)
+        assert "pip install flow-engineering[vectors]" in str(exc_info.value)
+
+    def test_vector_search_disabled_is_runtime_error_subclass(self) -> None:
+        # Catchable as RuntimeError so callers can isolate it from other errors.
+        assert issubclass(VectorSearchDisabled, RuntimeError)
+
+    def test_inmemory_mem_search_still_works_unchanged(self) -> None:
+        # REQ-17 scenario 5 zero regression: prose FTS5 path is byte-identical.
+        backend = InMemoryBackend()
+        backend.mem_save(
+            title="drift entry",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+        )
+        results = backend.mem_search("drift detection")
+        assert len(results) == 1
+        assert "drift detection strategy" in results[0]["content"]
+
+    def test_inmemory_mem_search_semantic_does_not_import_torch(self) -> None:
+        # Spec REQ-17: no torch/sqlite_vec import attempted at any gate path.
+        import sys
+
+        before = {"torch", "sentence_transformers", "sqlite_vec"} & set(sys.modules)
+        try:
+            backend = InMemoryBackend()
+            with pytest.raises(VectorSearchDisabled):
+                backend.mem_search_semantic("drift detection")
+        finally:
+            after = {"torch", "sentence_transformers", "sqlite_vec"} & set(sys.modules)
+            assert before == after, (
+                f"Vector search gate leaked heavy imports: {after - before}"
+            )
