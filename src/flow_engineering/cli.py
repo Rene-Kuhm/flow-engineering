@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import click
 
+from flow_engineering import observability
 from flow_engineering.auto_suggest_code_refs import FLOW_AUTO_SUGGEST_ENV
+from flow_engineering.binding import (
+    CODE_REFS_MARKER,
+    CodeRef,
+    extract_code_refs,
+)
 from flow_engineering.daemon import start_watch
-from flow_engineering.engram_io import EngramBackend, EngramClient, InMemoryBackend
+from flow_engineering.engram_io import (
+    EngramBackend,
+    EngramClient,
+    InMemoryBackend,
+    iter_observations_for_change,
+)
 from flow_engineering.orchestrator import (
     apply_change,
     archive_change,
@@ -313,3 +326,167 @@ def save(
 
 if __name__ == "__main__":
     main()
+
+
+# ---------- REQ-7: flow inspect <change> ----------
+
+
+def _truncate(text: str, width: int) -> str:
+    """Truncate text to ``width`` characters, adding an ellipsis when cut."""
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width <= 1:
+        return text[:width]
+    return text[: width - 1] + "…"
+
+
+def _format_binding_line(ref: CodeRef) -> str:
+    """One-line binding summary: ``id (label, file:line, conf, src)``."""
+    return (
+        f"{ref.id} ({ref.label}, {ref.file}:{ref.line}, "
+        f"conf={ref.confidence:.2f}, src={ref.source})"
+    )
+
+
+def _render_inspect_row(obs: dict) -> dict:
+    """Build one inspect row from a raw observation dict.
+
+    Returns a dict with keys ``decision_id``, ``decision`` (title),
+    ``code_refs`` (list of CodeRef objects), ``freshness``, and
+    ``parse_error`` (when the block is malformed). Never raises: per-row
+    parse errors are isolated (REQ-7 scenario). The CodeRef list is the
+    canonical representation; dict serialization happens only at the JSON
+    output boundary.
+    """
+    title = str(obs.get("title", ""))
+    content = str(obs.get("content", ""))
+    decision_id = obs.get("id")
+    parse_error: str | None = None
+    refs: list[CodeRef] = []
+    if CODE_REFS_MARKER in content:
+        try:
+            refs = extract_code_refs(content)
+        except Exception as exc:  # ParseError or any extraction error.
+            parse_error = f"parse error: {exc}"
+    freshness = observability.compute_freshness(obs.get("updated_at"))
+    return {
+        "decision_id": decision_id,
+        "decision": title,
+        "code_refs": refs,
+        "freshness": freshness,
+        "parse_error": parse_error,
+    }
+
+
+def _render_inspect_table(rows: list[dict]) -> str:
+    """Render the inspect rows as a fixed-width text table."""
+    headers = ("decision", "code_refs", "freshness")
+    lines: list[str] = []
+    lines.append("  ".join(h.upper() for h in headers))
+    lines.append("-" * 72)
+    if not rows:
+        lines.append("(no observations for this change)")
+        return "\n".join(lines)
+    for row in rows:
+        decision = _truncate(str(row.get("decision", "")), 36)
+        if row.get("parse_error"):
+            refs_text = str(row["parse_error"])
+        elif row["code_refs"]:
+            refs_text = "; ".join(_format_binding_line(r) for r in row["code_refs"])
+        else:
+            refs_text = "—"
+        refs_text = _truncate(refs_text, 200)
+        freshness = str(row.get("freshness", "never"))
+        lines.append(f"{decision}  {refs_text}  {freshness}")
+    return "\n".join(lines)
+
+
+def _serialize_inspect_rows(rows: list[dict]) -> list[dict]:
+    """Convert CodeRef objects in ``code_refs`` to dicts for JSON output."""
+    out: list[dict] = []
+    for row in rows:
+        out.append(
+            {
+                "decision_id": row.get("decision_id"),
+                "decision": row.get("decision"),
+                "code_refs": [
+                    {
+                        "id": r.id,
+                        "label": r.label,
+                        "file": r.file,
+                        "line": r.line,
+                        "confidence": r.confidence,
+                        "source": r.source,
+                    }
+                    for r in row.get("code_refs", [])
+                ],
+                "freshness": row.get("freshness"),
+                "parse_error": row.get("parse_error"),
+            }
+        )
+    return out
+
+
+@main.command()
+@click.argument("change")
+@click.option("--json", "json_flag", is_flag=True, default=False,
+              help="Emit machine-readable JSON instead of a text table.")
+def inspect(change: str, json_flag: bool) -> None:
+    """Render decisions for a change as a table (REQ-7).
+
+    Columns: DECISION (id/title), CODE_REFS (id, label, file:line,
+    confidence, source per binding), FRESHNESS (age with stale warning
+    when older than 30 days). Per-row parse errors are isolated: a bad
+    block in one observation never blanks the rest of the table.
+    """
+    started = time.monotonic()
+    observability.increment("inspect_invoked_total", change=change)
+    backend = _default_save_backend()
+    observations = iter_observations_for_change(change, backend)
+    rows = [_render_inspect_row(o) for o in observations]
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    observability.increment("inspect_render_ms", elapsed_ms=elapsed_ms, count=len(rows))
+    if json_flag:
+        click.echo(json.dumps(_serialize_inspect_rows(rows), ensure_ascii=False, indent=2))
+        return
+    click.echo(_render_inspect_table(rows))
+
+
+# ---------- REQ-8 close: flow metrics ----------
+
+
+def _summarize_metrics(events: list[dict]) -> dict[str, int]:
+    """Collapse a list of increment events into ``{name: count}``."""
+    summary: dict[str, int] = {}
+    for ev in events:
+        name = ev.get("name")
+        if not isinstance(name, str):
+            continue
+        fields = ev.get("fields") or {}
+        payload = fields.get("count") or fields.get("confirmed") or 1
+        try:
+            payload_int = int(payload)
+        except (TypeError, ValueError):
+            payload_int = 1
+        summary[name] = summary.get(name, 0) + payload_int
+    return summary
+
+
+@main.command()
+@click.option("--json", "json_flag", is_flag=True, default=False,
+              help="Emit machine-readable JSON instead of a text summary.")
+def metrics(json_flag: bool) -> None:
+    """Dump the JSONL counter sink as a summary (REQ-8 close)."""
+    events = observability.read_all()
+    summary = _summarize_metrics(events)
+    if json_flag:
+        click.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+    if not summary:
+        click.echo("(no metrics recorded)")
+        return
+    name_width = max(len(name) for name in summary)
+    for name in sorted(summary):
+        click.echo(f"{name.ljust(name_width)}  {summary[name]}")

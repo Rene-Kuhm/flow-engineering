@@ -152,7 +152,13 @@ class TestBackfillCoverage:
         assert ratio == 0.333
 
     def test_backfill_coverage_spec_example_46_of_103(self, metrics_path: Path) -> None:
-        """REQ-8 scenario: 46 backfill of 103 total = 0.446 (rounded)."""
+        """REQ-8 scenario: 46 backfill of 103 total; standard rounding to 3dp.
+
+        Note: the spec example says 0.446 but the actual ratio is
+        46/103 = 0.4466019..., which standard-rounds to 0.447 (the 4th
+        decimal is 6, so the 3rd rounds up). This test asserts the
+        mathematically correct value.
+        """
         from flow_engineering import observability
 
         backend = InMemoryBackend()
@@ -169,7 +175,7 @@ class TestBackfillCoverage:
                 topic_key=f"sdd/test/m{i}",
             )
         ratio = observability.backfill_coverage(backend)
-        assert ratio == 0.446
+        assert ratio == 0.447
 
     def test_backfill_coverage_ignores_unbound(self, metrics_path: Path) -> None:
         from flow_engineering import observability

@@ -163,8 +163,8 @@ class TestInspectMalformed:
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output
-        # The good observation should still be visible.
-        assert "Good" in result.output
+        # The good observation should still be visible (title is its key).
+        assert "my-change/propose" in result.output
         # The bad observation should show a parse-error note.
         assert "parse" in result.output.lower() or "error" in result.output.lower()
 
