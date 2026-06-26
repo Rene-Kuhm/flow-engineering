@@ -173,6 +173,24 @@ def cross_session_topic_key() -> str:
     return "sdd/flow-engineering"
 
 
+def iter_observations_for_change(
+    change: str, backend: EngramBackend, *, project: str | None = None
+) -> list[dict[str, Any]]:
+    """Return every observation belonging to a change.
+
+    Filters by topic-key prefix ``sdd/{change}/`` so cross-change observations
+    (e.g. ``sdd/flow-engineering/...`` or ``sdd/other-change/...``) are not
+    leaked into the result set. The optional ``project`` filter is applied
+    after the topic-key filter.
+
+    Used by ``flow inspect <change>`` and by observability helpers that need
+    to scan a single change's worth of decisions.
+    """
+    prefix = f"sdd/{change}/"
+    all_obs = backend.iter_observations(project=project)
+    return [o for o in all_obs if str(o.get("topic_key", "")).startswith(prefix)]
+
+
 class EngramClient:
     """High-level wrapper for Engram operations on a change."""
 
