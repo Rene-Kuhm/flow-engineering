@@ -13,6 +13,10 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
+from flow_engineering.auto_suggest_code_refs import (
+    FLOW_AUTO_SUGGEST_ENV as _FLOW_AUTO_SUGGEST_ENV,
+    auto_suggest_code_refs,
+)
 from flow_engineering.binding import (
     CODE_REFS_MARKER,
     CodeRef,
@@ -174,7 +178,17 @@ class EngramClient:
         self.change = change
         self.backend = backend
 
-    def save_phase(self, phase: str, content: str, title: str | None = None) -> dict[str, Any]:
+    def save_phase(
+        self,
+        phase: str,
+        content: str,
+        title: str | None = None,
+        *,
+        with_suggest: bool = False,
+        no_suggest: bool = False,
+        is_tty: bool | None = None,
+        prompt_fn=None,
+    ) -> dict[str, Any]:
         """Save a phase artifact (explore/propose/design/spec/tasks/apply-progress/etc).
 
         ``code_refs`` block handling (REQ-3):
@@ -184,10 +198,26 @@ class EngramClient:
           ``binding.validate_block``. Malformed or unknown-schema blocks
           raise ``ParseError`` and prevent the write (no row is written).
         - A valid existing block is preserved as-is.
+
+        Auto-suggest hook (REQ-6, PR#2 batch 1):
+        - When ``with_suggest=True`` OR ``FLOW_AUTO_SUGGEST=1`` env var is
+          set AND the content has no explicit ``code_refs`` block, the
+          suggester is consulted. Its ``SuggestionResult`` drives the
+          block source (``auto_suggest`` / ``unbound`` / ``manual``).
+        - When ``no_suggest=True``, the suggester is bypassed entirely;
+          the saved block has ``source: manual`` with empty nodes.
+        - The suggester MUST fail-open: any internal error yields a normal
+          ``unbound`` save (no exception escapes this method).
         """
         if title is None:
             title = f"{self.change}/{phase}"
-        new_content = self._ensure_code_refs_block(content)
+        new_content = self._build_content_with_block(
+            content,
+            with_suggest=with_suggest,
+            no_suggest=no_suggest,
+            is_tty=is_tty,
+            prompt_fn=prompt_fn,
+        )
         return self.backend.mem_save(
             title=title,
             content=new_content,
@@ -250,6 +280,56 @@ class EngramClient:
             return content
         # Append a fresh unbound block.
         return content + format_code_refs_block([], source="unbound")
+
+    def _build_content_with_block(
+        self,
+        content: str,
+        *,
+        with_suggest: bool,
+        no_suggest: bool,
+        is_tty: bool | None,
+        prompt_fn,
+    ) -> str:
+        """Build content + block honoring REQ-3 validation + REQ-6 auto-suggest.
+
+        - Marker present: validate and preserve (REQ-3, no auto-suggest).
+        - Marker absent: run auto-suggest when warranted, otherwise append
+          a default unbound block. The suggester MUST fail-open.
+        """
+        # REQ-3 path: explicit block already present — validate + preserve.
+        if CODE_REFS_MARKER in content:
+            prose, block = split_prose_and_refs(content)
+            body = block[len(CODE_REFS_MARKER):].strip()
+            if body:
+                validate_block(body)  # raises ParseError on bad shape
+            return content
+
+        # No explicit block — decide whether to auto-suggest.
+        env_active = with_suggest or (
+            __import__("os").environ.get(_FLOW_AUTO_SUGGEST_ENV) == "1"
+        )
+        if no_suggest:
+            # Caller opted out — record the explicit manual intent.
+            return content + format_code_refs_block([], source="manual")
+        if not env_active:
+            # Default path: append a fresh unbound block.
+            return content + format_code_refs_block([], source="unbound")
+
+        # Auto-suggest path. Must fail-open: any error -> default unbound.
+        try:
+            result = auto_suggest_code_refs(
+                content,
+                with_suggest=with_suggest,
+                no_suggest=False,
+                is_tty=bool(is_tty) if is_tty is not None else False,
+                prompt_fn=prompt_fn,
+            )
+        except Exception:
+            return content + format_code_refs_block([], source="unbound")
+
+        # Build the block from the suggestion result. The block's source
+        # field matches the result source so REQ-7 / REQ-8 can read it.
+        return content + format_code_refs_block(result.refs, source=result.source)
 
     def save_progress(
         self,
