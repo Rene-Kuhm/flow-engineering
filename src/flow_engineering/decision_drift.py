@@ -76,17 +76,28 @@ def classify_binding(
 ) -> DriftClass:
     """Classify a single ``CodeRef`` against the current graph state.
 
-    Args:
-        binding: The ``CodeRef`` to classify.
-        current_nodes: Full node dict from ``graph.json`` (id -> node dict).
-            May be ``None`` or empty when the graph is unavailable.
-        current_id_map: Projection of ``current_nodes`` mapping
-            ``id -> (file, line, label)``. Built once per scan.
+    Algorithm (REQ-9):
+        1. ``current_nodes`` is ``None`` or empty -> ``UNABLE_TO_VERIFY``.
+        2. ``binding.id`` absent from ``current_id_map`` -> ``STALE_ID``.
+        3. ``(file, line)`` differ from current -> ``STALE_LOCATION``.
+        4. ``label`` differs from current -> ``LABEL_DRIFT``.
+        5. Otherwise -> ``STILL_VALID``.
 
-    Returns:
-        The ``DriftClass`` for this binding.
+    ``OBSOLETE`` and ``CONTRADICTED`` are deliberately NOT emitted here
+    (design #123 decisions 2 + 3) — they require cross-decision aggregation
+    that only ``scan_change`` performs.
     """
-    raise NotImplementedError("classify_binding lands in T1.5 (batch B GREEN)")
+    if not current_nodes:
+        return DriftClass.UNABLE_TO_VERIFY
+    entry = current_id_map.get(binding.id)
+    if entry is None:
+        return DriftClass.STALE_ID
+    cur_file, cur_line, cur_label = entry
+    if cur_file != binding.file or cur_line != binding.line:
+        return DriftClass.STALE_LOCATION
+    if cur_label != binding.label:
+        return DriftClass.LABEL_DRIFT
+    return DriftClass.STILL_VALID
 
 
 def scan_change(
