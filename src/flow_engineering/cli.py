@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv as _csv
 import json
 import os
 import sys
@@ -446,27 +447,62 @@ def save(
 # ---------- REQ-17 / REQ-18: flow search <query> ----------
 
 
+def _parse_csv(raw: str | None) -> list[str] | None:
+    """Split a comma-separated string into a list of trimmed, non-empty tokens.
+
+    Returns ``None`` when ``raw`` is ``None`` (the flag was not given).
+    Returns ``[]`` when ``raw`` is an empty string or only separators.
+    Uses the stdlib ``csv`` module so quoted commas (``"a, b",c``) parse
+    per RFC 4180 rather than naïve ``str.split(',')``.
+    """
+    if raw is None:
+        return None
+    rows = list(_csv.reader([raw]))
+    if not rows:
+        return []
+    return [item.strip() for item in rows[0] if item and item.strip()]
+
+
 def _format_search_row(rank: int, obs_id: int, title: str, score: float) -> str:
-    """One text-table row for ``flow search`` output."""
+    """One text-table row for ``flow search`` output (legacy 4-column)."""
     return f"{rank:<3}  obs {obs_id:<6}  {score:.4f}  {title}"
 
 
 def _render_search_table(rows: list[dict]) -> str:
-    """Pretty-print search hits as a fixed-width text table."""
+    """Pretty-print search hits as a fixed-width text table.
+
+    Adds a ``PROJECT`` column when any row carries a ``project`` field
+    (REQ-25 federated path). Legacy single-project search renders the
+    original 4-column layout so existing output is unchanged.
+    """
     if not rows:
         return "(no results)"
+    show_project = any("project" in r for r in rows)
+    if show_project:
+        headers = ("rank", "id", "score", "project", "title")
+        sep = "-" * 88
+    else:
+        headers = ("rank", "id", "score", "title")
+        sep = "-" * 64
     lines: list[str] = []
-    lines.append("  ".join(h.upper() for h in ("rank", "id", "score", "title")))
-    lines.append("-" * 64)
+    lines.append("  ".join(h.upper() for h in headers))
+    lines.append(sep)
     for r in rows:
-        lines.append(
-            _format_search_row(
-                int(r.get("rank", 0)),
-                int(r.get("observation_id", 0)),
-                str(r.get("title", "")),
-                float(r.get("score", 0.0)),
+        if show_project:
+            lines.append(
+                f"{int(r.get('rank', 0)):<3}  obs {int(r.get('observation_id', 0)):<6}  "
+                f"{float(r.get('score', 0.0)):.4f}  {str(r.get('project', '')):<24}  "
+                f"{str(r.get('title', ''))}"
             )
-        )
+        else:
+            lines.append(
+                _format_search_row(
+                    int(r.get("rank", 0)),
+                    int(r.get("observation_id", 0)),
+                    str(r.get("title", "")),
+                    float(r.get("score", 0.0)),
+                )
+            )
     return "\n".join(lines)
 
 
@@ -476,20 +512,23 @@ def _search_results_to_rows(results: list[dict]) -> list[dict]:
     The vector methods return ``observation_id`` + ``score`` + ``rank`` per
     REQ-17 contract. The legacy ``mem_search`` returns plain observation
     dicts with ``id`` and no score/rank — synthesize a position-based
-    rank and a 0.0 score so the table renders uniformly.
+    rank and a 0.0 score so the table renders uniformly. REQ-25 adds
+    federated multi-project search; rows with a ``project`` field carry
+    it through so the renderer can prepend the PROJECT column.
     """
     out: list[dict] = []
     for rank, r in enumerate(results):
         obs_id = r.get("observation_id", r.get("id"))
-        out.append(
-            {
-                "observation_id": obs_id,
-                "rank": r.get("rank", rank),
-                "score": r.get("score", 0.0),
-                "title": r.get("title", ""),
-                "topic_key": r.get("topic_key", ""),
-            }
-        )
+        row: dict[str, Any] = {
+            "observation_id": obs_id,
+            "rank": r.get("rank", rank),
+            "score": r.get("score", 0.0),
+            "title": r.get("title", ""),
+            "topic_key": r.get("topic_key", ""),
+        }
+        if r.get("project") is not None:
+            row["project"] = r["project"]
+        out.append(row)
     return out
 
 
@@ -528,6 +567,29 @@ def _search_results_to_rows(results: list[dict]) -> list[dict]:
     default=False,
     help="Emit machine-readable JSON instead of a text table.",
 )
+@click.option(
+    "--federated",
+    "federated_flag",
+    is_flag=True,
+    default=False,
+    help="REQ-25: federated multi-project search (opt-in; default = single-project FTS).",
+)
+@click.option(
+    "--projects",
+    default=None,
+    help="REQ-25: comma-separated project keys (default = all when --federated).",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="REQ-25: ISO 8601 date or datetime (lexicographic >= on created_at).",
+)
+@click.option(
+    "--type",
+    "type_csv",
+    default=None,
+    help="REQ-25: comma-separated observation types (exact match, case-sensitive).",
+)
 def search(
     query: str,
     semantic_flag: bool,
@@ -535,17 +597,30 @@ def search(
     alpha: float,
     k: int,
     as_json: bool,
+    federated_flag: bool,
+    projects: str | None,
+    since: str | None,
+    type_csv: str | None,
 ) -> None:
-    """Search observations (REQ-17 + REQ-18 CLI surface).
+    """Search observations (REQ-17 + REQ-18 + REQ-25 CLI surface).
 
     Default mode is FTS5 prose (``mem_search``); this stays byte-identical
     to the pre-vector behavior so existing scripts are unaffected. The
-    ``--semantic`` and ``--hybrid`` flags enable vector retrieval and are
-    mutually exclusive.
+    ``--semantic`` and ``--hybrid`` flags enable vector retrieval. The
+    ``--federated`` flag enables multi-project search via
+    ``mem_search_federated`` with optional ``--projects`` / ``--since``
+    / ``--type`` filters. The federated and vector paths are mutually
+    exclusive.
     """
     if semantic_flag and hybrid_flag:
         click.echo(
             "ERROR: --semantic and --hybrid are mutually exclusive.", err=True
+        )
+        sys.exit(2)
+    if federated_flag and (semantic_flag or hybrid_flag):
+        click.echo(
+            "ERROR: --federated is mutually exclusive with --semantic/--hybrid.",
+            err=True,
         )
         sys.exit(2)
     if not (0.0 <= alpha <= 1.0):
@@ -553,10 +628,31 @@ def search(
             f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True
         )
         sys.exit(2)
+    if federated_flag and since is not None:
+        # Validate the ISO string via _parse_since (epoch conversion is
+        # discarded — we pass the raw ISO through to mem_search_federated
+        # so the SQL `created_at >=` comparison is lexicographic on the
+        # YYYY-MM-DD HH:MM:SS TEXT format per design D7).
+        try:
+            _parse_since(since)
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(2)
 
     backend = _default_save_backend()
 
-    if semantic_flag or hybrid_flag:
+    if federated_flag:
+        # REQ-25: federated multi-project search. Projects + type are
+        # CSV-parsed; None means "no filter". --since is the raw ISO
+        # string (validated above).
+        raw = backend.mem_search_federated(
+            query,
+            projects=_parse_csv(projects),
+            limit=k,
+            since=since,
+            type_filter=_parse_csv(type_csv),
+        )
+    elif semantic_flag or hybrid_flag:
         # Gate check order matters: extra first (so the install hint wins
         # over the env hint when both are missing). Mirrors REQ-17 scenarios
         # 2 and 4 — the user gets the most actionable error first.
