@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import click
 
+from flow_engineering.auto_suggest_code_refs import FLOW_AUTO_SUGGEST_ENV
 from flow_engineering.daemon import start_watch
+from flow_engineering.engram_io import EngramBackend, EngramClient, InMemoryBackend
 from flow_engineering.orchestrator import (
     apply_change,
     archive_change,
@@ -223,6 +226,89 @@ def memory_timeline(target: Path) -> None:
         return
     timeline = build_timeline(changes)
     click.echo(render_timeline(timeline))
+
+
+def _default_save_backend() -> EngramBackend:
+    """Pick the save backend (InMemoryBackend by default for v0.1.0)."""
+    return InMemoryBackend()
+
+
+@main.command()
+@click.argument("change")
+@click.argument("phase")
+@click.option(
+    "--content",
+    default=None,
+    help="Inline content to save (mutually exclusive with --content-file).",
+)
+@click.option(
+    "--content-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to file containing the observation content.",
+)
+@click.option(
+    "--with-suggest",
+    "with_suggest_flag",
+    is_flag=True,
+    default=False,
+    help="Run auto-suggest and accept candidates non-interactively.",
+)
+@click.option(
+    "--no-suggest",
+    "no_suggest_flag",
+    is_flag=True,
+    default=False,
+    help="Skip auto-suggest entirely; writes source=manual.",
+)
+def save(
+    change: str,
+    phase: str,
+    content: str | None,
+    content_file: Path | None,
+    with_suggest_flag: bool,
+    no_suggest_flag: bool,
+) -> None:
+    """Save a phase artifact, optionally running auto-suggest (REQ-6).
+
+    Auto-suggest resolution order:
+    1. ``--with-suggest`` flag (non-interactive accept-all).
+    2. ``--no-suggest`` flag (bypass suggester, source=manual).
+    3. ``FLOW_AUTO_SUGGEST=1`` env var (non-interactive accept-all).
+    4. Interactive TTY prompt (when ``stdin.isatty()``).
+    5. Default: append unbound block, do not call graphify.
+    """
+    if with_suggest_flag and no_suggest_flag:
+        raise click.UsageError("--with-suggest and --no-suggest are mutually exclusive.")
+    if content is not None and content_file is not None:
+        raise click.UsageError("Use either --content or --content-file, not both.")
+
+    if content_file is not None:
+        text = content_file.read_text(encoding="utf-8")
+    elif content is not None:
+        text = content
+    else:
+        text = sys.stdin.read()
+
+    env_active = os.environ.get(FLOW_AUTO_SUGGEST_ENV) == "1"
+    is_tty = sys.stdin.isatty()
+    if with_suggest_flag:
+        with_suggest, no_suggest = True, False
+    elif no_suggest_flag:
+        with_suggest, no_suggest = False, True
+    else:
+        with_suggest = env_active or is_tty
+        no_suggest = False
+
+    client = EngramClient(change, _default_save_backend())
+    client.save_phase(
+        phase,
+        text,
+        with_suggest=with_suggest,
+        no_suggest=no_suggest,
+        is_tty=is_tty,
+    )
+    click.echo(f"Saved {phase} for {change} (with_suggest={with_suggest}, no_suggest={no_suggest})")
 
 
 if __name__ == "__main__":
