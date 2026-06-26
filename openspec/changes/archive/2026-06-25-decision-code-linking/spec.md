@@ -5,6 +5,19 @@
 **Date:** 2026-06-25
 **Status:** SPECIFIED → ready for sdd-design / sdd-tasks
 
+> **Reconciliation note (post-archive, 2026-06-25):** REQ-8 counter names
+> below were reconciled with the implementation per `sdd/decision-code-linking/verify-report`
+> finding **W2**, and carried forward by the `decision-reality-drift` change
+> (PR#1 batch A, T1.1). The original (pre-reconciliation) names were:
+> `manual_count`, `auto_suggest_hits`, `backfill_count`, `unbound_count`,
+> `avg_bindings_per_observation`, `backfill_coverage`. They were replaced by
+> the actual names emitted by `src/flow_engineering/observability.py`
+> (REQ-6 events + REQ-8 close in PR#2 batch 2). The `avg_bindings_per_observation`
+> derived metric was dropped: coverage is now computed by the
+> `record_backfill_coverage(observations_total=…, with_refs=…)` helper which
+> increments `backfill_observations_total` and `backfill_with_refs_total`,
+> and the ratio is exposed by `backfill_coverage(backend)`.
+
 ## Goal
 
 Bind Engram observations to Graphify code nodes via a structured `code_refs` block appended to observation content. PR#1 ships the binding format, parser, save hook, and one-time backfill. PR#2 layers in auto-suggestion at save time, the `flow inspect` rendering, and observability counters. The contract MUST be non-breaking: existing observations, older engram binaries, and the FTS5 index MUST keep working without migration.
@@ -268,32 +281,43 @@ The system SHALL render the decisions of an SDD change as a table with columns: 
 
 ### REQ-8: Observability counters
 
-The system SHALL maintain counters for save-time events: `manual_count`, `auto_suggest_hits`, `backfill_count`, `unbound_count`, and derived metrics `avg_bindings_per_observation` and `backfill_coverage`. Counters MUST be persisted across sessions (Engram observation of type `metrics`).
+The system SHALL emit the following JSONL counter events via `observability.increment()` and persist them across sessions (Engram observation of type `metrics`, sink at `~/.flow-engineering/metrics.jsonl` unless `FLOW_METRICS_PATH` overrides):
 
-#### Scenario: `manual_count` increments when explicit `code_refs` block is saved
+- `suggest_invoked_total` — incremented once per auto-suggest call.
+- `suggest_hit_total` — incremented when at least one binding is confirmed.
+- `suggest_miss_total` — incremented when no binding is confirmed (rejected, no candidates cleared threshold, or graphify unavailable).
+- `bindings_confirmed_total` — incremented by the count of confirmed bindings (a batch of 3 confirmations contributes 3).
+- `backfill_observations_total` — total observations scanned for coverage (via `record_backfill_coverage`).
+- `backfill_with_refs_total` — observations that carry `source: backfill` (via `record_backfill_coverage`).
+- `inspect_invoked_total` — one event per `flow inspect <change>` call.
+- `inspect_render_ms` — one event per render with an `elapsed_ms` field.
 
-- GIVEN the counter `manual_count = N`
-- WHEN `mem_save(content)` is called with content containing a non-empty `code_refs` block with `source: manual`
-- THEN after the call, `manual_count == N + 1`
+Derived metric `backfill_coverage(backend)` returns the ratio of backfill-sourced observations to total observations, rounded to 3 decimal places.
 
-#### Scenario: `auto_suggest_hits` increments when ≥1 candidate surfaced
+#### Scenario: `bindings_confirmed_total` increments by the number of confirmed bindings
 
-- GIVEN the counter `auto_suggest_hits = N`
+- GIVEN the counter `bindings_confirmed_total = N`
+- WHEN `mem_save(content)` triggers a prompt and the user confirms `K` bindings
+- THEN after the call, `bindings_confirmed_total == N + K`
+
+#### Scenario: `suggest_hit_total` increments when ≥1 candidate is confirmed
+
+- GIVEN the counter `suggest_hit_total = N`
 - WHEN `mem_save(content)` triggers a prompt and the user confirms at least one binding
-- THEN after the call, `auto_suggest_hits == N + 1`
+- THEN after the call, `suggest_hit_total == N + 1`
 
-#### Scenario: `avg_bindings_per_observation` is recomputed each query
-
-- GIVEN 10 observations carry a total of 25 bindings
-- WHEN the observability endpoint is queried for `avg_bindings_per_observation`
-- THEN it returns `2.5`
-- AND the value reflects the current database state (not a cached stale value)
-
-#### Scenario: `backfill_coverage` reflects ratio of backfilled to total observations
+#### Scenario: `backfill_coverage` reflects the ratio of backfilled to total observations
 
 - GIVEN 46 observations are marked `source: backfill` and 57 are not
-- WHEN `backfill_coverage` is queried
+- WHEN `backfill_coverage(backend)` is queried
 - THEN it returns `0.446` (46 / 103) rounded to 3 decimal places
+- AND the value reflects the current database state (not a cached stale value)
+
+#### Scenario: `inspect_invoked_total` increments once per `flow inspect` call
+
+- GIVEN the counter `inspect_invoked_total = N`
+- WHEN `flow inspect <change>` runs and renders the decision table
+- THEN after the call, `inspect_invoked_total == N + 1`
 
 ---
 
