@@ -195,7 +195,164 @@ def scan_change(
 ) -> DriftReport:
     """Scan a change for decision-to-code drift (REQ-9 + REQ-12).
 
-    Implementation lands in T1.6 batch C GREEN phase (commit 3). See the
-    RED tests in ``tests/unit/test_decision_drift.py`` for the contract.
+    Aggregates per-binding classifications into a ``DriftReport``. Fails
+    open: every error path returns a safe report (graph_unavailable=True
+    when the snapshot cannot be read; empty otherwise). The function
+    MUST NOT raise — callers (``flow drift`` CLI, daemon) rely on a
+    terminal ``DriftReport``.
+
+    Args:
+        change_name: The OpenSpec/SDD change identifier.
+        graph_json_path: Path to ``graph.json`` snapshot.
+        backend: ``EngramBackend`` exposing ``iter_observations()``. When
+            ``None``, an empty ``InMemoryBackend`` is used (zero decisions).
+        include_obsolete: When ``True``, query ``graphify_query`` for
+            decisions without code_refs and emit ``OBSOLETE`` when zero
+            candidates clear the threshold. Defaults ``False`` per design
+            #123 decision 3 (LLM cost bound).
+        since: Epoch seconds; skip observations whose ``created_at`` is
+            strictly less than the cutoff.
+
+    Returns:
+        ``DriftReport`` aggregating per-binding classifications.
     """
-    raise NotImplementedError("scan_change lands in T1.6 (batch C) GREEN")
+    scanned_at = time.time()
+    try:
+        current_nodes, current_id_map, graph_mtime = load_graph(graph_json_path)
+        if current_nodes is None:
+            return DriftReport(
+                change_name=change_name,
+                scanned_at=scanned_at,
+                graph_mtime=None,
+                decisions_total=0,
+                bindings_total=0,
+                graph_unavailable=True,
+            )
+
+        if backend is None:
+            from flow_engineering.engram_io import InMemoryBackend
+            backend = InMemoryBackend()
+
+        try:
+            observations = backend.iter_observations()
+        except Exception:
+            observations = []
+
+        prefix = f"sdd/{change_name}/"
+        observations = [
+            o for o in observations
+            if str(o.get("topic_key", "")).startswith(prefix)
+        ]
+
+        if since is not None:
+            observations = [
+                o for o in observations
+                if float(o.get("created_at", 0)) >= since
+            ]
+
+        findings: list[Finding] = []
+        bindings_total = 0
+
+        for obs in observations:
+            try:
+                content = str(obs.get("content", ""))
+                decision_id = str(obs.get("id", "unknown"))
+                try:
+                    refs = extract_code_refs(content)
+                except ParseError:
+                    continue
+
+                if not refs:
+                    if include_obsolete:
+                        prose = content[:500]
+                        try:
+                            candidates = graphify_query.query_nodes(prose)
+                        except Exception:
+                            candidates = []
+                        if not candidates:
+                            synthetic = CodeRef(
+                                project="insyd",
+                                id="(none)",
+                                label="(no-binding)",
+                                file="(none)",
+                                line=0,
+                                confidence=0.0,
+                                source="unbound",
+                            )
+                            findings.append(
+                                Finding(
+                                    decision_id=decision_id,
+                                    binding=synthetic,
+                                    drift_class=DriftClass.OBSOLETE,
+                                    detail="no code_refs; graphify returned 0 candidates",
+                                )
+                            )
+                    continue
+
+                for binding in refs:
+                    bindings_total += 1
+                    drift_class = classify_binding(
+                        binding, current_nodes, current_id_map
+                    )
+                    findings.append(
+                        Finding(
+                            decision_id=decision_id,
+                            binding=binding,
+                            drift_class=drift_class,
+                            detail="",
+                        )
+                    )
+            except Exception:
+                continue
+
+        try:
+            contradicted_indices = _detect_contradicted(findings)
+            if contradicted_indices:
+                rebuilt: list[Finding] = []
+                for idx, f in enumerate(findings):
+                    if idx in contradicted_indices:
+                        conflicting = sorted(
+                            set(
+                                str(other.decision_id)
+                                for other in findings
+                                if other.binding.id == f.binding.id
+                                and str(other.decision_id) != f.decision_id
+                            )
+                        )
+                        rebuilt.append(
+                            Finding(
+                                decision_id=f.decision_id,
+                                binding=f.binding,
+                                drift_class=DriftClass.CONTRADICTED,
+                                detail=f"conflicting_decisions={conflicting}",
+                            )
+                        )
+                    else:
+                        rebuilt.append(f)
+                findings = rebuilt
+        except Exception:
+            pass
+
+        class_counts: dict[DriftClass, int] = {}
+        for f in findings:
+            class_counts[f.drift_class] = class_counts.get(f.drift_class, 0) + 1
+
+        return DriftReport(
+            change_name=change_name,
+            scanned_at=scanned_at,
+            graph_mtime=graph_mtime,
+            decisions_total=len(observations),
+            bindings_total=bindings_total,
+            class_counts=class_counts,
+            findings=findings,
+            graph_unavailable=False,
+        )
+    except Exception:
+        return DriftReport(
+            change_name=change_name,
+            scanned_at=scanned_at,
+            graph_mtime=None,
+            decisions_total=0,
+            bindings_total=0,
+            graph_unavailable=True,
+        )
