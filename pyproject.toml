@@ -27,6 +27,20 @@ dev = [
     "mypy>=1.8.0",
 ]
 
+# Optional ML extras for vector-semantic-search (REQ-17, REQ-19).
+# Installing [vectors] enables ``HybridBackend.mem_search_semantic`` /
+# ``mem_search_hybrid`` and the ``flow search --semantic`` / ``flow reindex``
+# CLI subcommands. Default install stays torch-free and loads instantly.
+#
+# Activation is BOTH this extra AND ``FLOW_VECTOR_SEARCH=1`` (see spec #142).
+# CPU-only torch install: prefix with
+# ``pip install --index-url https://download.pytorch.org/whl/cpu torch``
+# before running ``pip install -e .[vectors]``.
+vectors = [
+    "sqlite-vec>=0.1.0,<0.2",      # pinned <0.2 to avoid int8 KNN API churn (design D9)
+    "sentence-transformers>=2.0",  # all-MiniLM-L6-v2 + future swaps
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
