@@ -19,7 +19,6 @@ skipped with a clear message rather than failing collection.
 from __future__ import annotations
 
 import sqlite3
-import struct
 from pathlib import Path
 
 import numpy as np
@@ -266,7 +265,8 @@ class TestSqliteVecStoreBlobSize:
             ("obs1",),
         ).fetchone()
         assert row[0] == "all-MiniLM-L6-v2"
-        assert isinstance(row[1], str) and len(row[1]) > 0
+        assert isinstance(row[1], str)
+        assert len(row[1]) > 0
 
 
 # ---------- REQ-20 scenario 5: top-k ordering ----------
