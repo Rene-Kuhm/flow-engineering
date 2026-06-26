@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from openspec/changes/decision-reality-drift/spec.md -->
 # Spec: decision-reality-drift
 
 **Change:** `decision-reality-drift`
