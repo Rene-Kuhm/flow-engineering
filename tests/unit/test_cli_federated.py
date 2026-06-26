@@ -105,7 +105,7 @@ def multi_project_backend(monkeypatch: pytest.MonkeyPatch) -> InMemoryBackend:
             _make_obs(
                 6,
                 title="unrelated noise",
-                content="nothing about drift in here",
+                content="totally unrelated topic with no matches",
                 project="flow-engineering",
                 type="manual",
                 created_at="2026-06-22 10:00:00",

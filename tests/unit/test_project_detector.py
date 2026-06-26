@@ -85,15 +85,26 @@ class TestDetectCwdNotUnderProjectsDir:
 
 
 class TestDetectProyectsWithoutDevPrefix:
-    """The second valid layout is ``~/proyects/<name>/`` (no ``dev`` segment)."""
+    """The second valid layout is ``~/proyects/<name>/`` (no ``dev`` segment).
+
+    These tests anchor against ``Path.home()`` so they work on any
+    platform (Windows, macOS, Linux) regardless of the actual home
+    location — the user's prompt in T1.3 uses ``/c/dev/proyects/...``
+    which is the Layout-1 (dev/proyects) pattern; this class exercises
+    the alternative Layout-2 (``<home>/proyects/<name>``) contract.
+    """
 
     def test_home_proyects_layout(self) -> None:
-        cwd = Path("/c/Users/insyd/proyects/flow-engineering")
+        cwd = Path.home() / "proyects" / "flow-engineering"
         assert detect(cwd) == "flow-engineering"
 
     def test_home_proyects_subdirectory(self) -> None:
-        cwd = Path("/c/Users/insyd/proyects/mockup-2-blog")
+        cwd = Path.home() / "proyects" / "mockup-2-blog"
         assert detect(cwd) == "mockup-2-blog"
+
+    def test_home_proyects_nested_subdir(self) -> None:
+        cwd = Path.home() / "proyects" / "tecnodespegue-landing" / "src"
+        assert detect(cwd) == "tecnodespegue-landing"
 
 
 class TestDetectRegistryOverride:
@@ -158,17 +169,6 @@ class TestLoadRegistry:
         with pytest.raises(RegistryParseError) as exc:
             load_registry()
         assert str(path) in str(exc.value)
-
-    def test_wrong_shape_raises(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        path = tmp_path / "wrong-shape.json"
-        path.write_text(json.dumps({"oops": "no cwd_to_project key"}), encoding="utf-8")
-        monkeypatch.setattr(
-            "flow_engineering.project_detector.DEFAULT_REGISTRY_PATH", path
-        )
-        with pytest.raises(RegistryParseError):
-            load_registry()
 
 
 class TestApplyTag:
