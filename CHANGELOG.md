@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - `flow drift <change>` subcommand — scans Engram observations for binding drift and reports one of six classes (`still_valid`, `label_drift`, `stale_location`, `stale_id`, `obsolete`, `contradicted`) per REQ-12. Exits `0` (all `still_valid`), `1` (any drift), `2` (`unable_to_verify`) per REQ-11.
 - `flow watch --drift` flag — daemon subscribes to `apply-progress` writes and re-runs `scan_change` on `merged` status, emitting a summary line per detected change (REQ-15, REQ-16).
-- 8 new `drift_*_total` observability counters (`drift_still_valid_total`, `drift_label_drift_total`, `drift_stale_location_total`, `drift_stale_id_total`, `drift_obsolete_total`, `drift_contradicted_total`, `drift_unable_to_verify_total`, `drift_scan_total`) persisted alongside the existing `flow metrics` JSONL.
+- 8 new `drift_*_total` observability counters (`drift_still_valid_total`, `drift_label_drift_total`, `drift_stale_location_total`, `drift_stale_id_total`, `drift_obsolete_total`, `drift_contradicted_total`, `drift_unable_to_verify_total`, `drift_invoked_total`) persisted alongside the existing `flow metrics` JSONL.
 
 ### Closed (W2/W3 carry-forwards)
 - **W2** — REQ-8 counter reconciliation: spec counter names now match the 8 implementation counters shipped in v0.2.0.
@@ -17,7 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Tests
 - 385 / 385 tests passing (`uv run pytest -x --tb=short`).
-- 39 BDD scenarios across 9 feature files (`req1..req9` + `req15_drift_daemon`).
+- 63 BDD scenarios across 12 feature files (`req1_format`, `req2_parsing`, `req3_engram_io`, `req3_state`, `req4_backfill`, `req4_drift`, `req5_nonbreaking`, `req6_auto_suggest`, `req7_inspect`, `req8_observability`, `req9_drift_detection`, `req15_drift_daemon`).
 - See `openspec/changes/archive/2026-06-26-decision-reality-drift/` for full spec, design, and task breakdown (post-archive).
 
 ### Notes
