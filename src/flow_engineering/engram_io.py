@@ -32,6 +32,24 @@ METADATA_MARKER: str = "<!-- metadata -->"
 _METADATA_SCHEMA: int = 1
 
 
+class VectorSearchDisabled(RuntimeError):
+    """Raised when vector / hybrid search is called without the activation gate.
+
+    REQ-17: the message MUST include the install hint so users without the
+    ``[vectors]`` extra get an actionable error. Subclassing ``RuntimeError``
+    lets callers isolate gate failures from genuine bugs in semantic search
+    code paths.
+    """
+
+    def __init__(self, message: str | None = None) -> None:
+        if message is None:
+            message = (
+                "Vector search disabled. "
+                "Install with: pip install flow-engineering[vectors]"
+            )
+        super().__init__(message)
+
+
 class EngramBackend(ABC):
     """Abstract Engram backend. Real implementation calls MCP, tests use in-memory.
 
@@ -201,6 +219,30 @@ class InMemoryBackend(EngramBackend):
         # Advance updated_at, preserve created_at.
         obs["updated_at"] = obs.get("updated_at", 0) + 1
         return obs
+
+    def mem_search_semantic(
+        self, query: str, k: int = 10
+    ) -> list[dict[str, Any]]:
+        """InMemoryBackend is the prose test fixture — vector search is opt-in.
+
+        REQ-17: ``InMemoryBackend`` raises ``VectorSearchDisabled`` with the
+        install hint when vector / hybrid methods are called. The prose
+        ``mem_search`` path stays unchanged so existing tests are unaffected.
+        """
+        raise VectorSearchDisabled()
+
+    def mem_search_hybrid(
+        self,
+        query: str,
+        k: int = 10,
+        alpha: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """InMemoryBackend is the prose test fixture — vector search is opt-in.
+
+        REQ-17: see ``mem_search_semantic`` above. Hybrid scoring is only
+        available via a real vector-enabled backend.
+        """
+        raise VectorSearchDisabled()
 
 
 def phase_topic_key(change: str, phase: str) -> str:
