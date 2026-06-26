@@ -65,9 +65,30 @@ class EmbeddingProvider(ABC):
     def embed(self, texts: list[str]) -> np.ndarray:
         """Embed ``texts`` into a ``(len(texts), dim)`` float32 array."""
 
-    def embed_batch(self, texts: list[str]) -> np.ndarray:
-        """Default batched impl: walk ``embed()`` per text. Override for speed."""
-        return self.embed(texts)
+    def embed_batch(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
+        """Batched embed with ``batch_size`` chunking (REQ-21 helper).
+
+        Default impl chunks ``texts`` into slices of size ``batch_size`` and
+        concatenates :meth:`embed` outputs along axis 0. Subclasses may
+        override for hardware-specific speedups (e.g. a single
+        ``model.encode(chunks[0])`` call inside the chunk loop).
+
+        Empty input returns shape ``(0, EMBEDDING_DIMS)`` without touching
+        the model — keeps the ``embed([]) -> (0, 384)`` contract intact.
+        ``batch_size <= 0`` raises ``ValueError`` so callers don't silently
+        fall into an infinite loop on a misconfigured batch.
+        """
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be > 0, got {batch_size}")
+        if not texts:
+            return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+        rows: list[np.ndarray] = []
+        for start in range(0, len(texts), batch_size):
+            chunk = texts[start : start + batch_size]
+            rows.append(self.embed(chunk))
+        if not rows:
+            return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+        return np.concatenate(rows, axis=0)
 
 
 class MockEmbeddingProvider(EmbeddingProvider):
@@ -106,9 +127,76 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return arr / norms
 
 
+class SentenceTransformersProvider(EmbeddingProvider):
+    """Real embedding provider backed by ``sentence-transformers`` (REQ-19 T2.1).
+
+    Lazy-import strategy:
+    - Module-level ``import flow_engineering.embedding_provider`` does NOT pull
+      torch or sentence_transformers (verified by
+      ``tests/unit/test_embedding_provider.py::test_subprocess_module_import_does_not_pull_torch``).
+    - ``__init__`` does a function-body ``import torch`` + ``from sentence_transformers
+      import SentenceTransformer`` to check the extra is installed. If either import
+      fails, raises :class:`EmbeddingProviderUnavailable` with the install hint.
+    - The actual ``SentenceTransformer(...)`` instantiation is lazy: it happens on
+      the first ``embed()`` call via :meth:`_ensure_model` and the result is cached
+      on ``self._model`` for subsequent calls. This keeps construction cheap (no
+      model download, no GPU init) and defers the expensive model load until the
+      provider is actually used.
+
+    Output contract (REQ-19 scenarios 1, 4):
+    - ``embed(texts)`` returns ``np.ndarray`` of shape ``(len(texts), 384)``,
+      ``dtype=float32``.
+    - ``embed([])`` returns shape ``(0, 384)`` without touching the model.
+    """
+
+    DEFAULT_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    """The default model. 384-dim MiniLM-L6 is the v1 production choice per design D4 + D9."""
+
+    _INSTALL_HINT: str = "pip install flow-engineering[vectors]"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL) -> None:
+        # Function-body import — keeps module-level ``import embedding_provider``
+        # torch-free (REQ-19 scenario 2). The two imports are checked atomically:
+        # torch without sentence_transformers (or vice versa) is treated as
+        # "extra not installed" because the runtime needs both.
+        try:
+            import torch  # noqa: F401  - presence-check only
+            from sentence_transformers import SentenceTransformer  # noqa: F401
+        except ImportError as exc:
+            raise EmbeddingProviderUnavailable(
+                f"Install [vectors] extra: {self._INSTALL_HINT}"
+            ) from exc
+        self.model_name: str = model_name
+        self.model_version: str = model_name
+        self.dim: int = EMBEDDING_DIMS
+        # Lazy: the model is only constructed on the first embed() call so
+        # construction itself stays fast and never downloads weights.
+        self._model: Any | None = None
+
+    def _ensure_model(self) -> Any:
+        """Construct ``SentenceTransformer`` on first call; cache thereafter."""
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
+            self._model = SentenceTransformer(self.model_name)
+        return self._model
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            # Empty input short-circuits before touching the model — keeps the
+            # embed([]) → (0, 384) contract intact even when torch is unavailable
+            # at runtime.
+            return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
+        model = self._ensure_model()
+        vectors = model.encode(texts, convert_to_numpy=True)
+        arr = np.asarray(vectors, dtype=np.float32).reshape(len(texts), EMBEDDING_DIMS)
+        return arr
+
+
 __all__ = [
     "EMBEDDING_DIMS",
     "EmbeddingProvider",
     "EmbeddingProviderUnavailable",
     "MockEmbeddingProvider",
+    "SentenceTransformersProvider",
 ]

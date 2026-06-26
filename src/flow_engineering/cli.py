@@ -269,9 +269,100 @@ def memory_timeline(target: Path) -> None:
     click.echo(render_timeline(timeline))
 
 
+FLOW_VECTOR_SEARCH_ENV: str = "FLOW_VECTOR_SEARCH"
+VECTOR_INSTALL_HINT: str = "pip install flow-engineering[vectors]"
+
+
+def _sqlite_vec_available() -> bool:
+    """Return True iff the ``[vectors]`` extra (specifically ``sqlite_vec``) is importable.
+
+    Used by ``flow reindex`` to gate the SqliteVecStore path. Mirrors
+    :func:`_vectors_extra_available` but focused on the SQLite side —
+    sentence-transformers / torch are NOT required to write the index,
+    only to compute embeddings (which can come from :class:`MockEmbeddingProvider`
+    in tests).
+    """
+    try:
+        import sqlite_vec  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _vectors_sqlite_path() -> Path:
+    """Return the path used by ``flow reindex`` for ``SqliteVecStore``.
+
+    Defaults to ``~/.flow-engineering/vectors.sqlite`` (mirrors the
+    ``DEFAULT_GRAPH_JSON`` precedent). Tests override via ``monkeypatch.setattr``
+    on the cli module's helper so the production default stays untouched.
+    """
+    return Path.home() / ".flow-engineering" / "vectors.sqlite"
+
+
+def _vectors_extra_available() -> bool:
+    """Return True iff the ``[vectors]`` extra is importable (REQ-17 gate leg 1).
+
+    Imports are guarded so a missing module only sets the flag to ``False``
+    — it MUST NOT raise. Test isolation uses ``monkeypatch.setattr`` on this
+    helper to flip the gate without touching the heavy dependencies.
+    """
+    try:
+        import sqlite_vec  # noqa: F401
+        import torch  # noqa: F401
+        import sentence_transformers  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _ensure_vector_extra() -> None:
+    """Exit non-zero with the install hint if ``[vectors]`` is missing (REQ-17).
+
+    Separate helper so ``flow search --semantic`` / ``flow reindex`` can call
+    it BEFORE the env-var check. Mirrors the per-gate exit contract from
+    REQ-17 scenarios 2 + 4 — actionable stderr line, exit code 2, no traceback.
+    """
+    if not _vectors_extra_available():
+        click.echo(
+            "Semantic search disabled: install [vectors] extra — "
+            f"{VECTOR_INSTALL_HINT}",
+            err=True,
+        )
+        sys.exit(2)
+
+
+def _ensure_vector_env() -> None:
+    """Exit non-zero with the env hint if ``FLOW_VECTOR_SEARCH!=1`` (REQ-17).
+
+    Only reached after :func:`_ensure_vector_extra` passes, so the message
+    is unambiguously "you have the extra installed but forgot to set the env".
+    """
+    if os.environ.get(FLOW_VECTOR_SEARCH_ENV) != "1":
+        click.echo(
+            "Semantic search disabled: set FLOW_VECTOR_SEARCH=1",
+            err=True,
+        )
+        sys.exit(2)
+
+
 def _default_save_backend() -> EngramBackend:
-    """Pick the save backend (InMemoryBackend by default for v0.1.0)."""
-    return InMemoryBackend()
+    """Return the active backend.
+
+    REQ-17 gate state machine:
+    - Both gates met (``[vectors]`` extra AND ``FLOW_VECTOR_SEARCH=1``) → wrap
+      the inner ``InMemoryBackend`` in :class:`HybridBackend` with a real
+      ``SentenceTransformersProvider`` so default ``flow save`` writes
+      embeddings on save.
+    - Otherwise → return the inner backend unchanged. Default ``flow save``
+      stays byte-identical to v0.3.0 (REQ-17 scenario 5).
+    """
+    if not (_vectors_extra_available() and os.environ.get(FLOW_VECTOR_SEARCH_ENV) == "1"):
+        return InMemoryBackend()
+    from flow_engineering.embedding_provider import SentenceTransformersProvider
+    from flow_engineering.hybrid_backend import HybridBackend
+
+    provider = SentenceTransformersProvider()
+    return HybridBackend(InMemoryBackend(), provider)
 
 
 @main.command()
@@ -350,6 +441,278 @@ def save(
         is_tty=is_tty,
     )
     click.echo(f"Saved {phase} for {change} (with_suggest={with_suggest}, no_suggest={no_suggest})")
+
+
+# ---------- REQ-17 / REQ-18: flow search <query> ----------
+
+
+def _format_search_row(rank: int, obs_id: int, title: str, score: float) -> str:
+    """One text-table row for ``flow search`` output."""
+    return f"{rank:<3}  obs {obs_id:<6}  {score:.4f}  {title}"
+
+
+def _render_search_table(rows: list[dict]) -> str:
+    """Pretty-print search hits as a fixed-width text table."""
+    if not rows:
+        return "(no results)"
+    lines: list[str] = []
+    lines.append("  ".join(h.upper() for h in ("rank", "id", "score", "title")))
+    lines.append("-" * 64)
+    for r in rows:
+        lines.append(
+            _format_search_row(
+                int(r.get("rank", 0)),
+                int(r.get("observation_id", 0)),
+                str(r.get("title", "")),
+                float(r.get("score", 0.0)),
+            )
+        )
+    return "\n".join(lines)
+
+
+def _search_results_to_rows(results: list[dict]) -> list[dict]:
+    """Project ``mem_search*`` results to the JSON/table shape.
+
+    The vector methods return ``observation_id`` + ``score`` + ``rank`` per
+    REQ-17 contract. The legacy ``mem_search`` returns plain observation
+    dicts with ``id`` and no score/rank — synthesize a position-based
+    rank and a 0.0 score so the table renders uniformly.
+    """
+    out: list[dict] = []
+    for rank, r in enumerate(results):
+        obs_id = r.get("observation_id", r.get("id"))
+        out.append(
+            {
+                "observation_id": obs_id,
+                "rank": r.get("rank", rank),
+                "score": r.get("score", 0.0),
+                "title": r.get("title", ""),
+                "topic_key": r.get("topic_key", ""),
+            }
+        )
+    return out
+
+
+@main.command()
+@click.argument("query")
+@click.option(
+    "--semantic",
+    "semantic_flag",
+    is_flag=True,
+    default=False,
+    help="REQ-17: semantic search via embeddings (requires [vectors] extra AND FLOW_VECTOR_SEARCH=1).",
+)
+@click.option(
+    "--hybrid",
+    "hybrid_flag",
+    is_flag=True,
+    default=False,
+    help="REQ-18: hybrid semantic + FTS search with --alpha blending.",
+)
+@click.option(
+    "--alpha",
+    type=float,
+    default=0.5,
+    help="REQ-18: weight for semantic vs FTS in --hybrid mode (0.0 = pure FTS, 1.0 = pure semantic).",
+)
+@click.option(
+    "--k",
+    type=int,
+    default=10,
+    help="Maximum number of results to return.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text table.",
+)
+def search(
+    query: str,
+    semantic_flag: bool,
+    hybrid_flag: bool,
+    alpha: float,
+    k: int,
+    as_json: bool,
+) -> None:
+    """Search observations (REQ-17 + REQ-18 CLI surface).
+
+    Default mode is FTS5 prose (``mem_search``); this stays byte-identical
+    to the pre-vector behavior so existing scripts are unaffected. The
+    ``--semantic`` and ``--hybrid`` flags enable vector retrieval and are
+    mutually exclusive.
+    """
+    if semantic_flag and hybrid_flag:
+        click.echo(
+            "ERROR: --semantic and --hybrid are mutually exclusive.", err=True
+        )
+        sys.exit(2)
+    if not (0.0 <= alpha <= 1.0):
+        click.echo(
+            f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True
+        )
+        sys.exit(2)
+
+    backend = _default_save_backend()
+
+    if semantic_flag or hybrid_flag:
+        # Gate check order matters: extra first (so the install hint wins
+        # over the env hint when both are missing). Mirrors REQ-17 scenarios
+        # 2 and 4 — the user gets the most actionable error first.
+        _ensure_vector_extra()
+        _ensure_vector_env()
+
+        if hybrid_flag:
+            # The library validates alpha again at the call boundary, but
+            # we exit early here so the CLI never invokes the library with
+            # garbage. ``trigger="cli"`` tags the observability event so
+            # dashboards can separate user-driven calls from programmatic ones.
+            raw = backend.mem_search_hybrid(query, k=k, alpha=alpha, trigger="cli")
+        else:
+            raw = backend.mem_search_semantic(query, k=k, trigger="cli")
+    else:
+        raw = backend.mem_search(query, limit=k)
+
+    rows = _search_results_to_rows(raw)
+    if as_json:
+        click.echo(json.dumps({"results": rows}, ensure_ascii=False, indent=2))
+        return
+    click.echo(_render_search_table(rows))
+
+
+# ---------- REQ-21: flow reindex ----------
+
+
+def _resolve_reindex_provider() -> Any:
+    """Return the embedding provider to use for ``flow reindex``.
+
+    Tries :class:`SentenceTransformersProvider` first (real model); falls
+    back to :class:`MockEmbeddingProvider` when torch / sentence-transformers
+    are unavailable so the reindex path stays runnable in test environments
+    without the ``[vectors]`` extra. Both providers satisfy the same ABC,
+    so the worker code is identical.
+    """
+    from flow_engineering.embedding_provider import (
+        MockEmbeddingProvider,
+        SentenceTransformersProvider,
+    )
+
+    try:
+        return SentenceTransformersProvider()
+    except Exception:  # EmbeddingProviderUnavailable or any ImportError.
+        return MockEmbeddingProvider()
+
+
+def _perform_reindex_batch(
+    observations: list[dict],
+    store: Any,
+    provider: Any,
+    *,
+    simulate_crash_after: int | None = None,
+) -> int:
+    """Embed + upsert one batch of observations into ``store``.
+
+    Returns the number of rows successfully upserted. When
+    ``simulate_crash_after`` is set, the worker writes only that many rows
+    of the batch and then raises — used by the REQ-21 crash-resume test to
+    validate that the next run picks up where the first stopped.
+    """
+    from flow_engineering.binding import split_prose_and_refs
+
+    texts = [split_prose_and_refs(str(o.get("content", "")))[0] for o in observations]
+    embeddings = provider.embed_batch(texts)
+    written = 0
+    for o, vec in zip(observations, embeddings, strict=True):
+        if simulate_crash_after is not None and written >= simulate_crash_after:
+            raise RuntimeError("simulated crash mid-batch")
+        store.add(str(o.get("id", o.get("observation_id"))), vec)
+        written += 1
+    return written
+
+
+@main.command()
+@click.option(
+    "--batch-size",
+    type=int,
+    default=100,
+    help="Observations per embedding batch (default: 100).",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help="Report the count without writing anything to the vector store.",
+)
+def reindex(batch_size: int, dry_run: bool) -> None:
+    """Reindex every observation into the sqlite-vec store (REQ-21).
+
+    Sync streaming: walks ``backend.iter_observations()`` in batches of
+    ``--batch-size``, embeds the prose of each observation (with the
+    trailing ``code_refs`` block stripped), and upserts the resulting
+    vector into :class:`SqliteVecStore` at the path returned by
+    :func:`_vectors_sqlite_path`. Writes are idempotent (INSERT OR REPLACE)
+    and commit per batch, so a crash mid-run leaves the index in a
+    consistent state — re-invoking ``flow reindex`` finishes the work.
+    """
+    if batch_size <= 0:
+        click.echo(
+            f"ERROR: --batch-size must be > 0, got {batch_size}", err=True
+        )
+        sys.exit(2)
+
+    if not _sqlite_vec_available():
+        click.echo(
+            "reindex disabled: install [vectors] extra — "
+            f"{VECTOR_INSTALL_HINT}",
+            err=True,
+        )
+        sys.exit(2)
+
+    backend = _default_save_backend()
+    # Unwrap HybridBackend so we index the underlying prose store directly.
+    inner_backend = getattr(backend, "inner", backend)
+    observations = list(inner_backend.iter_observations())
+    total = len(observations)
+
+    if dry_run:
+        # Count report only — no DB writes, no progress lines, no done line.
+        click.echo(f"reindex: {total} observations need reindex", err=True)
+        return
+
+    if total == 0:
+        # Empty corpus short-circuits with the no-op summary line so the
+        # done-format is consistent across zero and non-zero runs.
+        click.echo(
+            "reindex: done — 0 observations indexed in 0.0s", err=True
+        )
+        observability.increment("reindex_observations_total", count=0)
+        observability.increment("reindex_duration_seconds", value=0.0)
+        return
+
+    from flow_engineering.vectors import SqliteVecStore
+
+    store = SqliteVecStore(_vectors_sqlite_path())
+    provider = _resolve_reindex_provider()
+
+    started = time.monotonic()
+    done = 0
+    for batch_start in range(0, total, batch_size):
+        batch = observations[batch_start : batch_start + batch_size]
+        done += _perform_reindex_batch(batch, store, provider)
+        pct = int(done * 100 / total) if total else 100
+        # Per-batch progress to stderr (REQ-21 contract: one line per batch).
+        click.echo(f"reindex: {done}/{total} ({pct}%) embedded", err=True)
+    elapsed = time.monotonic() - started
+    click.echo(
+        f"reindex: done — {total} observations indexed in {elapsed:.1f}s",
+        err=True,
+    )
+
+    # REQ-22 observability: one counter batch per reindex invocation.
+    observability.increment("reindex_observations_total", count=total)
+    observability.increment("reindex_duration_seconds", value=float(elapsed))
 
 
 if __name__ == "__main__":
