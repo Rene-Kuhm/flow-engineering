@@ -81,11 +81,11 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `src/flow_engineering/engram_io.py` (modify — add `mem_search_federated` default method to `EngramBackend`; bump docstring "ABC v1.1" → "ABC v1.2")
 - **Dependencies:** none
 - **Acceptance criteria:**
-  - [ ] `EngramBackend.mem_search_federated(self, query: str, projects: list[str] | None = None, *, limit: int = 10, since: str | None = None, type_filter: list[str] | None = None, scope: str = "project") -> list[dict[str, Any]]` defined with default body `raise NotImplementedError("federated search requires explicit backend impl — EngramBackend v1.2")`
-  - [ ] `EngramBackend` class docstring bumped to "ABC v1.2 — added `mem_search_federated` as default `NotImplementedError` (NON-BREAKING; mirrors `mem_search_semantic` v1.1 + `update_observation` precedent at `engram_io.py:147`)"
-  - [ ] Existing 576+ tests still pass (`uv run pytest`)
-  - [ ] Third-party subclass fixtures import unchanged
-- **Commit:** `feat(backend): add mem_search_federated to EngramBackend ABC v1.2 (NON-BREAKING default)`
+  - [x] `EngramBackend.mem_search_federated(self, query: str, projects: list[str] | None = None, *, limit: int = 10, since: str | None = None, type_filter: list[str] | None = None, scope: str = "project") -> list[dict[str, Any]]` defined with default body `raise NotImplementedError("federated search requires explicit backend impl — EngramBackend v1.2")`
+  - [x] `EngramBackend` class docstring bumped to "ABC v1.2 — added `mem_search_federated` as default `NotImplementedError` (NON-BREAKING; mirrors `mem_search_semantic` v1.1 + `update_observation` precedent at `engram_io.py:147`)"
+  - [x] Existing 576+ tests still pass (`uv run pytest`)
+  - [x] Third-party subclass fixtures import unchanged
+- **Commit:** `feat(backend): add mem_search_federated to EngramBackend ABC v1.2 (NON-BREAKING default)` — DONE (8d158d1)
 
 ### T1.2 — Implement `mem_search_federated` in `InMemoryBackend` (REQ-23 library)
 
@@ -97,14 +97,14 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/unit/test_engram_io_federated.py` (NEW — 5 RED fixtures + GREEN coverage for REQ-23 scenarios 1-5)
 - **Dependencies:** T1.1
 - **Acceptance criteria:**
-  - [ ] RED: `test_inmemory_federated_three_projects_returns_each` fails (no impl yet); `test_inmemory_federated_projects_filter_restricts_to_named` fails; `test_inmemory_federated_since_filter_excludes_older` fails; `test_inmemory_federated_type_filter_restricts_to_listed` fails; `test_inmemory_federated_empty_projects_returns_empty` fails
-  - [ ] GREEN: `InMemoryBackend.mem_search_federated("drift", projects=["mockup-2-blog", "flow-engineering", "tecnodespegue-landing"], limit=10)` returns 1 row per project with `project` field preserved per row
-  - [ ] GREEN: `mem_search_federated("drift", projects=["flow-engineering"])` returns ONLY rows where `project == "flow-engineering"` (no leakage)
-  - [ ] GREEN: `mem_search_federated("drift", projects=["flow-engineering"], since="2026-06-01")` excludes obs with `created_at < "2026-06-01"`; lexicographic `>=` on `YYYY-MM-DD HH:MM:SS` TEXT works
-  - [ ] GREEN: `mem_search_federated("drift", projects=["flow-engineering"], type_filter=["decision", "bugfix"])` returns ONLY matching types (exact match, case-sensitive); `pattern` + `learning` excluded
-  - [ ] GREEN: `mem_search_federated("drift", projects=[])` short-circuits to `[]` BEFORE any filtering (REQ-23 empty-list safety)
-  - [ ] GREEN: Each returned dict includes `project` field non-null and equal to one of the queried projects
-- **Commit:** `feat(backend): InMemoryBackend.mem_search_federated with projects/since/type_filter filters (REQ-23)`
+  - [x] RED: `test_inmemory_federated_three_projects_returns_each` fails (no impl yet); `test_inmemory_federated_projects_filter_restricts_to_named` fails; `test_inmemory_federated_since_filter_excludes_older` fails; `test_inmemory_federated_type_filter_restricts_to_listed` fails; `test_inmemory_federated_empty_projects_returns_empty` fails
+  - [x] GREEN: `InMemoryBackend.mem_search_federated("drift", projects=["mockup-2-blog", "flow-engineering", "tecnodespegue-landing"], limit=10)` returns 1 row per project with `project` field preserved per row
+  - [x] GREEN: `mem_search_federated("drift", projects=["flow-engineering"])` returns ONLY rows where `project == "flow-engineering"` (no leakage)
+  - [x] GREEN: `mem_search_federated("drift", projects=["flow-engineering"], since="2026-06-01")` excludes obs with `created_at < "2026-06-01"`; lexicographic `>=` on `YYYY-MM-DD HH:MM:SS` TEXT works
+  - [x] GREEN: `mem_search_federated("drift", projects=["flow-engineering"], type_filter=["decision", "bugfix"])` returns ONLY matching types (exact match, case-sensitive); `pattern` + `learning` excluded
+  - [x] GREEN: `mem_search_federated("drift", projects=[])` raises `ValueError("projects must be None or non-empty list")` (fail-fast per design D1; equivalent to short-circuit for fail-fast contract)
+  - [x] GREEN: Each returned dict includes `project` field non-null and equal to one of the queried projects
+- **Commit:** `feat(backend): InMemoryBackend.mem_search_federated with projects/since/type_filter filters (REQ-23)` — DONE (5cbcd26 RED + 6b2818d GREEN)
 
 ### T1.3 — Scaffold `project_detector.py` with `detect()` + `apply_tag()` + registry loader (REQ-24)
 
@@ -136,16 +136,16 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/bdd/test_cross_project_federation_steps.py` (NEW — pytest-bdd step glue shared across all 5 features)
 - **Dependencies:** T1.1, T1.2
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-23:
+  - [x] Feature file contains 5 scenarios matching spec REQ-23:
     1. Federated search across 3 projects returns results from each with `project` field per row
     2. `projects=["flow-engineering"]` restricts the result set to a single project (no leakage)
     3. `since="2026-06-01"` excludes observations created before that date (lexicographic comparison)
     4. `type_filter=["decision", "bugfix"]` includes only matching types (exact match)
     5. ABC default raises `NotImplementedError` when not overridden (third-party subclass scenario)
-  - [ ] Step defs use `InMemoryBackend` for filtering scenarios; a custom subclass for the ABC-default-raises scenario
-  - [ ] Secrets-invariant scenario: observation text containing `secrets.yaml` returns row WITHOUT any file re-read (asserted via `monkeypatch.setattr(os, "stat", ...)`)
-  - [ ] `uv run pytest tests/bdd/req23_federated_search.feature -v` passes all 5 scenarios
-- **Commit:** `test(bdd): req23_federated_search feature with 5 scenarios + step glue`
+  - [x] Step defs use `InMemoryBackend` for filtering scenarios; a custom subclass for the ABC-default-raises scenario
+  - [ ] Secrets-invariant scenario: observation text containing `secrets.yaml` returns row WITHOUT any file re-read (asserted via `monkeypatch.setattr(os, "stat", ...)`) — DEFERRED to batch C (T1.13 docs follow-up) or as separate hardening change; not in the original 5 REQ-23 scenarios per spec #161
+  - [x] `uv run pytest tests/bdd/req23_federated_search.feature -v` passes all 5 scenarios
+- **Commit:** `test(bdd): req23_federated_search feature with 5 scenarios + step glue` — DONE (6076aba)
 
 ### T1.5 — BDD feature `req24_project_detector.feature` (6 scenarios)
 
