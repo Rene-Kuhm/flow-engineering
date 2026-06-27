@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-06-27
+
+### Added
+- `flow prompt-registry` Python API in `src/flow_engineering/prompt_registry.py` (REQ-45).
+- `PromptRegistry` (module-level catalog) + `PromptDef` frozen dataclass + `PromptDomain` enum + `PROMPT_NAMES` catalog with 4 migrated entries (`strict_tdd`, `auto_suggest_header`, `auto_suggest_footer`, `auto_suggest_empty`) (REQ-45).
+- `render_prompt(name, **kwargs)` Jinja2-based renderer with `StrictUndefined` + `render_prompt_safe()` sentinel-substitution helper + `list_required_vars(name)` AST introspection helper (REQ-46, D3 + D4).
+- `validate_catalog()` + `lint_prompts()` validators with `LintError` + `LintReport` types; detects duplicate names, invalid domains, undefined Jinja2 vars, malformed Jinja2 syntax, invalid SemVer (REQ-47, 5 error codes per D7).
+- 7 `SKILL.md` runtime files carry the `## Prompt registry hook` section (sdd-propose, sdd-design, sdd-tasks, sdd-apply, sdd-verify, sdd-archive + future sdd-init / sdd-explore / sdd-spec / sdd-onboard land in PR#2) (added in batch C).
+- `openspec/specs/prompt-registry/spec.md` bootstrapped (mirrors change #6 observability pattern; resolves next capability spec pattern per D12).
+
+### Tests
+- 1078 / 1078 tests passing (`uv run pytest`; +15 unit tests for `render_prompt`/`render_prompt_safe`/`list_required_vars` + 7 BDD scenarios for req45/46/47).
+- 32 BDD scenarios across 18 feature files (+7 this PR).
+- See `openspec/changes/archive/2026-06-27-prompt-registry-pr1/` for full spec, design, and task breakdown.
+
+### Notes
+- `prompt-registry` change #7 PR#1 (foundation + validation + lint + render) shipped with 3 batches (A + B + C) in ~7 work-unit commits.
+- Strict TDD throughout; 4 inline prompt constants migrated to PromptRegistry thin wrappers per D10 alias convention (`STRICT_TDD_PROMPT`, `EMPTY_PROMPT_TEXT`, `PROMPT_HEADER`, `PROMPT_FOOTER`).
+- The existing 4 prompt templates use Python `.format()` style (`{test_command}`); `render_prompt()` uses Jinja2 `{{ var }}` syntax (new prompts registered via `register()` exercise the substitution path).
+- Verify report: TBD (sdd-verify next).
+
+### Out-of-scope reminders (carried to PR#2)
+- REQ-49 OpenCode SKILL.md catalog (`SKILL_CATALOG` + `check_drift` + `init_checksums` / `update_checksums` + sidecar JSON) (PR#2)
+- REQ-50 `flow prompts` CLI subcommand (`list` / `show <id>` / `lint` / `check` + 7 flags) (PR#2)
+- REQ-48 Golden regression tests (deferred to v1.1)
+- REQ-51 `prompt_renders.jsonl` append-only sink (deferred to v1.1)
+- REQ-52 Prompt observability counters (deferred to v1.1; will land in `observability.py` per D10)
+- REQ-53 `docs/prompts.md` generated from registry (deferred to v1.1)
+- REQ-54 `min_sdd_skill_versions` enforcement (deferred to v1.1)
+- Per-prompt LLM provider routing (deferred to v1.1)
+- Prompt A/B testing infrastructure (deferred to v1.1)
+
 ## [0.8.0] - TBD (in development)
 
 ### Breaking changes (planned)
