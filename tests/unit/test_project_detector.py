@@ -180,26 +180,36 @@ class TestApplyTag:
         backend.observations[1] = obs
         backend.next_id = 2
 
-        assert apply_tag(1, "mockup-2-blog", backend=backend) is True
+        result = apply_tag(1, "mockup-2-blog", backend=backend)
+        assert isinstance(result, dict)
+        assert result.get("ok") is True
+        assert result.get("observation_id") == 1
+        assert result.get("project") == "mockup-2-blog"
         assert backend.observations[1]["project"] == "mockup-2-blog"
 
     def test_apply_tag_observation_not_found_returns_false(self) -> None:
         backend = InMemoryBackend()
-        assert apply_tag(999, "mockup-2-blog", backend=backend) is False
+        result = apply_tag(999, "mockup-2-blog", backend=backend)
+        assert isinstance(result, dict)
+        assert result.get("ok") is False
+        assert "error" in result
 
     def test_apply_tag_empty_project_raises(self) -> None:
         backend = InMemoryBackend()
         backend.observations[1] = _make_obs(1)
-        backend.next_id = 2
-        with pytest.raises(ValueError):
-            apply_tag(1, "", backend=backend)
+        result = apply_tag(1, "", backend=backend)
+        assert isinstance(result, dict)
+        assert result.get("ok") is False
+        assert "empty" in result.get("error", "").lower()
 
     def test_apply_tag_whitespace_project_raises(self) -> None:
         backend = InMemoryBackend()
         backend.observations[1] = _make_obs(1)
         backend.next_id = 2
-        with pytest.raises(ValueError):
-            apply_tag(1, "   ", backend=backend)
+        result = apply_tag(1, "   ", backend=backend)
+        assert isinstance(result, dict)
+        assert result.get("ok") is False
+        assert "empty" in result.get("error", "").lower()
 
     def test_apply_tag_preserves_other_fields(self) -> None:
         backend = InMemoryBackend()

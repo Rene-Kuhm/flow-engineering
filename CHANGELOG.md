@@ -27,7 +27,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 ### Notes
 - `cross-project-federation` shipped as a SINGLE PR (no chained PRs needed; the change is small enough at ~600 prod LOC + ~1500 test LOC).
 - **Important correction surfaced by explore**: the original premise of "7 separate Engram DBs" was wrong — there's ONE shared SQLite at `~/.engram/engram.db` with 158 observations across 9 project keys, FTS5 already indexed by `project`. The "federation" is therefore a logical surface (filtered SQL queries on the shared DB), not physical cross-DB infra.
-- Alias resolution is applied in `mem_search_federated`, `mem_search`, and `flow projects backfill` — single seam, consistent behavior.
+- Alias resolution is applied in `mem_search_federated` and `flow projects backfill` (both forward and reverse: queries for `old` name resolve to `new`, queries for `new` name also match observations tagged with the `old` name).
 - Backfill safety gate is strict: `--dry-run` is default; `--confirm` is mandatory to write; never auto-tag. This is the same safety posture as `flow reindex` (REQ-21) and `flow drift` (REQ-9).
 
 ## [0.4.0] - 2026-06-26
