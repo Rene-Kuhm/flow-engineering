@@ -35,6 +35,7 @@ from typing import Literal
 
 from flow_engineering import graphify_query, observability
 from flow_engineering.binding import CodeRef
+from flow_engineering.prompt_registry import get_prompt_template
 
 Source = Literal["manual", "auto_suggest", "backfill", "unbound"]
 
@@ -44,11 +45,13 @@ FLOW_AUTO_SUGGEST_ENV: str = "FLOW_AUTO_SUGGEST"
 
 PromptFn = Callable[[list[CodeRef]], list[CodeRef]]
 
-EMPTY_PROMPT_TEXT: str = "No auto-suggested bindings available."
-PROMPT_HEADER: str = "Auto-suggested code bindings:"
-PROMPT_FOOTER: str = (
-    "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
-)
+# REQ-45 (T1.3 migration): thin aliases around the prompt_registry catalog
+# (per D10 alias convention). The legacy inline strings were removed in
+# v0.7.0; the aliases are preserved for backwards compatibility and will
+# be removed in v0.8.0.
+EMPTY_PROMPT_TEXT: str = get_prompt_template("auto_suggest_empty")
+PROMPT_HEADER: str = get_prompt_template("auto_suggest_header")
+PROMPT_FOOTER: str = get_prompt_template("auto_suggest_footer")
 
 
 @dataclass(frozen=True)
