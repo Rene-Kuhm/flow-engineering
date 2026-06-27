@@ -1158,6 +1158,210 @@ def metrics_summary(
     sys.exit(observability.EXIT_INVALID_VALUE)
 
 
+# ---------- REQ-38: flow metrics export ----------
+
+
+def _apply_metrics_filters(
+    events: list[observability.MetricEvent],
+    *,
+    window: str | None,
+    domain: str | None,
+    since_epoch: float | None,
+    until_epoch: float | None,
+) -> list[observability.MetricEvent]:
+    """Apply the unified filter pipeline used by ``metrics export``.
+
+    Reuses ``observability.filter_by_window`` / ``_prefixes_for_domain``
+    / direct epoch comparison so the filter chain is identical across
+    formats (D8/D9 / T2.3 composition requirement).
+    """
+    filtered = events
+    if window is not None:
+        filtered = observability.filter_by_window(filtered, window)
+    if domain is not None:
+        prefixes = observability._prefixes_for_domain(domain)
+        filtered = [
+            e for e in filtered
+            if any(e.counter_name.startswith(p) for p in prefixes)
+        ]
+    if since_epoch is not None:
+        filtered = [e for e in filtered if e.timestamp >= since_epoch]
+    if until_epoch is not None:
+        filtered = [e for e in filtered if e.timestamp <= until_epoch]
+    return filtered
+
+
+@metrics.command("export")
+@click.option(
+    "--format", "fmt", default="text",
+    type=click.Choice(["text", "json", "prometheus"], case_sensitive=False),
+    help=(
+        "Output format (REQ-38): text default, json for machine-readable "
+        "list of events, prometheus for textfile exposition."
+    ),
+)
+@click.option(
+    "--out", "out_path", default=None,
+    type=click.Path(),
+    help=(
+        "Atomic write to <path> (REQ-38 / D10). Default = stdout. "
+        "Creates parent dir on demand; rejects with exit 4 on failure."
+    ),
+)
+@click.option(
+    "--window", "window", default=None,
+    help=(
+        "Rolling time-window filter (REQ-36): preset "
+        "(1h|24h|7d|30d) or custom '<int><h|d>'."
+    ),
+)
+@click.option(
+    "--since", "since_iso", default=None, metavar="ISO8601",
+    help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
+)
+@click.option(
+    "--until", "until_iso", default=None, metavar="ISO8601",
+    help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
+)
+@click.option(
+    "--domain", "domain", default=None,
+    type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
+    help="Prefix-based domain slice (REQ-37).",
+)
+def metrics_export(
+    fmt: str,
+    out_path: str | None,
+    window: str | None,
+    since_iso: str | None,
+    until_iso: str | None,
+    domain: str | None,
+) -> None:
+    """Export metrics in text / json / prometheus format (REQ-38 / change #6 PR#2 T2.2).
+
+    Honors ``--window`` / ``--since`` / ``--until`` / ``--domain`` filters
+    identically to ``flow metrics summary`` so the filter chain is
+    composable across subcommands (T2.3 / D8/D9).
+
+    ``--format prometheus`` emits the D6 textfile exposition format
+    (``# HELP`` + ``# TYPE`` + metric lines, cumulative counter values,
+    ``# EOF`` for empty input). ``--format json`` emits a JSON list of
+    MetricEvent-shaped dicts (counter_name + labels + timestamp).
+    ``--format text`` (default) renders a human-readable ``name  count``
+    table (mirrors the REQ-8 close contract for the no-flag ``flow metrics``).
+
+    ``--out <path>`` triggers an atomic write via
+    :func:`observability.atomic_write_text` (D10). Parent directories are
+    created on demand; a write failure exits ``4`` per design D9.
+
+    Exit-code mapping (D9):
+    - 0: success (including default-empty per D8).
+    - 2: invalid flag value (``--format=garbage``; ``--window`` parse
+      failure; ``--domain`` unknown; ``--since`` / ``--until`` ISO parse
+      failure).
+    - 4: write failure on ``--out``.
+    """
+    fmt_lower = fmt.lower()
+
+    since_epoch: float | None = None
+    if since_iso is not None:
+        try:
+            since_epoch = _parse_since(since_iso)
+        except ValueError as exc:
+            click.echo(f"invalid --since value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    until_epoch: float | None = None
+    if until_iso is not None:
+        try:
+            until_epoch = _parse_since(until_iso)
+        except ValueError as exc:
+            click.echo(f"invalid --until value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    if window is not None:
+        try:
+            observability.parse_window(window)
+        except ValueError as exc:
+            click.echo(f"invalid --window value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    domain_normalized: str | None = None
+    if domain is not None:
+        try:
+            domain_normalized = observability.validate_domain(domain.lower())
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    events = observability.read_all_metrics()
+    filtered = _apply_metrics_filters(
+        events,
+        window=window,
+        domain=domain_normalized,
+        since_epoch=since_epoch,
+        until_epoch=until_epoch,
+    )
+
+    if fmt_lower == "prometheus":
+        content = observability.prometheus_exposition(filtered)
+    elif fmt_lower == "json":
+        content = json.dumps(
+            [
+                {
+                    "name": ev.counter_name,
+                    "fields": ev.labels,
+                    "ts": datetime.fromtimestamp(
+                        ev.timestamp, tz=UTC
+                    ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+                for ev in filtered
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+    elif fmt_lower == "text":
+        if not filtered:
+            content = "(no metrics recorded)\n"
+        else:
+            summary = observability.summarize(filtered)
+            # Flatten {domain: {counter: count}} for the REQ-8-style table.
+            flat: dict[str, int] = {}
+            for counters in summary.values():
+                flat.update(counters)
+            if not flat:
+                content = "(no metrics recorded)\n"
+            else:
+                width = max(len(name) for name in flat)
+                lines = [
+                    f"{name.ljust(width)}  {count}"
+                    for name, count in sorted(flat.items())
+                ]
+                content = "\n".join(lines) + "\n"
+    else:
+        click.echo(f"unknown --format value: {fmt}", err=True)
+        sys.exit(observability.EXIT_INVALID_VALUE)
+
+    if out_path is None:
+        click.echo(content, nl=False)
+        return
+
+    target = Path(out_path)
+    try:
+        observability.atomic_write_text(target, content)
+    except OSError as exc:
+        click.echo(
+            json.dumps(
+                {
+                    "error": "write failed",
+                    "path": str(target),
+                    "cause": exc.strerror or str(exc),
+                }
+            ),
+            err=True,
+        )
+        sys.exit(observability.EXIT_WRITE_FAILURE)
+
+
 # ---------- REQ-10/11/14: flow drift <change> ----------
 
 
