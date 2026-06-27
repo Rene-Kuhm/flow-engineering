@@ -535,6 +535,22 @@ def test_drift_daemon_survives_missing_graph(drift_daemon_world):
     pass
 
 
+@scenario(
+    "../bdd/req15_drift_daemon.feature",
+    "REQ-55 — Daemon appends one JSONL line per finding with required keys",
+)
+def test_drift_daemon_appends_jsonl_line_per_finding(drift_daemon_world):
+    pass
+
+
+@scenario(
+    "../bdd/req15_drift_daemon.feature",
+    "REQ-55 — Daemon does NOT append JSONL line when still-valid (REQ-56 silence cross-cut)",
+)
+def test_drift_daemon_silent_jsonl_when_still_valid(drift_daemon_world):
+    pass
+
+
 def _seed_drifted_backend(drift_daemon_world: dict) -> None:
     """Seed an ``InMemoryBackend`` with one observation whose binding's
     file:line differs from graph.json — produces STALE_LOCATION."""
@@ -635,6 +651,84 @@ def daemon_graph_absent(drift_daemon_world) -> None:
     terminal ``graph_unavailable=True`` DriftReport (REQ-15 missing-graph
     resilience)."""
     drift_daemon_world["graph_path"].unlink(missing_ok=True)
+
+
+@given("a fresh ~/.flow-engineering/drift_events.jsonl")
+def fresh_drift_events_file(
+    drift_daemon_world: dict,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Redirect the daemon's DriftEventLog default path to a tmp file
+    and ensure the file does not exist yet.
+
+    The production default is ``~/.flow-engineering/drift_events.jsonl``
+    which would leak data across scenarios. We monkeypatch the module's
+    default so the daemon writes into ``tmp_path`` for this scenario.
+    """
+    target = tmp_path / "drift_events.jsonl"
+    from flow_engineering import drift_event_log as _delog
+
+    monkeypatch.setattr(_delog, "DEFAULT_DRIFT_EVENT_LOG_PATH", target)
+    drift_daemon_world["drift_events_path"] = target
+    if target.exists():
+        target.unlink()
+
+
+@then(parsers.parse("the drift_events.jsonl file has exactly {n:d} line"))
+@then(parsers.parse("the drift_events.jsonl file has exactly {n:d} lines"))
+def drift_events_file_has_lines(drift_daemon_world: dict, n: int) -> None:
+    """Assert the per-scenario JSONL sink has exactly ``n`` lines."""
+    path: Path = drift_daemon_world["drift_events_path"]
+    if n == 0:
+        assert not path.exists() or path.read_text(encoding="utf-8").strip() == "", (
+            f"expected 0 lines; file exists with content "
+            f"{path.read_text(encoding='utf-8')!r}"
+        )
+        return
+    assert path.exists(), f"expected {n} lines but file does not exist"
+    lines = [
+        ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
+    ]
+    assert len(lines) == n, (
+        f"expected {n} JSONL lines; got {len(lines)}; content="
+        f"{path.read_text(encoding='utf-8')!r}"
+    )
+
+
+@then(parsers.parse("each JSONL line contains the keys: {keys_csv}"))
+def each_jsonl_line_has_keys(drift_daemon_world: dict, keys_csv: str) -> None:
+    """Assert every JSONL line parses with EXACTLY the listed keys."""
+    import json as _json
+
+    path: Path = drift_daemon_world["drift_events_path"]
+    expected = {k.strip() for k in keys_csv.split(",")}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip():
+            continue
+        parsed = _json.loads(raw)
+        assert set(parsed.keys()) == expected, (
+            f"expected keys {expected}; got {set(parsed.keys())}"
+        )
+
+
+@then(parsers.parse("the JSONL {field_name} field equals {value}"))
+def jsonl_field_equals(drift_daemon_world: dict, field_name: str, value: str) -> None:
+    """Assert the first JSONL line's ``field_name`` equals ``value``."""
+    import json as _json
+
+    path: Path = drift_daemon_world["drift_events_path"]
+    raw = path.read_text(encoding="utf-8").splitlines()[0]
+    parsed = _json.loads(raw)
+    actual = parsed.get(field_name)
+    # Allow literal numeric values (e.g., scenario asserts int 1).
+    try:
+        expected = int(value)
+    except ValueError:
+        expected = value.strip('"')
+    assert actual == expected, (
+        f"expected JSONL {field_name}={expected!r}; got {actual!r}"
+    )
 
 
 # ---------- When step (REQ-15) ----------
