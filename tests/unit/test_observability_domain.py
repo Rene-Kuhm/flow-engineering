@@ -40,9 +40,9 @@ def _write_jsonl(path: Path, events: list[dict]) -> None:
             fh.write("\n")
 
 
-def _event(name: str, ts: str = "2026-06-27T00:00:00Z") -> dict:
+def _event(name: str, ts: str = "2026-06-27T00:00:00Z", fields: dict | None = None) -> dict:
     """Build a single event dict matching the JSONL sink contract."""
-    return {"name": name, "fields": {}, "ts": ts}
+    return {"name": name, "fields": fields or {}, "ts": ts}
 
 
 # ---------- DOMAIN_BY_PREFIX + ALL_DOMAINS ----------
@@ -145,7 +145,7 @@ class TestReadEventsByDomainExpansion:
         _write_jsonl(path, [
             _event("backfill_observations_total"),
             _event("backfill_with_refs_total"),
-            _event("binding_suggest_invoked_total"),
+            _event("suggest_invoked_total"),
             _event("drift_invoked_total"),
             _event("snapshot_create_total"),
         ])
@@ -168,7 +168,7 @@ class TestReadEventsByDomainExpansion:
         """
         path = tmp_path / "metrics.jsonl"
         _write_jsonl(path, [
-            _event("binding_suggest_invoked_total"),
+            _event("suggest_invoked_total"),
             _event("drift_invoked_total"),
             _event("vector_search_invoked_total"),
             _event("backfill_observations_total"),
@@ -178,4 +178,102 @@ class TestReadEventsByDomainExpansion:
         result = observability.read_events_by_domain("engine")
         assert result == [], (
             f"engine domain should be empty in v1; got {[m.counter_name for m in result]!r}"
+        )
+
+
+# ---------- C1 regression: production counter names land in the binding domain ----------
+
+
+class TestDomainByPrefixProductionCounters:
+    """Regression: real production counter names land in their owning domain.
+
+    The C1 fix from sdd-verify PR#1: production counter names emitted by
+    ``auto_suggest_code_refs.py`` (``suggest_*`` / ``bindings_*``),
+    ``cli.py`` (``inspect_*``), and the backfill coverage counters must
+    each resolve to the correct domain via :data:`DOMAIN_BY_PREFIX`.
+    Prior to the fix, ``suggest_/bindings_/inspect_`` were NOT registered,
+    so six production counters fell into the ``unknown`` bucket on a
+    real ``~/.flow-engineering/metrics.jsonl``.
+    """
+
+    def test_suggest_counters_route_to_binding_domain(self) -> None:
+        """``suggest_invoked_total`` + ``suggest_hit_total`` resolve to ``binding``.
+
+        The ``suggest_`` prefix is the production emission from
+        ``auto_suggest_code_refs.py:200``. Prior to the C1 fix, these
+        counters fell into ``unknown`` and the binding-domain dashboard
+        reported zero entries.
+        """
+        for name in ("suggest_invoked_total", "suggest_hit_total", "suggest_miss_total"):
+            assert observability._domain_for_counter(name) == "binding", (
+                f"{name!r} should resolve to binding domain; "
+                f"got {observability._domain_for_counter(name)!r}"
+            )
+
+    def test_bindings_counters_route_to_binding_domain(self) -> None:
+        """``bindings_confirmed_total`` resolves to ``binding`` (note the ``s``).
+
+        The ``bindings_`` prefix is the production emission from
+        ``auto_suggest_code_refs.py:113-114``. The plural ``bindings_``
+        (with trailing ``s``) is canonical; a singular ``binding_``
+        prefix would be a typo.
+        """
+        assert observability._domain_for_counter("bindings_confirmed_total") == "binding", (
+            "bindings_confirmed_total must resolve to binding domain"
+        )
+
+    def test_inspect_counters_route_to_binding_domain(self) -> None:
+        """``inspect_invoked_total`` + ``inspect_render_ms`` resolve to ``binding``.
+
+        The ``inspect_`` prefix is the production emission from
+        ``cli.py:945-950``. Two counters share the prefix: invocation
+        count (``_total``) and render time (``_ms``).
+        """
+        assert observability._domain_for_counter("inspect_invoked_total") == "binding"
+        assert observability._domain_for_counter("inspect_render_ms") == "binding"
+
+    def test_summarize_production_counters_group_into_binding_domain(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """End-to-end: a real-shape JSONL with production counters groups under ``binding``.
+
+        This is the same scenario the verify report reproduced against
+        ``~/.flow-engineering/metrics.jsonl``: six production counters
+        (two ``suggest_``, one ``bindings_``, two ``inspect_``, one
+        ``backfill_``) MUST all resolve to the ``binding`` (5) and
+        ``backfill`` (1) domains respectively — NOT the ``unknown``
+        bucket. Without the C1 fix, every counter lands under
+        ``unknown``.
+        """
+        path = tmp_path / "metrics.jsonl"
+        _write_jsonl(path, [
+            _event("suggest_invoked_total", fields={"count": 1477}),
+            _event("suggest_hit_total", fields={"count": 2532}),
+            _event("bindings_confirmed_total", fields={"count": 2532}),
+            _event("inspect_invoked_total", fields={"count": 1}),
+            _event("inspect_render_ms", fields={"elapsed_ms": 0}),
+            _event("backfill_observations_total", fields={"count": 42}),
+        ])
+        monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
+
+        events = observability.read_all_metrics()
+        summary = observability.summarize(events)
+
+        # All five binding-domain counters MUST appear under the
+        # ``binding`` key (not ``unknown``). This is the regression gate.
+        assert "binding" in summary, (
+            f"binding domain missing; counters fell into unknown: {summary!r}"
+        )
+        assert summary["binding"]["suggest_invoked_total"] == 1477
+        assert summary["binding"]["suggest_hit_total"] == 2532
+        assert summary["binding"]["bindings_confirmed_total"] == 2532
+        assert summary["binding"]["inspect_invoked_total"] == 1
+        # inspect_render_ms carries ``elapsed_ms`` rather than ``count``;
+        # summarize() defaults the contribution to 1 per occurrence.
+        assert "inspect_render_ms" in summary["binding"]
+        # The backfill counter lands under its own domain.
+        assert summary["backfill"]["backfill_observations_total"] == 42
+        # And NO counter landed under ``unknown`` (the pre-C1 regression).
+        assert "unknown" not in summary, (
+            f"unexpected unknown bucket — C1 regression: {summary!r}"
         )

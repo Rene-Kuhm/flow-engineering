@@ -135,11 +135,11 @@ class TestReadAndSummarizeFilterComposition:
         now = datetime.now(UTC)
         _write_jsonl(path, [
             # In-window binding event (kept)
-            _event("binding_suggest_invoked_total", {"count": 5}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 5}, _iso(now)),
             # In-window drift event (kept)
             _event("drift_invoked_total", {"count": 2}, _iso(now)),
             # Out-of-window binding event (window filter excludes)
-            _event("binding_suggest_invoked_total", {"count": 99},
+            _event("suggest_invoked_total", {"count": 99},
                    _iso(now - timedelta(days=10))),
         ])
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
@@ -155,7 +155,7 @@ class TestReadAndSummarizeFilterComposition:
         assert "binding" in result.summary
         assert "drift" not in result.summary
         # Only the in-window binding event contributes to the count.
-        assert result.summary["binding"]["binding_suggest_invoked_total"] == 5
+        assert result.summary["binding"]["suggest_invoked_total"] == 5
 
 
 # ---------- exit-code constants ----------

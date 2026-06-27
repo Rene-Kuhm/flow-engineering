@@ -79,7 +79,7 @@ class TestIntegrationEndToEndNoWindowNoDomain:
         # 24 events: 6 each across binding, drift, vector, snapshot.
         events: list[dict] = []
         for _ in range(6):
-            events.append(_event("binding_suggest_invoked_total", {"count": 1}, _iso(now)))
+            events.append(_event("suggest_invoked_total", {"count": 1}, _iso(now)))
         for _ in range(6):
             events.append(_event("drift_invoked_total", {"count": 1}, _iso(now)))
         for _ in range(6):
@@ -97,7 +97,7 @@ class TestIntegrationEndToEndNoWindowNoDomain:
         assert "vector:" in result.output
         assert "snapshot:" in result.output
         # The counter names appear under their domain.
-        assert "binding_suggest_invoked_total" in result.output
+        assert "suggest_invoked_total" in result.output
         assert "drift_invoked_total" in result.output
         assert "vector_search_invoked_total" in result.output
         assert "snapshot_create_total" in result.output
@@ -114,7 +114,7 @@ class TestIntegrationEndToEndWithWindowFilter:
         # 10 events at 3 days ago — outside the 24h window.
         for _ in range(10):
             events.append(
-                _event("binding_suggest_invoked_total", {"count": 1},
+                _event("suggest_invoked_total", {"count": 1},
                        _iso(now - timedelta(days=3))),
             )
         # 10 events at 36 hours ago — outside the 24h window.
@@ -135,7 +135,7 @@ class TestIntegrationEndToEndWithWindowFilter:
         assert "vector_search_invoked_total" in result.output
         assert "10" in result.output
         # The out-of-window binding + drift events are excluded.
-        assert "binding_suggest_invoked_total" not in result.output
+        assert "suggest_invoked_total" not in result.output
         assert "drift_invoked_total" not in result.output
 
 
@@ -148,7 +148,7 @@ class TestIntegrationEndToEndWithDomainFilter:
         now = datetime.now(UTC)
         events: list[dict] = []
         for _ in range(6):
-            events.append(_event("binding_suggest_invoked_total", {"count": 1}, _iso(now)))
+            events.append(_event("suggest_invoked_total", {"count": 1}, _iso(now)))
         for _ in range(6):
             events.append(_event("drift_invoked_total", {"count": 1}, _iso(now)))
         for _ in range(6):
@@ -163,7 +163,7 @@ class TestIntegrationEndToEndWithDomainFilter:
         # snapshot_* counters appear in the rendered output.
         assert "snapshot_create_total" in result.output
         # Other-domain counters MUST be excluded.
-        assert "binding_suggest_invoked_total" not in result.output
+        assert "suggest_invoked_total" not in result.output
         assert "drift_invoked_total" not in result.output
         assert "vector_search_invoked_total" not in result.output
 
@@ -193,7 +193,7 @@ class TestIntegrationEndToEndJsonFormatRoundtrip:
         events: list[dict] = []
         # 6 binding + 6 drift → 12 events, 2 distinct counters.
         for _ in range(6):
-            events.append(_event("binding_suggest_invoked_total", {"count": 1}, _iso(now)))
+            events.append(_event("suggest_invoked_total", {"count": 1}, _iso(now)))
         for _ in range(6):
             events.append(_event("drift_invoked_total", {"count": 1}, _iso(now)))
         _write_jsonl(metrics_path, events)
@@ -207,7 +207,7 @@ class TestIntegrationEndToEndJsonFormatRoundtrip:
         assert isinstance(payload, dict)
         assert "binding" in payload
         assert "drift" in payload
-        assert payload["binding"]["binding_suggest_invoked_total"] == 6
+        assert payload["binding"]["suggest_invoked_total"] == 6
         assert payload["drift"]["drift_invoked_total"] == 6
         # Cross-check the helper directly.
         parsed = observability.read_all_metrics(metrics_path)
