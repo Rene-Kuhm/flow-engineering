@@ -61,15 +61,16 @@ The system SHALL extend `flow metrics` with a `--domain=<D>` flag that
 filters events to counters whose name starts with one of the prefixes
 registered for `D` in `DOMAIN_BY_PREFIX`. Accepted values:
 
-| Domain    | Registered prefixes                                |
-|-----------|----------------------------------------------------|
-| binding   | `binding_`, `backfill_`                            |
-| drift     | `drift_`                                           |
-| vector    | `vector_`, `reindex_`                              |
-| federated | `federated_`                                       |
-| snapshot  | `snapshot_`                                        |
-| metadata  | `update_observation_metadata_`, `project_tag_`     |
-| engine    | (RESERVED for REQ-42; v1 emits no `engine_*`)      |
+| Domain    | Registered prefixes                                                  |
+|-----------|----------------------------------------------------------------------|
+| binding   | `suggest_`, `bindings_`, `inspect_`                                  |
+| backfill  | `backfill_`                                                          |
+| drift     | `drift_`                                                             |
+| vector    | `vector_`, `reindex_`                                                |
+| federated | `federated_`                                                         |
+| snapshot  | `snapshot_`                                                          |
+| metadata  | `update_observation_metadata_`, `project_tag_`                       |
+| engine    | (RESERVED for REQ-42; v1 emits no `engine_*`)                        |
 
 When `--domain` is absent, no domain filter is applied. Unknown domain
 values exit `2` with a JSON error on stderr (D9).

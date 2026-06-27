@@ -16,8 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 - 6 `SKILL.md` runtime files carry the `## Metrics hook` section (added in batch E).
 
 ### Tests
-- 862 / 862 tests passing (`uv run pytest`).
-- 20 BDD scenarios across 12 feature files (req35 + req36 + req37 + req17..req22 + req32 + req33 + req34 added 6 new scenarios).
+- 868 / 868 tests passing (`uv run pytest`) — was 862 at PR#1 landing, +6 added by the verify sweep (incl. C1 regression gate for production counter names).
+- 6 new BDD scenarios (req35 ×2 + req36 ×2 + req37 ×2) for a total of 136 BDD scenarios across 12 feature files.
 - See `openspec/changes/archive/2026-06-27-observability-pr1/` for full spec, design, and task breakdown.
 
 ### Notes
