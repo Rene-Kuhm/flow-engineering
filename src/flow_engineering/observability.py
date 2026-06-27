@@ -761,6 +761,239 @@ def prometheus_exposition(events: Iterable[MetricEvent]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+# ---------- Change #6 PR#2 T2.1: Prometheus textfile exposition (REQ-38 / D6) ----------
+
+
+from dataclasses import field as _dc_field
+
+
+#: Default prefix prepended to every Prometheus metric name (D6 / REQ-38).
+#: Callers may override per-call via the ``prefix`` kwarg on
+#: :func:`prometheus_exposition`.
+PROMETHEUS_NAME_PREFIX: str = "flow_"
+
+
+#: Keys excluded from Prometheus label rendering (D6).
+#: ``count`` / ``elapsed_ms`` / ``value`` carry numeric magnitude and would
+#: explode the cardinality if emitted as labels (every distinct count
+#: becomes a new series). They are excluded by :func:`prometheus_exposition`.
+_LABEL_VALUE_KEYS: frozenset[str] = frozenset({"count", "elapsed_ms", "value"})
+
+
+METRIC_TYPE_OVERRIDES: dict[str, str] = {}
+"""Forward-compatible hook for ambiguous Prometheus types (D6 priority 1).
+
+Empty in v1; the map is the escape hatch for cases where suffix-based
+derivation produces the wrong type (e.g., future REQ-42 ``engine_*``
+counters with non-suffix types). The default suffix rules handle all v1
+counters correctly, so no overrides are needed today.
+
+Lookup order in :func:`_derive_metric_type`:
+1. ``METRIC_TYPE_OVERRIDES[name]`` if present (this map).
+2. Suffix ``_total`` → ``"counter"``.
+3. Suffix ``_ms`` or ``_seconds`` → ``"summary"``.
+4. Bare name → ``"gauge"``.
+"""
+
+
+@dataclass(frozen=True)
+class PrometheusMetric:
+    """One metric line in Prometheus textfile exposition format (REQ-38 / D6).
+
+    A ``PrometheusMetric`` represents a single aggregated metric series
+    — one Prometheus ``# HELP`` + ``# TYPE`` + ``<name>{labels} <value>``
+    triplet. The :func:`aggregate_events_to_metrics` helper collapses
+    multiple :class:`MetricEvent` rows with the same ``(name, labels)``
+    into a single :class:`PrometheusMetric` (cumulative counter semantics
+    per D6 priority 2).
+
+    Attributes:
+        name: The Prometheus metric name (with prefix prepended; e.g.,
+            ``"flow_suggest_invoked_total"``).
+        value: The aggregated numeric value (sum of contributing event
+            ``count`` / fallback fields).
+        metric_type: One of ``"counter"`` / ``"gauge"`` / ``"summary"``
+            (derived from suffix per D6 priority 2-4).
+        help_text: The ``# HELP`` line body (no leading ``# HELP <name>``
+            prefix).
+        labels: Prometheus label dict (str → str). The ``count`` /
+            ``elapsed_ms`` / ``value`` keys are excluded from labels
+            because they carry magnitude (D6 cardinality defense).
+    """
+
+    name: str
+    value: float
+    metric_type: str
+    help_text: str
+    labels: dict[str, str] = _dc_field(default_factory=dict)
+
+
+def _escape_label_value(value: object) -> str:
+    """Escape a Prometheus label value per textfile convention (D6).
+
+    Escapes: ``\\\\`` → ``\\\\\\\\``; ``"`` → ``\\\\"``; ``\\n`` → ``\\\\n``.
+    Any non-string value is coerced via ``str()`` first.
+    """
+    text = str(value)
+    return (
+        text.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+    )
+
+
+def _derive_metric_type(name: str) -> str:
+    """Derive the Prometheus type from a metric name (D6 priority 1-4).
+
+    Lookup order:
+    1. :data:`METRIC_TYPE_OVERRIDES` (forward-compatible hook; v1 empty).
+    2. Suffix ``_total`` → ``"counter"``.
+    3. Suffix ``_ms`` or ``_seconds`` → ``"summary"``.
+    4. Bare name → ``"gauge"``.
+    """
+    if name in METRIC_TYPE_OVERRIDES:
+        return METRIC_TYPE_OVERRIDES[name]
+    if name.endswith("_total"):
+        return "counter"
+    if name.endswith("_ms") or name.endswith("_seconds"):
+        return "summary"
+    return "gauge"
+
+
+def _prometheus_name(counter_name: str, prefix: str) -> str:
+    """Map a raw counter name to its Prometheus name with prefix prepended.
+
+    Defensive normalization: ``_total_total`` → ``_total`` (one-shot
+    collapse). The v1 catalog never produces a ``_total_total`` suffix,
+    but the helper is defensive against future overrides or test
+    fixtures that bypass the catalog.
+    """
+    name = f"{prefix}{counter_name}"
+    name = name.replace("_total_total", "_total")
+    return name
+
+
+def _format_label_block(labels: dict[str, str]) -> str:
+    """Render a ``{k=\"v\",...}`` label block (or ``""`` when empty).
+
+    Label keys are sorted alphabetically for deterministic output. Values
+    are escaped via :func:`_escape_label_value` per D6.
+    """
+    if not labels:
+        return ""
+    parts = ",".join(
+        f'{k}="{_escape_label_value(v)}"'
+        for k, v in sorted(labels.items())
+    )
+    return "{" + parts + "}"
+
+
+def aggregate_events_to_metrics(
+    events: Iterable[MetricEvent],
+    *,
+    prefix: str = PROMETHEUS_NAME_PREFIX,
+) -> list[PrometheusMetric]:
+    """Collapse :class:`MetricEvent` rows into cumulative :class:`PrometheusMetric` entries.
+
+    Events with the same ``(prometheus_name, sorted_label_tuple)`` are
+    SUMMED into a single metric (mirrors the existing
+    ``_summarize_metrics`` semantics at ``cli.py:960``). Numeric magnitude
+    is read from ``event.labels["count"]``; falls back to ``1`` when
+    missing or non-numeric.
+
+    Args:
+        events: The events to aggregate.
+        prefix: Metric-name prefix (default ``"flow_"``).
+
+    Returns:
+        A list of :class:`PrometheusMetric` entries sorted by
+        ``(name, sorted_labels)`` for stable, deterministic output.
+    """
+    grouped: dict[
+        tuple[str, frozenset[tuple[str, str]]],
+        tuple[float, dict[str, str]],
+    ] = {}
+    for event in events:
+        pname = _prometheus_name(event.counter_name, prefix)
+        str_labels: dict[str, str] = {
+            k: str(v)
+            for k, v in event.labels.items()
+            if k not in _LABEL_VALUE_KEYS
+        }
+        key = (pname, frozenset(str_labels.items()))
+        try:
+            contribution = float(event.labels.get("count", 1))
+        except (TypeError, ValueError):
+            contribution = 1.0
+        prev_total, prev_labels = grouped.get(key, (0.0, str_labels))
+        grouped[key] = (prev_total + contribution, prev_labels)
+    metrics: list[PrometheusMetric] = [
+        PrometheusMetric(
+            name=pname,
+            value=total,
+            metric_type=_derive_metric_type(pname),
+            help_text=f"flow-engineering counter {pname}",
+            labels=labels,
+        )
+        for (pname, _labels_key), (total, labels) in grouped.items()
+    ]
+    metrics.sort(key=lambda m: (m.name, sorted(m.labels.items())))
+    return metrics
+
+
+def prometheus_exposition(
+    events: Iterable[MetricEvent],
+    *,
+    prefix: str = PROMETHEUS_NAME_PREFIX,
+) -> str:
+    """Format events as Prometheus textfile exposition format (REQ-38 / D6).
+
+    Output structure (per counter, sorted alphabetically):
+    - ``# HELP <name> <help_text>``
+    - ``# TYPE <name> <counter|summary|gauge>``
+    - One ``<name>{labels} <value>`` line per distinct ``(name, labels)``
+      group (events with the same group are summed).
+
+    Counter name → Prometheus name mapping: ``<prefix><counter_name>``
+    (default prefix ``"flow_"``). Type derivation per D6 priority 2-4:
+    ``_total`` → counter; ``_ms`` / ``_seconds`` → summary; bare → gauge.
+    Label values are escaped (``"``, ``\\``, ``\\n``) per Prometheus
+    textfile spec. Empty input → ``"# EOF\\n"``.
+
+    Args:
+        events: MetricEvent list (typically from :func:`read_all_metrics`).
+        prefix: Metric-name prefix (default ``"flow_"``).
+
+    Returns:
+        Prometheus textfile format string, ready to write to disk or stdout.
+    """
+    metrics = aggregate_events_to_metrics(events, prefix=prefix)
+    if not metrics:
+        return "# EOF\n"
+    lines: list[str] = []
+    current_name: str | None = None
+    for metric in metrics:
+        if metric.name != current_name:
+            lines.append(f"# HELP {metric.name} {metric.help_text}")
+            lines.append(f"# TYPE {metric.name} {metric.metric_type}")
+            current_name = metric.name
+        label_block = _format_label_block(metric.labels)
+        lines.append(f"{metric.name}{label_block} {metric.value}")
+    return "\n".join(lines) + "\n"
+
+
+def write_prometheus_textfile(content: str, path: Path) -> None:
+    """Write ``content`` to ``path`` as a Prometheus textfile (D10 atomic).
+
+    Thin wrapper over :func:`atomic_write_text` (which lives in the same
+    module). The standard production location is
+    ``/var/lib/prometheus/node_exporter/textfile_collector/`` — the
+    atomic-write pattern (tempfile + ``os.replace``) guarantees that the
+    target is never half-written during a Prometheus scrape.
+    """
+    atomic_write_text(path, content)
+
+
 def aggregate(
     values: Iterable[float], percentile: Literal[50, 95, 99]
 ) -> float:
