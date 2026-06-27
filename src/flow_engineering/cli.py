@@ -32,6 +32,8 @@ from flow_engineering.orchestrator import (
     archive_change,
     verify_change,
 )
+from flow_engineering.project_detector import apply_tag as _apply_tag
+from flow_engineering.project_detector import detect as _detect_project
 from flow_engineering.scaffold import (
     load_change_yaml,
     render_new_project,
@@ -1191,3 +1193,186 @@ def drift(
         click.echo(_render_drift_table(report))
 
     sys.exit(_drift_exit_code(report))
+
+
+# ---------- REQ-24: flow projects backfill ----------
+
+
+@main.group(name="projects")
+def projects_group() -> None:
+    """Manage project tags and aliases (REQ-24, REQ-27).
+
+
+    Subcommands:
+    - ``backfill``: re-tag observations safely (dry-run default + --confirm gate).
+    - ``alias``: append a rename record to ``project-aliases.json`` (REQ-27, lands in T1.10).
+    """
+
+
+@projects_group.command(name="backfill")
+@click.option(
+    "--dry-run",
+    "dry_run_flag",
+    is_flag=True,
+    default=False,
+    help="Preview only (DEFAULT behaviour; no writes).",
+)
+@click.option(
+    "--confirm",
+    "confirm_flag",
+    is_flag=True,
+    default=False,
+    help="REQUIRED to write changes. Without --confirm the command is read-only.",
+)
+@click.option(
+    "--project",
+    "project_key",
+    default=None,
+    help="Restrict scope to a single project key. Required when --confirm is passed.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Only observations with created_at >= this ISO 8601 timestamp (lexicographic).",
+)
+def projects_backfill(
+    dry_run_flag: bool,
+    confirm_flag: bool,
+    project_key: str | None,
+    since: str | None,
+) -> None:
+    """Re-tag observations safely (REQ-24, design D3 safety gate).
+
+    The default mode is a DRY-RUN preview: every observation that would be
+    re-tagged is listed in the JSON report on stdout, but the database is
+    NOT touched. To apply changes the caller MUST pass ``--confirm``.
+
+    Scope (which observations are eligible for re-tagging):
+    - With ``--project=<key>``: observations currently WITHOUT a project tag
+      (i.e. ``project is None or ""``). The proposed tag is ``<key>``.
+    - Without ``--project``: same untagged scope, but no proposed tag is
+      available — every entry becomes ``action="skip_no_match"`` unless
+      ``FLOW_AUTO_PROJECT_TAG=1`` is set (then ``detect(cwd)`` supplies it).
+
+    Safety gate (REQ-24 scenario 6 + design D3):
+    - ``--confirm`` without ``--project=<key>`` REFUSES with a non-zero exit.
+      The scope is ambiguous (a future auto-detect could land on any project)
+      so we force the caller to be explicit. Use ``--dry-run`` to preview.
+
+    Exit codes:
+    - 0: success (dry-run completed OR --confirm applied changes).
+    - 1: no observations to backfill (empty corpus OR nothing matched scope).
+    - 2: invalid args (``--confirm`` without ``--project``, ``--since`` parse error).
+
+    JSON output shape (always, even on refusal -- non-JSON on --confirm refusal):
+
+    ::
+
+        {
+          "would_change": <int>,
+          "would_skip": <int>,
+          "changes": [
+            {
+              "observation_id": <int>,
+              "current_tag": <str | null>,
+              "proposed_tag": <str | null>,
+              "action": "rename" | "skip_already_tagged" | "skip_no_match"
+            },
+            ...
+          ]
+        }
+
+    On ``--confirm`` the report lists the same shape, but the ``action``
+    for entries that were actually applied is ``"tagged"`` (instead of
+    ``"rename"``) so downstream tooling can distinguish preview vs applied.
+    """
+    if since is not None:
+        try:
+            _parse_since(since)
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(2)
+
+    if confirm_flag and not project_key:
+        click.echo(
+            "--confirm requires --project=<key>; refusing ambiguous scope. "
+            "Re-run with --dry-run for a preview or pass --project=<key>.",
+            err=True,
+        )
+        sys.exit(2)
+
+    backend = _default_save_backend()
+    all_observations = list(backend.iter_observations())
+
+    candidates = [o for o in all_observations if not o.get("project")]
+
+    if since is not None:
+        candidates = [
+            o for o in candidates if str(o.get("created_at", "")) >= since
+        ]
+
+    if not candidates:
+        click.echo(
+            json.dumps(
+                {"would_change": 0, "would_skip": 0, "changes": []},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        sys.exit(1)
+
+    auto_detect_key: str | None = None
+    if project_key is None and os.environ.get("FLOW_AUTO_PROJECT_TAG") == "1":
+        auto_detect_key = _detect_project(Path.cwd())
+
+    would_change = 0
+    would_skip = 0
+    changes: list[dict[str, Any]] = []
+    applied_action = "tagged" if confirm_flag else "rename"
+
+    for obs in candidates:
+        current_tag = obs.get("project")
+        if project_key is not None:
+            proposed_tag: str | None = project_key
+        else:
+            proposed_tag = auto_detect_key
+
+        if proposed_tag is None:
+            action = "skip_no_match"
+        elif proposed_tag == current_tag:
+            action = "skip_already_tagged"
+        else:
+            action = applied_action
+
+        change = {
+            "observation_id": int(obs["id"]),
+            "current_tag": current_tag,
+            "proposed_tag": proposed_tag,
+            "action": action,
+        }
+        changes.append(change)
+        if action == applied_action:
+            would_change += 1
+            if confirm_flag and proposed_tag is not None:
+                try:
+                    _apply_tag(int(obs["id"]), proposed_tag, backend=backend)
+                except Exception:
+                    observability.increment("project_tag_backfill_failed_total")
+                    continue
+                observability.increment(
+                    "project_tag_backfilled_total", from_=current_tag or "untagged"
+                )
+        else:
+            would_skip += 1
+
+    report = {
+        "would_change": would_change,
+        "would_skip": would_skip,
+        "changes": changes,
+    }
+    click.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
