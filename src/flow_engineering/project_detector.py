@@ -156,14 +156,15 @@ def apply_tag(
     end-to-end against the production wiring.
     """
     if not project or not project.strip():
-        raise ValueError("project cannot be empty or whitespace")
+        return {"ok": False, "error": "project cannot be empty or whitespace"}
     try:
         obs = backend.mem_get_observation(observation_id)
-    except Exception:
-        return False
-    if isinstance(obs, dict):
-        obs["project"] = project
-    return True
+    except Exception as exc:
+        return {"ok": False, "error": f"observation lookup failed: {exc}"}
+    if not isinstance(obs, dict):
+        return {"ok": False, "error": f"observation {observation_id} not found or not a dict"}
+    obs["project"] = project
+    return {"ok": True, "observation_id": observation_id, "project": project}
 
 
 def _normalize_for_registry(p: Path) -> str:

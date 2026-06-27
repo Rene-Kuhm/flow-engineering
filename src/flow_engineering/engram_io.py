@@ -325,19 +325,37 @@ class InMemoryBackend(EngramBackend):
         """
         if projects is not None and len(projects) == 0:
             raise ValueError("projects must be None or non-empty list")
-        # REQ-27: forward alias resolution applied BEFORE the SQL filter so
-        # ``flow-image-generator-v2`` transparently becomes
-        # ``flow-image-generator-main``. Identity for non-aliased names so
-        # the no-alias case is a cheap pass-through. Missing file → empty
-        # list (fail-open); malformed file → empty list too so a broken
-        # config can never break retrieval.
+        # REQ-27: forward + reverse alias resolution so queries by either
+        # the old name (e.g. ``flow-image-generator-v2``) or the new name
+        # (e.g. ``flow-image-generator-main``) match observations tagged with
+        # EITHER name. Without reverse resolution, an obs tagged
+        # ``flow-image-generator-v2`` would be filtered out when the user
+        # asks for ``flow-image-generator-main``. Identity for non-aliased
+        # names so the no-alias case is a cheap pass-through. Missing file
+        # → empty list (fail-open); malformed file → empty list too so a
+        # broken config can never break retrieval.
         if projects is not None:
             try:
                 from flow_engineering import project_aliases as _aliases
 
                 _alias_records = _aliases.load_aliases()
                 if _alias_records:
-                    projects = [_aliases.resolve(p, aliases=_alias_records) for p in projects]
+                    _resolved = [_aliases.resolve(p, aliases=_alias_records) for p in projects]
+                    # Build reverse map: new_name -> {old_name, ...}
+                    _reverse: dict[str, list[str]] = {}
+                    for _rec in _alias_records:
+                        _reverse.setdefault(_rec["new"], []).append(_rec["old"])
+                    # Extend projects with old names that alias INTO the resolved names
+                    _extra: list[str] = []
+                    for _p in _resolved:
+                        _extra.extend(_reverse.get(_p, []))
+                    # Preserve order, dedupe
+                    _seen: set[str] = set()
+                    projects = []
+                    for _p in (_resolved + _extra):
+                        if _p not in _seen:
+                            projects.append(_p)
+                            _seen.add(_p)
             except Exception:
                 # Alias resolution is best-effort; never block retrieval.
                 pass
@@ -355,7 +373,29 @@ class InMemoryBackend(EngramBackend):
                 q = query.lower()
                 if q not in obs.get("content", "").lower() and q not in obs.get("title", "").lower():
                     continue
-            results.append(obs)
+            # REQ-27 alias result rewrite: if the obs is tagged with an
+            # ``old`` alias name and was matched via the canonical ``new``
+            # name, rewrite the ``project`` field on a shallow copy so
+            # callers see the canonical name (not the alias). The original
+            # obs is NOT mutated — the alias is a read-time concern.
+            try:
+                from flow_engineering import project_aliases as _aliases2
+
+                _alias_records_for_rewrite = _aliases2.load_aliases()
+            except Exception:
+                _alias_records_for_rewrite = []
+            if _alias_records_for_rewrite and obs.get("project"):
+                _resolved_proj = _aliases2.resolve(
+                    obs["project"], aliases=_alias_records_for_rewrite
+                )
+                if _resolved_proj != obs["project"]:
+                    obs_out = dict(obs)
+                    obs_out["project"] = _resolved_proj
+                    results.append(obs_out)
+                else:
+                    results.append(obs)
+            else:
+                results.append(obs)
             if len(results) >= limit:
                 break
         try:
