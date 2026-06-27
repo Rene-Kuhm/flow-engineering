@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-06-27
+
+### Added
+- `flow metrics export` CLI subcommand with `--format text|json|prometheus`, `--out PATH`, `--window/--since/--until/--domain` flags (REQ-38).
+- `flow metrics aggregate` CLI subcommand with `--percentile p50|p95|p99` (repeatable), `--reservoir-size`, `--window/--since/--until/--domain`, `--format text|json` flags (REQ-39).
+- `prometheus_exposition()` helper + `PrometheusMetric` dataclass + `write_prometheus_textfile()` atomic writer (REQ-38, D6 monotonic counter semantics + D10 atomic write).
+- `aggregate_percentile()` helper + `ReservoirSampler` class (Vitter's Algorithm R) + `format_percentile_report()` text formatter (REQ-39, D7 reservoir sampling).
+- `aggregate_many()` multi-percentile helper (W5 carry-forward from PR#1; reconciles design D7 dict[str, float] contract).
+- `flow metrics aggregate` exit code 2 on invalid percentile; exit 0 on graceful "not enough data points".
+- 6 SKILL.md runtime files carry the `## Export hook` + `## Aggregation hook` sections (added in batch H).
+
+### Modified
+- `src/flow_engineering/observability.py` — added prometheus_exposition, aggregate_percentile, ReservoirSampler, format_percentile_report; aggregate() signature drift (W5) reconciled via aggregate_many() back-compat shim.
+
+### Tests
+- 953 / 953 tests passing (`uv run pytest`).
+- 25 BDD scenarios across 15 feature files (req35 + req36 + req37 + req38 + req39 + req17..req22 + req32 + req33 + req34 — 5 new scenarios this PR).
+- See `openspec/changes/archive/2026-06-27-observability-pr2/` for full spec, design, and task breakdown.
+
+### Notes
+- `observability` change #6 PR#2 (Prometheus export + percentile aggregation) shipped with 3 batches (F + G + H) in 11 work-unit commits.
+- Strict TDD throughout; ×2.9 LOC multiplier realized as planned.
+- W5 (aggregate() signature drift) resolved in batch F via aggregate_many() shim.
+- Verify report: TBD (sdd-verify next).
+
 ## [0.7.0] - 2026-06-27
 
 ### Added
