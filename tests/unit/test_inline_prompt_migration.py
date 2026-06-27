@@ -14,8 +14,6 @@ wrapper refactor lands in ``strict_tdd.py`` and
 
 from __future__ import annotations
 
-import pytest
-
 from flow_engineering import prompt_registry
 from flow_engineering.auto_suggest_code_refs import (
     EMPTY_PROMPT_TEXT,
@@ -24,7 +22,6 @@ from flow_engineering.auto_suggest_code_refs import (
     format_suggestion_prompt,
 )
 from flow_engineering.strict_tdd import STRICT_TDD_PROMPT
-
 
 # Pre-migration canonical strings (locked snapshot, byte-for-byte).
 _LEGACY_STRICT_TDD = (
@@ -41,7 +38,7 @@ _LEGACY_FOOTER = (
 class TestStrictTddPromptAlias:
     def test_strict_tdd_prompt_matches_registry_template(self) -> None:
         registry_template = prompt_registry.get_prompt_template("strict_tdd")
-        assert STRICT_TDD_PROMPT == registry_template
+        assert registry_template == STRICT_TDD_PROMPT
 
     def test_strict_tdd_prompt_is_registry_template_by_identity(self) -> None:
         # The post-migration contract: STRICT_TDD_PROMPT IS the same
@@ -66,7 +63,7 @@ class TestStrictTddPromptAlias:
 class TestAutoSuggestEmptyAlias:
     def test_empty_prompt_text_matches_registry_template(self) -> None:
         registry_template = prompt_registry.get_prompt_template("auto_suggest_empty")
-        assert EMPTY_PROMPT_TEXT == registry_template
+        assert registry_template == EMPTY_PROMPT_TEXT
 
     def test_empty_prompt_text_is_registry_template_by_identity(self) -> None:
         assert EMPTY_PROMPT_TEXT is prompt_registry.get_prompt_template(
@@ -80,7 +77,7 @@ class TestAutoSuggestEmptyAlias:
 class TestPromptHeaderAlias:
     def test_prompt_header_matches_registry_template(self) -> None:
         registry_template = prompt_registry.get_prompt_template("auto_suggest_header")
-        assert PROMPT_HEADER == registry_template
+        assert registry_template == PROMPT_HEADER
 
     def test_prompt_header_is_registry_template_by_identity(self) -> None:
         assert PROMPT_HEADER is prompt_registry.get_prompt_template("auto_suggest_header")
@@ -92,7 +89,7 @@ class TestPromptHeaderAlias:
 class TestPromptFooterAlias:
     def test_prompt_footer_matches_registry_template(self) -> None:
         registry_template = prompt_registry.get_prompt_template("auto_suggest_footer")
-        assert PROMPT_FOOTER == registry_template
+        assert registry_template == PROMPT_FOOTER
 
     def test_prompt_footer_is_registry_template_by_identity(self) -> None:
         assert PROMPT_FOOTER is prompt_registry.get_prompt_template("auto_suggest_footer")
