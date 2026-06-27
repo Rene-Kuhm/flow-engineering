@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - TBD (in development)
+
+### Breaking changes (planned)
+
+- `decision_drift.Finding.decision_id` changes from `str` to `int` (REQ-57 migration; DeprecationWarning shim for v0.8.0, removed in v0.9.0)
+- `decision_drift.DriftReport.scanned_at` changes from `float` to `str` ISO 8601 (REQ-57)
+- `decision_drift.DriftReport.graph_unavailable: bool` + `unable_reason: str | None` (replaces `unable_to_verify: bool`) (REQ-57)
+- `classify_binding(ref, graph_nodes)` 2-arg signature (was 3 args)
+
+### Added (planned)
+
+- `DriftEventLog` JSONL append-only writer at `~/.flow-engineering/drift_events.jsonl` (REQ-55)
+- Daemon still-valid silence per REQ-56
+- 21 BDD scenarios covering REQ-10/12/13/14/16 (REQ-58)
+- SnapshotMeta.size_bytes + PruneResult.freed_bytes field reconciliation (REQ-59)
+- `snapshot_pruned_total` legacy counter deprecation note (W23)
+- stderr WARN on skipped non-int decision_id in `_write_back_findings` (S2)
+
 ## [0.7.1] - 2026-06-27
 
 ### Added
