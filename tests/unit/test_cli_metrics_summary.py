@@ -23,9 +23,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from flow_engineering import observability
 from flow_engineering.cli import main
-
 
 runner = CliRunner()
 

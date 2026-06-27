@@ -27,7 +27,6 @@ import pytest
 
 from flow_engineering import observability
 
-
 # ---------- helpers ----------
 
 
