@@ -310,7 +310,7 @@ def compute_freshness(updated_at_ms: int | None, *, now_ms: int | None = None) -
 # ---------- Drift summary (REQ-12, PR#1 batch 1) ----------
 
 
-def record_drift_summary(report: "DriftReport") -> None:
+def record_drift_summary(report: DriftReport) -> None:
     """Increment 8 drift counters from a ``DriftReport`` (REQ-12).
 
     Emits one JSONL line per counter; counts of zero for absent classes
@@ -767,7 +767,6 @@ def prometheus_exposition(events: Iterable[MetricEvent]) -> str:
 
 from dataclasses import field as _dc_field
 
-
 #: Default prefix prepended to every Prometheus metric name (D6 / REQ-38).
 #: Callers may override per-call via the ``prefix`` kwarg on
 #: :func:`prometheus_exposition`.
@@ -1057,7 +1056,7 @@ def aggregate_many(
             )
     samples = list(values)
     if not samples:
-        return {pct: 0.0 for pct in pct_list}
+        return dict.fromkeys(pct_list, 0.0)
     samples.sort()
     results: dict[int, float] = {}
     for pct in pct_list:
