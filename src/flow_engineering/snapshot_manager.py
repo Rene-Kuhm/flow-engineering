@@ -368,6 +368,130 @@ class SnapshotManager:
             path=path,
         )
 
+    # ----- show ---------------------------------------------------------
+
+    def show(self, snap_id: str) -> dict[str, Any]:
+        """Return the parsed envelope for ``snap_id`` after sha256 verification.
+
+        REQ-30: parses the gzipped JSON envelope, verifies
+        ``metadata.sha256`` matches ``hashlib.sha256(canonical_json_dumps(
+        envelope_without_sha256)).hexdigest()``. Raises
+        :class:`SnapshotEnvelopeError` on any of: missing file, malformed
+        JSON, schema version mismatch, sha256 mismatch.
+
+        The returned dict is a deep copy of the parsed envelope — callers
+        may mutate it without affecting the on-disk file.
+        """
+        path = self.snapshots_dir / f"{snap_id}.json.gz"
+        if not path.exists():
+            raise SnapshotEnvelopeError(
+                f"snapshot not found: {snap_id} (no file at {path})"
+            )
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                envelope = json.loads(fh.read())
+        except (OSError, gzip.BadGzipFile, json.JSONDecodeError) as exc:
+            raise SnapshotEnvelopeError(
+                f"snapshot envelope unreadable for {snap_id}: {exc}"
+            ) from exc
+
+        schema = envelope.get("schema")
+        if schema != SNAPSHOT_SCHEMA_VERSION:
+            raise SnapshotEnvelopeError(
+                f"snapshot {snap_id} has unknown schema version {schema!r}; "
+                f"expected {SNAPSHOT_SCHEMA_VERSION}"
+            )
+
+        meta = envelope.get("metadata", {})
+        stored_sha = meta.get("sha256", "")
+        # Recompute sha256 over canonical-JSON WITHOUT the sha256 field.
+        envelope_for_hash = {
+            k: v for k, v in envelope.items() if k != "metadata"
+        }
+        envelope_for_hash["metadata"] = {
+            k: v for k, v in meta.items() if k != "sha256"
+        }
+        expected_sha = hashlib.sha256(
+            _canonical_json_dumps(envelope_for_hash).encode("utf-8")
+        ).hexdigest()
+        if stored_sha != expected_sha:
+            raise SnapshotEnvelopeError(
+                f"snapshot {snap_id} sha256 mismatch: stored={stored_sha!r}, "
+                f"expected={expected_sha!r}"
+            )
+
+        return envelope
+
+    # ----- diff ---------------------------------------------------------
+
+    def diff(
+        self,
+        snap_id_a: str,
+        snap_id_b: str | None = None,
+    ) -> SnapshotDiff:
+        """Diff ``snap_id_a`` against ``snap_id_b`` (or live state).
+
+        REQ-31 + D9: returns a :class:`SnapshotDiff` with ``added``,
+        ``removed``, ``modified``, ``unchanged_count``, and a human
+        ``summary``. Two calling forms:
+
+        - 2-arg form (``snap_id_b`` provided): compares two stored
+          snapshots loaded via :meth:`show`.
+        - 1-arg form (``snap_id_b`` omitted): compares the stored
+          snapshot against the LIVE Engram state via
+          ``backend.iter_observations()``.
+
+        For ``modified`` entries, ``field`` is ``"content"`` whenever the
+        ``content`` string differs; the value is compared as raw strings
+        (D9 field-level diff is reserved for ``code_refs`` blocks in
+        future batches — for now content-string compare is the canonical
+        observation-level diff).
+        """
+        envelope_a = self.show(snap_id_a)
+        if snap_id_b is None:
+            obs_b_list = list(self.backend.iter_observations())
+            index_b: dict[int, dict[str, Any]] = {
+                int(o["id"]): o for o in obs_b_list if "id" in o
+            }
+        else:
+            envelope_b = self.show(snap_id_b)
+            obs_b_list = list(envelope_b.get("graph_state", {}).get("observations", []))
+            index_b = {int(o["id"]): o for o in obs_b_list if "id" in o}
+        obs_a_list = list(envelope_a.get("graph_state", {}).get("observations", []))
+        index_a = {int(o["id"]): o for o in obs_a_list if "id" in o}
+
+        ids_a = set(index_a)
+        ids_b = set(index_b)
+        added = sorted(ids_b - ids_a)
+        removed = sorted(ids_a - ids_b)
+        common = ids_a & ids_b
+
+        modified: list[dict[str, Any]] = []
+        unchanged_count = 0
+        for obs_id in sorted(common):
+            a_content = str(index_a[obs_id].get("content", ""))
+            b_content = str(index_b[obs_id].get("content", ""))
+            if a_content == b_content:
+                unchanged_count += 1
+                continue
+            modified.append(
+                {
+                    "id": int(obs_id),
+                    "field": "content",
+                    "before": a_content,
+                    "after": b_content,
+                }
+            )
+
+        summary = f"+{len(added)} -{len(removed)} ~{len(modified)} (unchanged: {unchanged_count})"
+        return SnapshotDiff(
+            added=added,
+            removed=removed,
+            modified=modified,
+            unchanged_count=unchanged_count,
+            summary=summary,
+        )
+
 
 __all__ = [
     "SnapshotEnvelopeError",
