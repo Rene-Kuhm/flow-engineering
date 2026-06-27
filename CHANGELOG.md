@@ -27,7 +27,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 - `observability` change #6 PR#2 (Prometheus export + percentile aggregation) shipped with 3 batches (F + G + H) in 11 work-unit commits.
 - Strict TDD throughout; ×2.9 LOC multiplier realized as planned.
 - W5 (aggregate() signature drift) resolved in batch F via aggregate_many() shim.
-- Verify report: TBD (sdd-verify next).
+- Verify report: PASS WITH WARNINGS (6W + 4S); C1 + W1-W6 + S1-S4 resolved; W23/W25/W26 deferred to drift-hardening cluster. See `openspec/changes/observability/verify-report-pr2.md`.
 
 ## [0.7.0] - 2026-06-27
 
