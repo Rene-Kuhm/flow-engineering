@@ -537,13 +537,13 @@ class TestDriftEventLogWiring:
             "change",
             "decision_id",
             "binding_id",
-            "event_class",
+            "class",
             "detected_at",
         }
         assert parsed["change"] == "obs"
         assert parsed["decision_id"] == "42"
         assert parsed["binding_id"] == "n42"
-        assert parsed["event_class"] == "STALE_ID"
+        assert parsed["class"] == "STALE_ID"
         assert isinstance(parsed["detected_at"], float)
 
 
