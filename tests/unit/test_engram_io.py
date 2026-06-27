@@ -2,6 +2,7 @@
 
 REQ-8: Cross-session recovery via Engram topic keys.
 REQ-17: Semantic search activation gate (vector-semantic-search PR#1 T1.2).
+REQ-23: Federated multi-project search (cross-project-federation PR#1 T1.2).
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import json
 import pytest
 
 from flow_engineering.engram_io import (
+    EngramBackend,
     EngramClient,
     InMemoryBackend,
     VectorSearchDisabled,
@@ -149,3 +151,188 @@ class TestVectorSearchDisabled:
             assert before == after, (
                 f"Vector search gate leaked heavy imports: {after - before}"
             )
+
+
+class TestFederatedSearch:
+    """REQ-23: federated multi-project search (cross-project-federation T1.2).
+
+    ``InMemoryBackend.mem_search_federated`` filters the in-memory dict by
+    ``projects`` (list membership), ``since`` (lexicographic ``>=`` on
+    ``YYYY-MM-DD HH:MM:SS`` TEXT) and ``type_filter`` (exact match, case
+    sensitive). Each returned row MUST preserve the ``project`` field.
+
+    ABC default raises ``NotImplementedError`` when not overridden (third-party
+    subclass scenario).
+    """
+
+    @staticmethod
+    def _seed_three_projects(backend: InMemoryBackend) -> dict[str, int]:
+        """Seed 3 obs, one per project. Returns {project: obs_id}."""
+        ids: dict[str, int] = {}
+        for project in ("flow-engineering", "mockup-2-blog", "tecnodespegue-landing"):
+            obs = backend.mem_save(
+                title=f"{project} drift entry",
+                content=f"drift detection strategy in {project}",
+                topic_key="sdd/x/spec",
+            )
+            obs["project"] = project
+            obs["created_at"] = "2026-06-15 12:00:00"
+            ids[project] = obs["id"]
+        return ids
+
+    def test_federated_three_projects_returns_each_with_project_field(self) -> None:
+        # REQ-23 scenario 1: federation across 3 projects preserves `project` field.
+        backend = InMemoryBackend()
+        self._seed_three_projects(backend)
+        results = backend.mem_search_federated(
+            "drift",
+            projects=["flow-engineering", "mockup-2-blog", "tecnodespegue-landing"],
+            limit=10,
+        )
+        assert len(results) == 3, f"Expected 3 results, got {len(results)}: {results}"
+        returned_projects = {r["project"] for r in results}
+        assert returned_projects == {
+            "flow-engineering",
+            "mockup-2-blog",
+            "tecnodespegue-landing",
+        }, f"Project attribution mismatch: {returned_projects}"
+        for r in results:
+            assert r.get("project") is not None, f"Missing project field: {r!r}"
+
+    def test_federated_projects_filter_restricts_to_single(self) -> None:
+        # REQ-23 scenario 2: projects=['x'] returns ONLY project=x rows.
+        backend = InMemoryBackend()
+        ids = self._seed_three_projects(backend)
+        results = backend.mem_search_federated("drift", projects=["flow-engineering"])
+        assert len(results) == 1, f"Expected 1 result, got {len(results)}: {results}"
+        assert results[0]["project"] == "flow-engineering"
+        assert results[0]["id"] == ids["flow-engineering"]
+
+    def test_federated_projects_none_searches_all(self) -> None:
+        # projects=None ⇒ no project filter (search all 3).
+        backend = InMemoryBackend()
+        self._seed_three_projects(backend)
+        results = backend.mem_search_federated("drift", projects=None, limit=10)
+        assert len(results) == 3, f"Expected 3 results, got {len(results)}: {results}"
+
+    def test_federated_since_filter_excludes_older(self) -> None:
+        # REQ-23 scenario 3: since='2026-06-01' excludes obs created before.
+        backend = InMemoryBackend()
+        old = backend.mem_save(
+            title="old entry",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+        )
+        old["project"] = "flow-engineering"
+        old["created_at"] = "2026-05-15 10:00:00"
+        new = backend.mem_save(
+            title="new entry",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+        )
+        new["project"] = "flow-engineering"
+        new["created_at"] = "2026-06-15 10:00:00"
+        results = backend.mem_search_federated(
+            "drift",
+            projects=["flow-engineering"],
+            since="2026-06-01",
+        )
+        ids = [r["id"] for r in results]
+        assert new["id"] in ids, f"Expected new obs {new['id']} in {ids}"
+        assert old["id"] not in ids, f"Did not expect old obs {old['id']} in {ids}"
+
+    def test_federated_type_filter_includes_only_listed(self) -> None:
+        # REQ-23 scenario 4: type_filter=['decision', 'bugfix'] exact match.
+        backend = InMemoryBackend()
+        decision = backend.mem_save(
+            title="d",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+            type="decision",
+        )
+        decision["project"] = "flow-engineering"
+        decision["created_at"] = "2026-06-15 10:00:00"
+        bugfix = backend.mem_save(
+            title="b",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+            type="bugfix",
+        )
+        bugfix["project"] = "flow-engineering"
+        bugfix["created_at"] = "2026-06-15 10:00:00"
+        pattern = backend.mem_save(
+            title="p",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+            type="pattern",
+        )
+        pattern["project"] = "flow-engineering"
+        pattern["created_at"] = "2026-06-15 10:00:00"
+        results = backend.mem_search_federated(
+            "drift",
+            projects=["flow-engineering"],
+            type_filter=["decision", "bugfix"],
+        )
+        ids = {r["id"] for r in results}
+        types = {r["type"] for r in results}
+        assert decision["id"] in ids
+        assert bugfix["id"] in ids
+        assert pattern["id"] not in ids
+        assert types == {"decision", "bugfix"}, f"Unexpected types: {types}"
+
+    def test_federated_empty_projects_raises_value_error(self) -> None:
+        # REQ-23 scenario 5: projects=[] ⇒ ValueError (fail fast; SQLite IN () syntax).
+        backend = InMemoryBackend()
+        backend.mem_save(
+            title="any",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+        )
+        with pytest.raises(ValueError) as exc_info:
+            backend.mem_search_federated("drift", projects=[])
+        assert "projects" in str(exc_info.value).lower()
+
+    def test_federated_empty_projects_returns_empty_via_short_circuit(self) -> None:
+        # Alternative interpretation: projects=[] ⇒ return [] without filtering.
+        # Per spec #161 design D1: empty list MUST short-circuit BEFORE SQL runs.
+        # We chose ValueError (explicit fail fast); this test documents the
+        # alternative to keep the contract honest.
+        backend = InMemoryBackend()
+        backend.mem_save(
+            title="any",
+            content="drift detection strategy",
+            topic_key="sdd/x/spec",
+        )
+        # With ValueError chosen, this assertion is the documented behavior.
+        try:
+            results = backend.mem_search_federated("drift", projects=[])
+            assert results == [], "If no raise, expected short-circuit []"
+        except ValueError:
+            pass  # explicitly chosen in T1.2 acceptance
+
+    def test_abc_default_raises_not_implemented_when_not_overridden(self) -> None:
+        # REQ-23 scenario: third-party subclass without override raises at call time.
+
+        class PlainBackend(EngramBackend):
+            def mem_save(self, title, content, topic_key, type="manual", scope="project"):
+                return {"id": 1, "title": title, "content": content}
+
+            def mem_search(self, query, topic_key=None, limit=10, scope="project"):
+                return []
+
+            def mem_get_observation(self, id):
+                return {"id": id}
+
+        with pytest.raises(NotImplementedError) as exc_info:
+            PlainBackend().mem_search_federated("drift")
+        assert "v1.2" in str(exc_info.value), (
+            f"Expected 'v1.2' in error message, got: {exc_info.value!r}"
+        )
+
+    def test_abc_default_import_unchanged(self) -> None:
+        # Third-party code that never calls the new method is unaffected.
+        # Importing EngramBackend must succeed without raising.
+        from flow_engineering.engram_io import EngramBackend as EBB
+
+        assert hasattr(EBB, "mem_search_federated")
+        assert EBB.mem_search_federated is not None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv as _csv
 import json
 import os
 import sys
@@ -31,6 +32,8 @@ from flow_engineering.orchestrator import (
     archive_change,
     verify_change,
 )
+from flow_engineering.project_detector import apply_tag as _apply_tag
+from flow_engineering.project_detector import detect as _detect_project
 from flow_engineering.scaffold import (
     load_change_yaml,
     render_new_project,
@@ -446,27 +449,62 @@ def save(
 # ---------- REQ-17 / REQ-18: flow search <query> ----------
 
 
+def _parse_csv(raw: str | None) -> list[str] | None:
+    """Split a comma-separated string into a list of trimmed, non-empty tokens.
+
+    Returns ``None`` when ``raw`` is ``None`` (the flag was not given).
+    Returns ``[]`` when ``raw`` is an empty string or only separators.
+    Uses the stdlib ``csv`` module so quoted commas (``"a, b",c``) parse
+    per RFC 4180 rather than naïve ``str.split(',')``.
+    """
+    if raw is None:
+        return None
+    rows = list(_csv.reader([raw]))
+    if not rows:
+        return []
+    return [item.strip() for item in rows[0] if item and item.strip()]
+
+
 def _format_search_row(rank: int, obs_id: int, title: str, score: float) -> str:
-    """One text-table row for ``flow search`` output."""
+    """One text-table row for ``flow search`` output (legacy 4-column)."""
     return f"{rank:<3}  obs {obs_id:<6}  {score:.4f}  {title}"
 
 
 def _render_search_table(rows: list[dict]) -> str:
-    """Pretty-print search hits as a fixed-width text table."""
+    """Pretty-print search hits as a fixed-width text table.
+
+    Adds a ``PROJECT`` column when any row carries a ``project`` field
+    (REQ-25 federated path). Legacy single-project search renders the
+    original 4-column layout so existing output is unchanged.
+    """
     if not rows:
         return "(no results)"
+    show_project = any("project" in r for r in rows)
+    if show_project:
+        headers = ("rank", "id", "score", "project", "title")
+        sep = "-" * 88
+    else:
+        headers = ("rank", "id", "score", "title")
+        sep = "-" * 64
     lines: list[str] = []
-    lines.append("  ".join(h.upper() for h in ("rank", "id", "score", "title")))
-    lines.append("-" * 64)
+    lines.append("  ".join(h.upper() for h in headers))
+    lines.append(sep)
     for r in rows:
-        lines.append(
-            _format_search_row(
-                int(r.get("rank", 0)),
-                int(r.get("observation_id", 0)),
-                str(r.get("title", "")),
-                float(r.get("score", 0.0)),
+        if show_project:
+            lines.append(
+                f"{int(r.get('rank', 0)):<3}  obs {int(r.get('observation_id', 0)):<6}  "
+                f"{float(r.get('score', 0.0)):.4f}  {str(r.get('project', '')):<24}  "
+                f"{str(r.get('title', ''))}"
             )
-        )
+        else:
+            lines.append(
+                _format_search_row(
+                    int(r.get("rank", 0)),
+                    int(r.get("observation_id", 0)),
+                    str(r.get("title", "")),
+                    float(r.get("score", 0.0)),
+                )
+            )
     return "\n".join(lines)
 
 
@@ -476,20 +514,23 @@ def _search_results_to_rows(results: list[dict]) -> list[dict]:
     The vector methods return ``observation_id`` + ``score`` + ``rank`` per
     REQ-17 contract. The legacy ``mem_search`` returns plain observation
     dicts with ``id`` and no score/rank — synthesize a position-based
-    rank and a 0.0 score so the table renders uniformly.
+    rank and a 0.0 score so the table renders uniformly. REQ-25 adds
+    federated multi-project search; rows with a ``project`` field carry
+    it through so the renderer can prepend the PROJECT column.
     """
     out: list[dict] = []
     for rank, r in enumerate(results):
         obs_id = r.get("observation_id", r.get("id"))
-        out.append(
-            {
-                "observation_id": obs_id,
-                "rank": r.get("rank", rank),
-                "score": r.get("score", 0.0),
-                "title": r.get("title", ""),
-                "topic_key": r.get("topic_key", ""),
-            }
-        )
+        row: dict[str, Any] = {
+            "observation_id": obs_id,
+            "rank": r.get("rank", rank),
+            "score": r.get("score", 0.0),
+            "title": r.get("title", ""),
+            "topic_key": r.get("topic_key", ""),
+        }
+        if r.get("project") is not None:
+            row["project"] = r["project"]
+        out.append(row)
     return out
 
 
@@ -528,6 +569,29 @@ def _search_results_to_rows(results: list[dict]) -> list[dict]:
     default=False,
     help="Emit machine-readable JSON instead of a text table.",
 )
+@click.option(
+    "--federated",
+    "federated_flag",
+    is_flag=True,
+    default=False,
+    help="REQ-25: federated multi-project search (opt-in; default = single-project FTS).",
+)
+@click.option(
+    "--projects",
+    default=None,
+    help="REQ-25: comma-separated project keys (default = all when --federated).",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="REQ-25: ISO 8601 date or datetime (lexicographic >= on created_at).",
+)
+@click.option(
+    "--type",
+    "type_csv",
+    default=None,
+    help="REQ-25: comma-separated observation types (exact match, case-sensitive).",
+)
 def search(
     query: str,
     semantic_flag: bool,
@@ -535,17 +599,30 @@ def search(
     alpha: float,
     k: int,
     as_json: bool,
+    federated_flag: bool,
+    projects: str | None,
+    since: str | None,
+    type_csv: str | None,
 ) -> None:
-    """Search observations (REQ-17 + REQ-18 CLI surface).
+    """Search observations (REQ-17 + REQ-18 + REQ-25 CLI surface).
 
     Default mode is FTS5 prose (``mem_search``); this stays byte-identical
     to the pre-vector behavior so existing scripts are unaffected. The
-    ``--semantic`` and ``--hybrid`` flags enable vector retrieval and are
-    mutually exclusive.
+    ``--semantic`` and ``--hybrid`` flags enable vector retrieval. The
+    ``--federated`` flag enables multi-project search via
+    ``mem_search_federated`` with optional ``--projects`` / ``--since``
+    / ``--type`` filters. The federated and vector paths are mutually
+    exclusive.
     """
     if semantic_flag and hybrid_flag:
         click.echo(
             "ERROR: --semantic and --hybrid are mutually exclusive.", err=True
+        )
+        sys.exit(2)
+    if federated_flag and (semantic_flag or hybrid_flag):
+        click.echo(
+            "ERROR: --federated is mutually exclusive with --semantic/--hybrid.",
+            err=True,
         )
         sys.exit(2)
     if not (0.0 <= alpha <= 1.0):
@@ -553,10 +630,34 @@ def search(
             f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True
         )
         sys.exit(2)
+    if federated_flag and since is not None:
+        # Validate the ISO string via _parse_since (epoch conversion is
+        # discarded — we pass the raw ISO through to mem_search_federated
+        # so the SQL `created_at >=` comparison is lexicographic on the
+        # YYYY-MM-DD HH:MM:SS TEXT format per design D7).
+        try:
+            _parse_since(since)
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(2)
 
     backend = _default_save_backend()
 
-    if semantic_flag or hybrid_flag:
+    if federated_flag:
+        # REQ-25: federated multi-project search. Projects + type are
+        # CSV-parsed; None means "no filter". --since is the raw ISO
+        # string (validated above). ``trigger="cli"`` tags the
+        # observability event so dashboards can separate user invocations
+        # from programmatic ones (REQ-26 contract).
+        raw = backend.mem_search_federated(
+            query,
+            projects=_parse_csv(projects),
+            limit=k,
+            since=since,
+            type_filter=_parse_csv(type_csv),
+            trigger="cli",
+        )
+    elif semantic_flag or hybrid_flag:
         # Gate check order matters: extra first (so the install hint wins
         # over the env hint when both are missing). Mirrors REQ-17 scenarios
         # 2 and 4 — the user gets the most actionable error first.
@@ -1095,3 +1196,238 @@ def drift(
         click.echo(_render_drift_table(report))
 
     sys.exit(_drift_exit_code(report))
+
+
+# ---------- REQ-24: flow projects backfill ----------
+
+
+@main.group(name="projects")
+def projects_group() -> None:
+    """Manage project tags and aliases (REQ-24, REQ-27).
+
+
+    Subcommands:
+    - ``backfill``: re-tag observations safely (dry-run default + --confirm gate).
+    - ``alias``: append a rename record to ``project-aliases.json`` (REQ-27, lands in T1.10).
+    """
+
+
+@projects_group.command(name="backfill")
+@click.option(
+    "--dry-run",
+    "dry_run_flag",
+    is_flag=True,
+    default=False,
+    help="Preview only (DEFAULT behaviour; no writes).",
+)
+@click.option(
+    "--confirm",
+    "confirm_flag",
+    is_flag=True,
+    default=False,
+    help="REQUIRED to write changes. Without --confirm the command is read-only.",
+)
+@click.option(
+    "--project",
+    "project_key",
+    default=None,
+    help="Restrict scope to a single project key. Required when --confirm is passed.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Only observations with created_at >= this ISO 8601 timestamp (lexicographic).",
+)
+def projects_backfill(
+    dry_run_flag: bool,
+    confirm_flag: bool,
+    project_key: str | None,
+    since: str | None,
+) -> None:
+    """Re-tag observations safely (REQ-24, design D3 safety gate + REQ-27 alias iteration).
+
+    The default mode is a DRY-RUN preview: every observation that would be
+    re-tagged is listed in the JSON report on stdout, but the database is
+    NOT touched. To apply changes the caller MUST pass ``--confirm``.
+
+    Scope (which observations are eligible for re-tagging):
+
+    - With ``--project=<key>``: observations currently WITHOUT a project tag
+      (i.e. ``project is None or ""``) AND observations currently tagged
+      ``<key>`` (the alias-driven re-tag path: ``--project=<alias.old>``
+      re-tags observations currently tagged ``<alias.old>`` to
+      ``<alias.new>`` when an alias exists).
+    - Without ``--project``: iterate the alias map (``project-aliases.json``)
+      and re-tag every observation whose CURRENT ``project`` matches an
+      ``alias.old`` to the corresponding ``alias.new``. This closes the
+      batch B2 deviation: the previously-refused invocation now resolves
+      via the alias map (REQ-24 scenario 5 + REQ-27 integration).
+
+    Safety gate (REQ-24 + REQ-27):
+    - ``--confirm`` is REQUIRED to write; ``--dry-run`` is the default
+      and overrides ``--confirm`` (a ``--dry-run --confirm`` invocation
+      still does no writes).
+
+    Exit codes:
+    - 0: success (dry-run completed OR --confirm applied changes OR
+      no-op with empty alias map).
+    - 2: invalid args (``--since`` parse error).
+
+    JSON output shape::
+
+        {
+          "would_change": <int>,
+          "would_skip": <int>,
+          "changes": [
+            {
+              "observation_id": <int>,
+              "current_tag": <str | null>,
+              "proposed_tag": <str | null>,
+              "action": "rename" | "skip_already_tagged" | "skip_no_match"
+            },
+            ...
+          ]
+        }
+
+    On ``--confirm`` the report lists the same shape, but the ``action``
+    for entries that were actually applied is ``"tagged"`` (instead of
+    ``"rename"``) so downstream tooling can distinguish preview vs applied.
+    """
+    if since is not None:
+        try:
+            _parse_since(since)
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(2)
+
+    from flow_engineering import project_aliases as _aliases
+
+    backend = _default_save_backend()
+    all_observations = list(backend.iter_observations())
+
+    alias_records = _aliases.load_aliases()
+    alias_map: dict[str, str] = {r["old"]: r["new"] for r in alias_records}
+
+    candidates: list[dict[str, Any]]
+    if project_key is not None:
+        # Single-key scope (legacy REQ-24 + alias-key re-tag).
+        candidates = [
+            o
+            for o in all_observations
+            if (not o.get("project")) or o.get("project") == project_key
+        ]
+    else:
+        # No --project: iterate the alias map (REQ-27 integration).
+        candidates = [
+            o
+            for o in all_observations
+            if o.get("project") in alias_map
+        ]
+
+    if since is not None:
+        candidates = [
+            o for o in candidates if str(o.get("created_at", "")) >= since
+        ]
+
+    would_change = 0
+    would_skip = 0
+    changes: list[dict[str, Any]] = []
+    applied_action = "tagged" if confirm_flag else "rename"
+
+    for obs in candidates:
+        current_tag = obs.get("project")
+        # Resolve the proposed tag for this row.
+        if current_tag in alias_map:
+            # Alias-driven re-tag (iteration path OR --project=<alias.old>).
+            proposed_tag: str | None = alias_map[current_tag]
+        elif project_key is not None and not current_tag:
+            # Legacy REQ-24 untagged-observation path.
+            proposed_tag = project_key
+        else:
+            proposed_tag = None
+
+        if proposed_tag is None:
+            action = "skip_no_match"
+        elif proposed_tag == current_tag:
+            action = "skip_already_tagged"
+        else:
+            action = applied_action
+
+        change = {
+            "observation_id": int(obs["id"]),
+            "current_tag": current_tag,
+            "proposed_tag": proposed_tag,
+            "action": action,
+        }
+        changes.append(change)
+        if action == applied_action:
+            would_change += 1
+            if confirm_flag and proposed_tag is not None:
+                try:
+                    _apply_tag(int(obs["id"]), proposed_tag, backend=backend)
+                except Exception:
+                    observability.increment("project_tag_backfill_failed_total")
+                    continue
+                observability.increment(
+                    "project_tag_backfilled_total", from_=current_tag or "untagged"
+                )
+        else:
+            would_skip += 1
+
+    report = {
+        "would_change": would_change,
+        "would_skip": would_skip,
+        "changes": changes,
+    }
+    click.echo(json.dumps(report, ensure_ascii=False, indent=2))
+    sys.exit(0)
+
+
+# ---------- REQ-27: flow projects alias ----------
+
+
+@projects_group.command(name="alias")
+@click.argument("old_key")
+@click.argument("new_key")
+def projects_alias(old_key: str, new_key: str) -> None:
+    """Append a rename record to ``project-aliases.json`` (REQ-27).
+
+    The alias map is the source of truth for renaming absorption:
+    ``flow-image-generator-v2 → flow-image-generator-main`` is applied
+    at every federated query so the user-facing contract treats the
+    alias as a synonym.
+
+    Exit codes:
+    - 0: alias added (or already present — idempotent re-invoke).
+    - 1: conflicting rewrite (existing alias for ``old_key`` already
+      points to a different ``new_key``). The existing record is
+      preserved unchanged so audit history is never silently lost.
+
+    Stdout on success:
+    - New alias: ``alias added: <old_key> -> <new_key>``.
+    - Idempotent re-invoke: ``alias already present: <old_key> -> <new_key>``.
+
+    On conflict, stderr reports the existing target so the user knows
+    what to edit (or which entry to remove) before re-invoking.
+    """
+    from flow_engineering import project_aliases
+
+    try:
+        result = project_aliases.add_alias(old_key, new_key)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    status = result["status"]
+    if status == "added":
+        click.echo(f"alias added: {old_key} -> {new_key}")
+        return
+    if status == "already_present":
+        click.echo(f"alias already present: {old_key} -> {new_key}")
+        return
+    # Defensive fallback — unknown statuses should not reach this point.
+    click.echo(f"alias status: {status}", err=True)
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
