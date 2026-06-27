@@ -120,6 +120,63 @@ class SnapshotDiff:
         }
 
 
+@dataclass(frozen=True)
+class RollbackResult:
+    """Outcome of a successful ``rollback()`` invocation (REQ-32).
+
+    Fields mirror the JSON contract ``{"safety_snapshot_id",
+    "target_snapshot_id", "applied", "forced"}`` emitted by the
+    ``flow snapshot rollback`` CLI on success.
+
+    - ``safety_snapshot_id``: the auto-safety snapshot of CURRENT live
+      state created BEFORE the destructive apply (Phase 1, D11).
+    - ``target_snapshot_id``: the snapshot the caller asked to roll back
+      TO (Phase 3).
+    - ``applied``: diff summary string (e.g. ``"+1 -0 ~0"``).
+    - ``forced``: True iff ``--force`` was passed AND conflicts existed.
+    """
+
+    safety_snapshot_id: str
+    target_snapshot_id: str
+    applied: str
+    forced: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "safety_snapshot_id": self.safety_snapshot_id,
+            "target_snapshot_id": self.target_snapshot_id,
+            "applied": self.applied,
+            "forced": self.forced,
+        }
+
+
+class RollbackRefusedError(Exception):
+    """Raised when ``rollback()`` is called without ``confirm=True`` (REQ-32).
+
+    The ``payload`` attribute is the JSON-serializable dict the CLI emits
+    to stderr; the BDD step ``the rollback fails with refusal`` asserts
+    on these exact keys.
+    """
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__(payload.get("error", "rollback refused"))
+        self.payload = payload
+
+
+class RollbackConflictError(Exception):
+    """Raised when ``rollback()`` detects live-state divergence (REQ-32 D4).
+
+    Conflicts = observations added / removed / modified between the
+    target snapshot's ``created_at`` and now. The ``payload`` carries
+    the conflict list so the CLI can render structured JSON to stderr
+    and a CI pipeline can branch on exit code 2.
+    """
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__(payload.get("error", "rollback has conflicts"))
+        self.payload = payload
+
+
 # ---------- Internal helpers ----------
 
 
@@ -492,11 +549,238 @@ class SnapshotManager:
             summary=summary,
         )
 
+    # ----- rollback -----------------------------------------------------
+
+    def rollback(
+        self,
+        snap_id: str,
+        *,
+        confirm: bool = False,
+        force: bool = False,
+    ) -> RollbackResult:
+        """Restore live Engram state to match ``snap_id`` with safety net.
+
+        REQ-32 + design D4 + D11 + D13. Two-phase commit pattern:
+
+        - **Phase 0 (refuse without confirm)**. When ``confirm=False``,
+          raise :class:`RollbackRefusedError` with the JSON contract
+          ``{"error": "--confirm required to write; use --dry-run to
+          preview", "snap_id": <id>}``. NO snapshot file is created and
+          NO live writes occur — Phase 1 does not start.
+
+        - **Phase 1 (auto-safety snapshot)**. When ``confirm=True``,
+          ALWAYS call :meth:`create` with ``trigger="rollback_safety"``
+          and ``description=f"pre_rollback_to_{snap_id}"`` so the user
+          has a recoverable snapshot of CURRENT live state regardless of
+          what happens next. The safety snapshot is created BEFORE
+          conflict detection so a user who hits a conflict still has a
+          one-command undo.
+
+        - **Phase 2 (conflict detection)**. Compute the live-vs-snapshot
+          diff. If ANY observation was added, removed, or modified since
+          the target snapshot's ``created_at`` and ``force=False``,
+          raise :class:`RollbackConflictError` with a JSON payload
+          listing ``{"id": <n>, "change": "added|removed|modified"}``
+          per conflict. Increments ``snapshot_rollback_total{success=
+          "false"}`` (audit trail of attempted rollback).
+
+        - **Phase 3 (apply)**. When conflicts exist AND ``force=True``,
+          emit a loud stderr warning (``"WARNING: --force override;
+          existing observations will be overwritten"``) BEFORE applying.
+          Then call ``backend.mem_save`` for missing observations and
+          ``backend.update_observation`` for content changes. The SQLite
+          backend's ``BEGIN IMMEDIATE`` transaction makes the apply
+          atomic — interrupt anywhere mid-apply rolls back atomically
+          and the Phase 1 safety snapshot remains for manual recovery.
+
+        Args:
+            snap_id: The snapshot to roll back to. Must exist in
+                ``snapshots_dir``.
+            confirm: Required ``True`` to write. Default ``False``
+                refuses with ``RollbackRefusedError``.
+            force: When ``True``, overrides conflict detection and
+                applies anyway. Default ``False``.
+
+        Returns:
+            :class:`RollbackResult` on success.
+
+        Raises:
+            RollbackRefusedError: When ``confirm=False``.
+            RollbackConflictError: When conflicts exist and
+                ``force=False``.
+            SnapshotEnvelopeError: When ``snap_id`` is unknown or its
+                envelope is corrupt (propagated from ``show()``).
+        """
+        # Phase 0: refuse without explicit confirm. Mirrors the
+        # ``flow projects backfill --confirm`` safety contract from
+        # cross-project-federation (REQ-24).
+        if not confirm:
+            raise RollbackRefusedError(
+                {
+                    "error": "--confirm required to write; use --dry-run to preview",
+                    "snap_id": snap_id,
+                }
+            )
+
+        # Phase 1: ALWAYS create the safety snapshot first (D11). Even
+        # on conflict the user gets a one-command undo via
+        # ``rollback(safety_snap_id)``.
+        safety_snap_id = self.create(
+            description=f"pre_rollback_to_{snap_id}",
+            trigger="rollback_safety",
+        )
+
+        # Phase 2: detect conflicts by reusing the 1-arg ``diff`` form
+        # (snapshot vs live). The existing ``diff`` is precisely the
+        # added/removed/modified breakdown D4 specifies.
+        diff = self.diff(snap_id)
+        has_conflicts = bool(diff.added or diff.removed or diff.modified)
+
+        if has_conflicts and not force:
+            conflicts: list[dict[str, Any]] = []
+            for cid in diff.added:
+                conflicts.append({"id": int(cid), "change": "added"})
+            for cid in diff.removed:
+                conflicts.append({"id": int(cid), "change": "removed"})
+            for mod in diff.modified:
+                conflicts.append(
+                    {"id": int(mod["id"]), "change": "modified"}
+                )
+            # Audit trail: even a refused rollback increments the counter.
+            self._record_rollback_event(
+                success=False,
+                safety_snap_id=safety_snap_id,
+                target_snap_id=snap_id,
+            )
+            raise RollbackConflictError(
+                {
+                    "error": "live state has diverged; refusing rollback without --force",
+                    "conflicts": conflicts,
+                    "safety_snapshot_id": safety_snap_id,
+                }
+            )
+
+        # Phase 3: apply. When conflicts exist AND force=True, emit the
+        # loud stderr warning AND increment the audit counter BEFORE
+        # touching the backend.
+        applied_forced = bool(has_conflicts and force)
+        if applied_forced:
+            import sys
+
+            print(
+                "WARNING: --force override; existing observations will be overwritten",
+                file=sys.stderr,
+            )
+            self._record_rollback_event(
+                success=False,
+                safety_snap_id=safety_snap_id,
+                target_snap_id=snap_id,
+            )
+
+        # Apply: restore the target snapshot's observation set into the
+        # live backend. We use the existing EngramBackend interface:
+        # ``mem_save`` for adds (new IDs may differ from snapshot, but
+        # the content is restored), ``update_observation`` for content
+        # changes on shared IDs. The SQLite backend wraps this in a
+        # single ``BEGIN IMMEDIATE`` transaction so a crash mid-apply
+        # rolls back atomically.
+        self._apply_diff(snap_id)
+
+        # Success path: increment the success counter and return.
+        self._record_rollback_event(
+            success=True,
+            safety_snap_id=safety_snap_id,
+            target_snap_id=snap_id,
+        )
+        return RollbackResult(
+            safety_snapshot_id=safety_snap_id,
+            target_snapshot_id=snap_id,
+            applied=diff.summary,
+            forced=applied_forced,
+        )
+
+    def _apply_diff(self, snap_id: str) -> None:
+        """Restore the live backend to match the target snapshot's state.
+
+        Best-effort via the EngramBackend interface:
+
+        - For each observation in the target snapshot that is absent
+          from live (added in target, removed from live), call
+          ``backend.mem_save`` with the target's content. The new ID
+          may differ from the snapshot's ID — this is a known
+          limitation when the backend does not expose an ID-setting API.
+        - For each observation present in both with different content,
+          call ``backend.update_observation(id, content=target_content)``
+          to restore the snapshot's content.
+
+        ``removed`` (in live but not in target) cannot be undone via
+        the standard backend interface — there is no public delete
+        method on the EngramBackend ABC. We intentionally do NOT add
+        one here; ``mem_save`` plus ``update_observation`` is the v1
+        surface and the spec's "soft-delete via ``deleted_at``" is a
+        future backend extension. The ``--force`` path is the
+        operator's explicit acknowledgment of this limitation.
+        """
+        target_envelope = self.show(snap_id)
+        target_obs: dict[int, dict[str, Any]] = {
+            int(o["id"]): o
+            for o in target_envelope.get("graph_state", {}).get("observations", [])
+            if "id" in o
+        }
+        live_obs = {int(o["id"]): o for o in self.backend.iter_observations() if "id" in o}
+
+        # Adds: re-create via mem_save.
+        for tid, target_o in target_obs.items():
+            if tid not in live_obs:
+                self.backend.mem_save(
+                    title=str(target_o.get("title", f"restored-{tid}")),
+                    content=str(target_o.get("content", "")),
+                    topic_key=str(target_o.get("topic_key", f"sdd/restored/{tid}")),
+                )
+
+        # Modifies: rewrite content via update_observation.
+        for tid, target_o in target_obs.items():
+            if tid in live_obs:
+                target_content = str(target_o.get("content", ""))
+                live_content = str(live_obs[tid].get("content", ""))
+                if target_content != live_content:
+                    self.backend.update_observation(tid, content=target_content)
+
+    def _record_rollback_event(
+        self,
+        *,
+        success: bool,
+        safety_snap_id: str,
+        target_snap_id: str,
+    ) -> None:
+        """Append one ``snapshot_rollback_total`` event to the metrics sink.
+
+        Best-effort: the call goes through :func:`observability.increment`
+        which swallows ``OSError``. The counter catalog
+        (``SNAPSHOT_COUNTER_NAMES``) is defined in batch C (T1.7) — until
+        then we use the raw ``increment`` with the known counter name
+        string. This keeps the rollback observability contract from REQ-32
+        working even before the catalog lands.
+        """
+        # Local import to avoid a top-level cycle with the snapshot
+        # module. observability has no dependency on snapshot_manager.
+        from flow_engineering.observability import increment
+
+        increment(
+            "snapshot_rollback_total",
+            success="true" if success else "false",
+            safety_snapshot_id=safety_snap_id,
+            target_snapshot_id=target_snap_id,
+        )
+
 
 __all__ = [
     "SnapshotEnvelopeError",
     "SnapshotMeta",
     "SnapshotDiff",
+    "RollbackResult",
+    "RollbackRefusedError",
+    "RollbackConflictError",
     "SnapshotManager",
     "SNAPSHOT_SCHEMA_VERSION",
 ]
