@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-26
+
+### Added
+- `EngramBackend.mem_search_federated(query, projects=None, limit=10, since=None, type_filter=None)` on the `EngramBackend` ABC v1.2 — NON-BREAKING default `NotImplementedError`; the `InMemoryBackend` fixture overrides with `project`/`since`/`type_filter` SQL filters (REQ-23).
+- `flow search --federated --projects=<csv> --since=<iso> --type=<csv>` flags on the existing `flow search` subcommand — explicit cross-project search; the existing single-project behavior is preserved when `--federated` is omitted (REQ-25).
+- `flow projects alias <old> <new>` subcommand — appends to `~/.config/flow-engineering/project-aliases.json`; aliases are applied transparently to all `project` reads (e.g., `flow-image-generator-v2` queries resolve to `flow-image-generator-main` rows) (REQ-27).
+- `flow projects backfill [--dry-run] [--confirm] [--since=<iso>] [--project=<key>]` subcommand — `--dry-run` is the DEFAULT (preview only); `--confirm` is REQUIRED to write; emits a JSON report `{would_change, would_skip, changes: [...]}`; iterates the alias map when neither `--project` nor a config override is set (REQ-24).
+- `src/flow_engineering/project_detector.py` with `detect(cwd: Path) -> str | None` and `apply_tag(observation_id, project, *, backend)` — cwd-based detection under `~/dev/proyects/<name>/` or `~/proyects/<name>/`; returns `None` outside projects dir; opt-in via `FLOW_AUTO_PROJECT_TAG=1` env var (REQ-24).
+- `src/flow_engineering/project_aliases.py` — versioned JSON schema `{version: 1, aliases: [{old, new, created_at}]}`; loaded on startup; cache-friendly; malformed JSON fails fast on startup with `AliasConfigError` (REQ-27).
+- `~/.config/flow-engineering/project-aliases.json` — new runtime config file; created on first `flow projects alias` invocation; does NOT auto-backfill (user runs `flow projects backfill` separately) (REQ-27).
+- 3 new observability counters: `federated_search_invoked_total{trigger=cli|programmatic}` (counter), `federated_search_projects_queried{count=N}` (histogram — note: no `_total` suffix per design D4), `federated_search_results_returned_total` (counter). Helper `record_federated_summary(invoked, projects_queried, results_returned, *, trigger="programmatic")` emits all 3 in one call; wired into `InMemoryBackend.mem_search_federated` (REQ-26).
+- `record_federated_summary(...)` helper in `observability.py` mirroring the `record_drift_summary` (REQ-9) and `record_vector_summary` (REQ-22) pattern — consistent observability contract across all 3 history features.
+- 5 new BDD feature files: `req23_federated_search.feature` (5), `req24_project_detector.feature` (6), `req25_cli_federated.feature` (5), `req26_federated_observability.feature` (4), `req27_project_aliases.feature` (5). Total BDD: 25 new scenarios across 5 files.
+- ABC bumped v1.1 → v1.2 — third-party `EngramBackend` subclasses import unchanged; new `mem_search_federated` defaults to `NotImplementedError`.
+
+### Tests
+- 699 / 699 tests passing (`uv run pytest -x --tb=short`).
+- 25 new BDD scenarios across 5 feature files. Total BDD: 116 scenarios across 23 feature files.
+- See `openspec/changes/cross-project-federation/` for full spec, design, and task breakdown (post-archive).
+
+### Notes
+- `cross-project-federation` shipped as a SINGLE PR (no chained PRs needed; the change is small enough at ~600 prod LOC + ~1500 test LOC).
+- **Important correction surfaced by explore**: the original premise of "7 separate Engram DBs" was wrong — there's ONE shared SQLite at `~/.engram/engram.db` with 158 observations across 9 project keys, FTS5 already indexed by `project`. The "federation" is therefore a logical surface (filtered SQL queries on the shared DB), not physical cross-DB infra.
+- Alias resolution is applied in `mem_search_federated`, `mem_search`, and `flow projects backfill` — single seam, consistent behavior.
+- Backfill safety gate is strict: `--dry-run` is default; `--confirm` is mandatory to write; never auto-tag. This is the same safety posture as `flow reindex` (REQ-21) and `flow drift` (REQ-9).
+
 ## [0.4.0] - 2026-06-26
 
 ### Added

@@ -53,10 +53,10 @@ class VectorSearchDisabled(RuntimeError):
 class EngramBackend(ABC):
     """Abstract Engram backend. Real implementation calls MCP, tests use in-memory.
 
-    ABC v1.1 — added ``mem_search_semantic`` and ``mem_search_hybrid`` as default
-    ``NotImplementedError`` (NON-BREAKING; mirrors the ``update_observation``
-    precedent further below). Third-party subclasses import unchanged; they
-    only break at call-time of the new methods.
+    ABC v1.2 — added ``mem_search_federated`` as default ``NotImplementedError``
+    (NON-BREAKING; mirrors ``mem_search_semantic`` / ``mem_search_hybrid`` from
+    v1.1 and the ``update_observation`` precedent further below). Third-party
+    subclasses import unchanged; they only break at call-time of the new method.
     """
 
     @abstractmethod
@@ -119,6 +119,44 @@ class EngramBackend(ABC):
         """
         raise NotImplementedError(
             "vector search requires explicit backend impl — see [vectors] extra"
+        )
+
+    def mem_search_federated(
+        self,
+        query: str,
+        projects: list[str] | None = None,
+        *,
+        limit: int = 10,
+        since: str | None = None,
+        type_filter: list[str] | None = None,
+        scope: str = "project",
+        trigger: str = "programmatic",
+    ) -> list[dict[str, Any]]:
+        """Federated multi-project search (v1.2 — NON-BREAKING default).
+
+        REQ-23 (cross-project-federation): search across N project tags in a
+        single FTS5 pass with optional ``project IN (...)``, ``created_at >=``
+        and ``type IN (...)`` filters. ``projects=None`` ⇒ no project filter
+        (search all). ``projects=[]`` ⇒ short-circuit ``[]`` (SQLite rejects
+        ``IN ()`` as a syntax error). Non-empty ``projects`` ⇒ parameterised
+        ``IN (?, ?, ...)``. ``since`` is lexicographic against the
+        ``YYYY-MM-DD HH:MM:SS`` TEXT format. ``type_filter`` is exact-match
+        (case-sensitive). Each returned row MUST preserve the ``project``
+        field for caller attribution.
+
+        ``trigger`` is a kwarg-only observability tag (REQ-26) carried
+        through to the ``federated_search_invoked_total`` counter. The
+        library default is ``"programmatic"``; the CLI layer passes
+        ``trigger="cli"`` so dashboards can separate user invocations from
+        background work.
+
+        Subclasses that do not override this method get a call-time
+        ``NotImplementedError``; instantiation is unaffected. The
+        ``InMemoryBackend`` test fixture overrides this to filter the
+        in-memory dict (no SQLite required for unit tests).
+        """
+        raise NotImplementedError(
+            "federated search requires explicit backend impl — EngramBackend v1.2"
         )
 
     def iter_observations(self, *, project: str | None = None) -> list[dict[str, Any]]:
@@ -253,6 +291,86 @@ class InMemoryBackend(EngramBackend):
         available via a real vector-enabled backend.
         """
         raise VectorSearchDisabled()
+
+    def mem_search_federated(
+        self,
+        query: str,
+        projects: list[str] | None = None,
+        *,
+        limit: int = 10,
+        since: str | None = None,
+        type_filter: list[str] | None = None,
+        scope: str = "project",
+        trigger: str = "programmatic",
+    ) -> list[dict[str, Any]]:
+        """Federated multi-project search over the in-memory dict (REQ-23).
+
+        REQ-23 (cross-project-federation): filters observations by ``projects``
+        (list membership), ``since`` (lexicographic ``>=`` on
+        ``YYYY-MM-DD HH:MM:SS`` TEXT), and ``type_filter`` (exact match,
+        case-sensitive). ``projects=None`` ⇒ no project filter (search all).
+        ``projects=[]`` ⇒ ``ValueError`` (fail fast — mirrors the SQLite
+        ``IN ()`` syntax error guard from design D1). Non-empty ``projects``
+        restricts to membership in the list. Results are sorted by id
+        descending (newest first) then truncated to ``limit``.
+
+        REQ-26 integration: every successful invocation emits the 3 federated
+        counters via :func:`observability.record_federated_summary` with the
+        requested ``trigger`` tag (``"programmatic"`` by default; ``"cli"``
+        when invoked from the CLI layer). The observability helper is
+        fail-open so a broken metrics sink can never break retrieval.
+
+        Substring match against title + content mirrors ``mem_search`` so
+        unit tests do not require SQLite FTS5.
+        """
+        if projects is not None and len(projects) == 0:
+            raise ValueError("projects must be None or non-empty list")
+        # REQ-27: forward alias resolution applied BEFORE the SQL filter so
+        # ``flow-image-generator-v2`` transparently becomes
+        # ``flow-image-generator-main``. Identity for non-aliased names so
+        # the no-alias case is a cheap pass-through. Missing file → empty
+        # list (fail-open); malformed file → empty list too so a broken
+        # config can never break retrieval.
+        if projects is not None:
+            try:
+                from flow_engineering import project_aliases as _aliases
+
+                _alias_records = _aliases.load_aliases()
+                if _alias_records:
+                    projects = [_aliases.resolve(p, aliases=_alias_records) for p in projects]
+            except Exception:
+                # Alias resolution is best-effort; never block retrieval.
+                pass
+        results: list[dict[str, Any]] = []
+        for obs in sorted(
+            self.observations.values(), key=lambda o: o["id"], reverse=True
+        ):
+            if projects is not None and obs.get("project") not in projects:
+                continue
+            if since is not None and str(obs.get("created_at", "")) < since:
+                continue
+            if type_filter is not None and obs.get("type") not in type_filter:
+                continue
+            if query:
+                q = query.lower()
+                if q not in obs.get("content", "").lower() and q not in obs.get("title", "").lower():
+                    continue
+            results.append(obs)
+            if len(results) >= limit:
+                break
+        try:
+            from flow_engineering import observability as _obs
+
+            _obs.record_federated_summary(
+                invoked=1,
+                projects_queried=len(projects) if projects is not None else 0,
+                results_returned=len(results),
+                trigger=trigger,
+            )
+        except Exception:
+            # Observability MUST be fail-open.
+            pass
+        return results
 
 
 def phase_topic_key(change: str, phase: str) -> str:

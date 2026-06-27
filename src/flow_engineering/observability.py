@@ -27,11 +27,18 @@ REQ-22 (vector-semantic-search PR#1 T1.7) adds six ``vector_*`` counters:
 - ``reindex_observations_total``
 - ``reindex_duration_seconds``
 
+REQ-26 (cross-project-federation PR#1 T1.8) adds three ``federated_*`` counters:
+- ``federated_search_invoked_total`` (tagged ``trigger=cli|programmatic``)
+- ``federated_search_projects_queried`` (histogram — NO ``_total`` suffix because
+  the value IS the count; one event per call with ``count=<N>``)
+- ``federated_search_results_returned_total``
+
 The naming follows the REQ-8 convention: ``_total`` suffix for counters,
 ``_ms`` / ``_seconds`` suffix for timing, no suffix on gauges. A change that
 renames any of these would silently break ``flow metrics`` consumers across
-the decision-code-linking → vector-semantic-search boundary, so the names are
-exposed via :data:`VECTOR_COUNTER_NAMES` for downstream discovery.
+the decision-code-linking → vector-semantic-search → cross-project-federation
+boundary, so the names are exposed via :data:`VECTOR_COUNTER_NAMES` and
+:data:`FEDERATED_COUNTER_NAMES` for downstream discovery.
 
 Plus the helper ``backfill_coverage(backend)`` that returns the ratio of
 backfilled observations to total observations (rounded to 3 decimals),
@@ -73,6 +80,23 @@ VECTOR_COUNTER_NAMES: list[str] = [
 The list is the single source of truth for ``flow metrics`` consumers and
 for future changes that add to the catalog. The order matches the table in
 ``openspec/changes/vector-semantic-search/spec.md`` REQ-22.
+"""
+
+
+# ---------- REQ-26 federated counter catalog ----------
+
+
+FEDERATED_COUNTER_NAMES: list[str] = [
+    "federated_search_invoked_total",
+    "federated_search_projects_queried",
+    "federated_search_results_returned_total",
+]
+"""Canonical list of REQ-26 federated counter names (REQ-26 scenario 4 contract).
+
+Mirrors :data:`VECTOR_COUNTER_NAMES` (REQ-22). The histogram
+``federated_search_projects_queried`` deliberately has NO ``_total`` suffix
+because the value IS the count (design D4): per-call events with ``count=<N>``
+build the per-call project-bucket histogram.
 """
 
 if TYPE_CHECKING:
@@ -341,3 +365,49 @@ def record_vector_summary(
             "reindex_duration_seconds",
             value=max(0.0, float(reindex_duration_seconds)),
         )
+
+
+# ---------- Federated summary (REQ-26) ----------
+
+
+#: Valid ``trigger`` values for ``federated_search_invoked_total`` events.
+FEDERATED_TRIGGER_VALUES: frozenset[str] = frozenset({"cli", "programmatic"})
+
+
+def record_federated_summary(
+    *,
+    invoked: int = 1,
+    projects_queried: int | None,
+    results_returned: int,
+    trigger: str = "programmatic",
+) -> None:
+    """Emit the REQ-26 federated metrics in a single call (parallels ``record_vector_summary``).
+
+    Always emits three counters:
+
+    - ``federated_search_invoked_total{trigger=<cli|programmatic>}`` — counter,
+      incremented by ``invoked`` per call (default 1).
+    - ``federated_search_projects_queried`` — histogram with ``count=<N>``
+      where ``N`` is the number of projects queried (``0`` when ``None``,
+      modelling the search-all case). NO ``_total`` suffix because the
+      value IS the count (design D4).
+    - ``federated_search_results_returned_total`` — counter, ``count=<N>``
+      where ``N`` is the number of rows returned.
+
+    Defensive: negative numeric inputs are clamped to ``0`` so a bad sample
+    cannot produce NaN / negative JSON values. Invalid ``trigger`` values
+    fall back to ``"programmatic"`` so the catalog invariant holds.
+    Failures are absorbed by :func:`increment` — this helper never raises.
+    """
+    safe_invoked = max(0, int(invoked))
+    safe_results = max(0, int(results_returned))
+    safe_projects = max(0, int(projects_queried)) if projects_queried is not None else 0
+    safe_trigger = trigger if trigger in FEDERATED_TRIGGER_VALUES else "programmatic"
+
+    increment(
+        "federated_search_invoked_total",
+        count=safe_invoked,
+        trigger=safe_trigger,
+    )
+    increment("federated_search_projects_queried", count=safe_projects)
+    increment("federated_search_results_returned_total", count=safe_results)
