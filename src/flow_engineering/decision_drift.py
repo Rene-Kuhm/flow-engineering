@@ -496,6 +496,16 @@ def scan_change(
                 # is missing; an unreadable envelope returns the same
                 # ``graph_unavailable=True`` report as the live path.
                 if _snapshot_exists(snap_id) and not _snapshot_has_graph(snap_id):
+                    # REQ-26 T1.7: emit snapshot_load_failed_total BEFORE
+                    # raising so the audit trail captures the unfreezable
+                    # attempt. The helper is fail-open and never raises.
+                    from flow_engineering.observability import record_snapshot_event
+
+                    record_snapshot_event(
+                        "snapshot_load_failed_total",
+                        snap_id=str(snap_id),
+                        reason="graph_missing",
+                    )
                     raise SnapshotGraphMissing(
                         f"snapshot {snap_id} has no graph_json (created with "
                         f"--no-include-graph); drift-pinned scan unavailable"

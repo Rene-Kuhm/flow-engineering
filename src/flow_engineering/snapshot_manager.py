@@ -505,6 +505,11 @@ class SnapshotManager:
                     pass
             raise
 
+        # REQ-26 T1.7: emit snapshot_create_total after the atomic replace.
+        # Fire AFTER the write so a failed write does NOT increment the
+        # counter. The helper is fail-open and never raises.
+        self._record_create_event(snap_id=snap_id)
+
         return snap_id
 
     # ----- list ---------------------------------------------------------
@@ -889,6 +894,17 @@ class SnapshotManager:
                 if target_content != live_content:
                     self.backend.update_observation(tid, content=target_content)
 
+    def _record_create_event(self, *, snap_id: str) -> None:
+        """Append one ``snapshot_create_total`` event to the metrics sink (REQ-26 T1.7).
+
+        Best-effort via :func:`observability.record_snapshot_event` which
+        swallows ``OSError``. Called by :meth:`create` AFTER the atomic
+        write + rename so a failed write does NOT increment the counter.
+        """
+        from flow_engineering.observability import record_snapshot_event
+
+        record_snapshot_event("snapshot_create_total", snap_id=str(snap_id))
+
     def _record_rollback_event(
         self,
         *,
@@ -898,22 +914,18 @@ class SnapshotManager:
     ) -> None:
         """Append one ``snapshot_rollback_total`` event to the metrics sink.
 
-        Best-effort: the call goes through :func:`observability.increment`
-        which swallows ``OSError``. The counter catalog
-        (``SNAPSHOT_COUNTER_NAMES``) is defined in batch C (T1.7) — until
-        then we use the raw ``increment`` with the known counter name
-        string. This keeps the rollback observability contract from REQ-32
-        working even before the catalog lands.
+        Best-effort via :func:`observability.record_snapshot_event` which
+        swallows ``OSError``. Fires on success AND on conflict/refusal so
+        the audit trail captures attempted rollbacks (the counter's
+        ``success`` label distinguishes them).
         """
-        # Local import to avoid a top-level cycle with the snapshot
-        # module. observability has no dependency on snapshot_manager.
-        from flow_engineering.observability import increment
+        from flow_engineering.observability import record_snapshot_event
 
-        increment(
+        record_snapshot_event(
             "snapshot_rollback_total",
             success="true" if success else "false",
-            safety_snapshot_id=safety_snap_id,
-            target_snapshot_id=target_snap_id,
+            safety_snapshot_id=str(safety_snap_id),
+            target_snapshot_id=str(target_snap_id),
         )
 
     # ----- prune ---------------------------------------------------------
@@ -1133,10 +1145,9 @@ class SnapshotManager:
                 # operator can re-run prune to retry.
                 continue
 
-        # Emit one snapshot_pruned_total counter per deletion (mirrors
+        # Emit one snapshot_prune_total counter per deletion (mirrors
         # the rollback audit-trail pattern). The counter catalog
-        # (SNAPSHOT_COUNTER_NAMES) is added in T1.7 batch C; until then
-        # we use the raw ``increment`` with the known counter name.
+        # (SNAPSHOT_COUNTER_NAMES) is the source of truth (REQ-26 T1.7).
         for sid in actually_deleted:
             self._record_prune_event(reason=reason_label, snap_id=sid)
 
@@ -1150,19 +1161,17 @@ class SnapshotManager:
         )
 
     def _record_prune_event(self, *, reason: str, snap_id: str) -> None:
-        """Append one ``snapshot_pruned_total`` event to the metrics sink.
+        """Append one ``snapshot_prune_total`` event to the metrics sink (REQ-26 T1.7).
 
-        Best-effort: the call goes through :func:`observability.increment`
-        which swallows ``OSError``. The counter catalog
-        (``SNAPSHOT_COUNTER_NAMES``) is defined in batch C (T1.7); until
-        then we use the raw ``increment`` with the known counter name
-        string so the prune observability contract from REQ-34 works
-        end-to-end without depending on T1.7 landing first.
+        Best-effort via :func:`observability.record_snapshot_event` which
+        swallows ``OSError``. One event per deletion in apply mode
+        (``confirm=True``); NOT fired in dry-run because dry-run
+        short-circuits before this method is called.
         """
-        from flow_engineering.observability import increment
+        from flow_engineering.observability import record_snapshot_event
 
-        increment(
-            "snapshot_pruned_total",
+        record_snapshot_event(
+            "snapshot_prune_total",
             reason=str(reason or "count"),
             snap_id=str(snap_id),
         )
