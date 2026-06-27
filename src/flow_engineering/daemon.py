@@ -92,9 +92,17 @@ def handle_apply_progress_event(
         if n > 0:
             parts.append(f"{n} {cls.value}")
     total = sum(counts.values())
-    on_summary(
-        f"drift: {change} {total} findings ({', '.join(parts) if parts else 'no classes'})"
+    # REQ-56 W6 silence rule (design D4): suppress the outer summary line
+    # when every binding classifies as STILL_VALID (no drift detected).
+    # The JSONL append via ``record_drift_event`` (wired in T2.1) is
+    # unconditional so audit trail completeness is preserved.
+    non_still_valid_total = total - counts.get(
+        decision_drift.DriftClass.STILL_VALID, 0
     )
+    if non_still_valid_total > 0:
+        on_summary(
+            f"drift: {change} {total} findings ({', '.join(parts)})"
+        )
     return report
 
 
