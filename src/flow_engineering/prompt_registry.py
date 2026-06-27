@@ -30,7 +30,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 from typing import Any
+
+from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError, meta
 
 
 class PromptDomain(str, Enum):
@@ -503,8 +506,140 @@ __all__ = [
     "get_prompt_template",
     "lint_prompts",
     "list_prompts",
+    "list_required_vars",
     "register",
     "register_prompt",
+    "render_prompt",
+    "render_prompt_safe",
     "unregister_prompt",
     "validate_catalog",
 ]
+
+
+@lru_cache(maxsize=1)
+def _strict_jinja_env() -> Environment:
+    """Return the shared strict Jinja2 ``Environment`` used by :func:`render_prompt`.
+
+    ``StrictUndefined`` raises ``jinja2.UndefinedError`` on any undeclared
+    variable; ``keep_trailing_newline=True`` mirrors the existing
+    ``scaffold._env()`` behavior. Cached at module scope so the
+    ``Environment`` is constructed once per process (Jinja2 templates are
+    internally cached by the ``Environment``).
+    """
+    return Environment(undefined=StrictUndefined, keep_trailing_newline=True)
+
+
+def _safe_jinja_env() -> Environment:
+    """Return a permissive Jinja2 ``Environment`` used by :func:`render_prompt_safe`.
+
+    The default ``Undefined`` silently emits empty strings for missing
+    variables, but :func:`render_prompt_safe` substitutes the literal
+    sentinel ``<{var_name}>`` BEFORE rendering so the user sees exactly
+    which variables were missing (per design D4 — CLI inspection mode).
+    """
+    return Environment(keep_trailing_newline=True)
+
+
+def render_prompt(name: str, **kwargs: Any) -> str:
+    """Render a prompt by name with ``**kwargs`` substituted via Jinja2 (REQ-46).
+
+    Looks up the prompt in :data:`PROMPT_NAMES` via :func:`get_prompt`,
+    compiles its template body through the shared strict Jinja2
+    ``Environment``, and renders with ``**kwargs``. Strict mode raises
+    :class:`jinja2.UndefinedError` on missing declared variables so
+    runtime callers cannot accidentally inject empty strings into agent
+    context (per design OQ-4).
+
+    Args:
+        name: The catalog identifier (e.g., ``"strict_tdd"``).
+        **kwargs: Variable substitutions passed to ``template.render(**kwargs)``.
+            NOTE: ``name`` cannot be used as a template variable because it
+            would clash with the catalog identifier positional argument;
+            pick a different name for the variable (e.g., ``user_name``).
+
+    Returns:
+        The rendered string with ``**kwargs`` substituted into the
+        template body. Trailing newline is preserved.
+
+    Raises:
+        KeyError: When ``name`` is not in the catalog (propagated from
+            :func:`get_prompt`).
+        jinja2.UndefinedError: When the template references a variable
+            that was not provided in ``**kwargs``. The prompt name is
+            prefixed to the message for debuggability.
+        jinja2.TemplateError: For any other Jinja2 template error (parse
+            error, runtime error). The prompt name is prefixed to the
+            message.
+
+    Examples:
+        >>> render_prompt("jinja_simple", user_name="World")
+        'Hello, World!'
+    """
+    prompt = get_prompt(name)
+    template = _strict_jinja_env().from_string(prompt.template)
+    try:
+        return template.render(**kwargs)
+    except UndefinedError as exc:
+        raise UndefinedError(
+            f"prompt {name!r} requires undefined variable: {exc.message}"
+        ) from exc
+    except TemplateError as exc:
+        raise TemplateError(
+            f"prompt {name!r} template error: {exc.message}"
+        ) from exc
+
+
+def render_prompt_safe(name: str, **kwargs: Any) -> str:
+    """Render a prompt with sentinel substitution for missing declared vars (REQ-46, D4).
+
+    For each declared variable in ``metadata.required_vars`` that is not
+    present in ``**kwargs``, the literal sentinel ``<{var_name}>`` is
+    substituted BEFORE rendering. Used by CLI inspection surfaces
+    (future ``flow prompts show <id>``) where informative output matters
+    more than hard failure.
+
+    Args:
+        name: The catalog identifier.
+        **kwargs: Variable substitutions; missing declared vars get the
+            ``<{var_name}>`` sentinel automatically. NOTE: ``name`` cannot
+            be used as a template variable; pick a different name.
+
+    Returns:
+        The rendered string with sentinels in place of missing declared
+        variables. Never raises on missing variables.
+
+    Raises:
+        KeyError: When ``name`` is not in the catalog (propagated from
+            :func:`get_prompt`).
+    """
+    prompt = get_prompt(name)
+    declared = set(prompt.metadata.get("required_vars", ()))
+    safe_kwargs: dict[str, Any] = dict(kwargs)
+    for var_name in declared - set(safe_kwargs):
+        safe_kwargs[var_name] = f"<{var_name}>"
+    template = _safe_jinja_env().from_string(prompt.template)
+    return template.render(**safe_kwargs)
+
+
+def list_required_vars(name: str) -> set[str]:
+    """Return the set of variables a prompt template references (REQ-46 helper).
+
+    Parses the template AST via :func:`jinja2.meta.find_undeclared_variables`
+    and returns the names of every Jinja2 placeholder not declared by the
+    template itself. Useful for CLI surfaces that need to prompt the user
+    for inputs (future ``flow prompts show <id> --var``).
+
+    Args:
+        name: The catalog identifier.
+
+    Returns:
+        A set of variable name strings (possibly empty for templates
+        with no placeholders).
+
+    Raises:
+        KeyError: When ``name`` is not in the catalog (propagated from
+            :func:`get_prompt`).
+    """
+    prompt = get_prompt(name)
+    ast = _strict_jinja_env().parse(prompt.template)
+    return set(meta.find_undeclared_variables(ast))
