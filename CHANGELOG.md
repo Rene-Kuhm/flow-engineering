@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-06-27
+
+### Added
+- `flow metrics summary` CLI subcommand with `--format text|json|json-detailed`, `--window 1h|24h|7d|30d|<custom>`, `--since/--until ISO8601`, `--domain <name>` flags (REQ-35, REQ-36, REQ-37).
+- 6 pure read functions in `observability.py`: `MetricEvent`, `read_all_metrics`, `read_events_since`, `read_events_by_domain`, `summarize`, `prometheus_exposition`, `aggregate`, `atomic_write_text` (REQ-35..37 foundation).
+- `read_and_summarize()` helper + `MetricsSummaryResult` dataclass + 4 exit code constants (EXIT_OK=0, EXIT_INVALID_VALUE=2, EXIT_MALFORMED_METRICS=3, EXIT_WRITE_FAILURE=4).
+- `DOMAIN_BY_PREFIX` lookup table expanded from 4 to 8 domains (binding, drift, vector, snapshot, backfill, federated, metadata, engine) — REQ-37 widening.
+- `WINDOW_PATTERNS` table + `parse_window()` helper supporting presets (1h/24h/7d/30d) and custom `<int><h|d>` format — REQ-36.
+- `openspec/specs/observability/spec.md` bootstrapped (resolves cross-project-federation archive-report #61).
+- 6 `SKILL.md` runtime files carry the `## Metrics hook` section (added in batch E).
+
+### Tests
+- 862 / 862 tests passing (`uv run pytest`).
+- 20 BDD scenarios across 12 feature files (req35 + req36 + req37 + req17..req22 + req32 + req33 + req34 added 6 new scenarios).
+- See `openspec/changes/archive/2026-06-27-observability-pr1/` for full spec, design, and task breakdown.
+
+### Notes
+- `observability` change #6 PR#1 (foundation + summary + window + slice) shipped with 5 batches (A + B + C + D + E) in 24 work-unit commits.
+- Strict TDD throughout; 2.9x LOC multiplier realized as planned (read-side helpers are pure functions, lighter than CLI-heavy changes).
+- PR#2 (Prometheus export + percentile aggregation) lands in a follow-up commit on the same change.
+
+### Out-of-scope reminders (carried to PR#2)
+- REQ-38 Prometheus textfile export (PR#2)
+- REQ-39 percentile aggregation (PR#2)
+- JSONL rotation policy (REQ-44, deferred to v1.1)
+- Federation-aware metrics (REQ-43, deferred to v1.1)
+- Grafana dashboard export (deferred to v1.1)
+- OpenTelemetry push (deferred to v1.1)
+
 ## [0.6.0] - 2026-06-27
 
 ### Added
