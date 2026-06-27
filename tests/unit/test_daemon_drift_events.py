@@ -226,6 +226,139 @@ class TestHandleApplyProgressEvent:
         assert recorded[0] is report
 
 
+# ---------- Still-valid silence rule (REQ-56 W6, D4) ----------
+
+
+class TestStillValidSilence:
+    """REQ-56 W6: suppress outer summary line on still-valid silence.
+
+    Per design D4, the outer ``on_summary`` stdout line MUST be
+    suppressed when ``report.total == 0 and not report.graph_unavailable``.
+    The ``unable_to_verify`` edge case preserves the summary line so the
+    user knows the graph is unreachable.
+    """
+
+    def test_daemon_silent_when_all_bindings_still_valid(
+        self, metrics_path, fake_graph, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When every binding classifies as STILL_VALID (total == 0
+        after class-counts are summed), the outer ``on_summary`` callback
+        MUST NOT be invoked. The daemon returns the report normally;
+        counters (REQ-12) are still incremented via
+        ``observability.record_drift_summary``.
+        """
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=3,
+            bindings_total=3,
+            class_counts={DriftClass.STILL_VALID: 3},
+            findings=[
+                _make_finding(obs_id=1, drift_class=DriftClass.STILL_VALID),
+                _make_finding(obs_id=2, drift_class=DriftClass.STILL_VALID),
+                _make_finding(obs_id=3, drift_class=DriftClass.STILL_VALID),
+            ],
+        )
+        monkeypatch.setattr(
+            daemon.decision_drift,
+            "scan_change",
+            lambda *a, **kw: report,
+        )
+        summaries: list[str] = []
+
+        result = daemon.handle_apply_progress_event(
+            "my-change",
+            {"tasks": {"T1": {"status": "merged"}}},
+            graph_json_path=fake_graph,
+            on_summary=summaries.append,
+        )
+
+        assert result is report
+        assert summaries == []
+
+    def test_daemon_emits_unable_to_verify_when_graph_unavailable(
+        self, metrics_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Even when total == 0, a ``graph_unavailable=True`` report MUST
+        emit the unable_to_verify summary line (per design D4 edge case:
+        still-valid-but-graph-unavailable is informative).
+        """
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at=0.0,
+            graph_mtime=None,
+            decisions_total=0,
+            bindings_total=0,
+            class_counts={},
+            findings=[],
+            graph_unavailable=True,
+        )
+        monkeypatch.setattr(
+            daemon.decision_drift, "scan_change", lambda *a, **kw: report
+        )
+        summaries: list[str] = []
+
+        result = daemon.handle_apply_progress_event(
+            "my-change",
+            {"tasks": {"T1": {"status": "merged"}}},
+            graph_json_path=Path("/nonexistent/graph.json"),
+            on_summary=summaries.append,
+        )
+
+        assert result is report
+        assert len(summaries) == 1
+        assert "unable_to_verify" in summaries[0]
+        assert Path("/nonexistent/graph.json").name in summaries[0]
+
+    def test_daemon_emits_summary_line_when_drift_found(
+        self, metrics_path, fake_graph, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mixed-class breakdown (STILL_VALID + non-still-valid) MUST emit
+        the outer summary line with the per-class counts. This guards
+        against the W6 fix over-suppressing non-silent cases.
+        """
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=2,
+            bindings_total=3,
+            class_counts={
+                DriftClass.STILL_VALID: 1,
+                DriftClass.STALE_ID: 1,
+                DriftClass.LABEL_DRIFT: 1,
+            },
+            findings=[
+                _make_finding(obs_id=1, drift_class=DriftClass.STILL_VALID),
+                _make_finding(obs_id=2, drift_class=DriftClass.STALE_ID),
+                _make_finding(obs_id=3, drift_class=DriftClass.LABEL_DRIFT),
+            ],
+        )
+        monkeypatch.setattr(
+            daemon.decision_drift,
+            "scan_change",
+            lambda *a, **kw: report,
+        )
+        summaries: list[str] = []
+
+        result = daemon.handle_apply_progress_event(
+            "my-change",
+            {"tasks": {"T1": {"status": "merged"}}},
+            graph_json_path=fake_graph,
+            on_summary=summaries.append,
+        )
+
+        assert result is report
+        assert len(summaries) == 1
+        line = summaries[0]
+        assert line.startswith("drift: my-change")
+        assert "3 findings" in line
+        assert "1 STILL_VALID" in line
+        assert "1 STALE_ID" in line
+        assert "1 LABEL_DRIFT" in line
+
+
 # ---------- start_watch drift wiring ----------
 
 
