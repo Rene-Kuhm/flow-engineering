@@ -286,3 +286,90 @@ class TestSummaryWindowAndSinceUntil:
         assert payload == {
             "binding": {"binding_suggest_invoked_total": 2},
         }
+
+
+# ---------- T1.7: --domain widening to 8 values (REQ-37) ----------
+
+
+class TestSummaryDomainFilterWidening:
+    """T1.7: ``--domain`` flag widens from 4 values to 8 values (REQ-37 expansion).
+
+    Per the spec, ``--domain`` now accepts ``binding|backfill|drift|vector|
+    federated|snapshot|metadata|engine``. The ``engine`` slot is RESERVED
+    (REQ-42 deferred to v1.1); passing it succeeds with an empty filter
+    result rather than an error.
+    """
+
+    def test_metrics_summary_with_domain_filter_backfill(
+        self, metrics_path: Path,
+    ) -> None:
+        """`--domain=backfill` returns ONLY ``backfill_*`` events.
+
+        Regression check that the new ``backfill`` slot in
+        :data:`observability.ALL_DOMAINS` is wired through the CLI to
+        :func:`observability.read_events_by_domain`.
+        """
+        now = datetime.now(UTC)
+        _write_jsonl(metrics_path, [
+            _event("backfill_observations_total", {"count": 3}, _iso(now)),
+            _event("backfill_with_refs_total", {"count": 2}, _iso(now)),
+            _event("binding_suggest_invoked_total", {"count": 1}, _iso(now)),
+            _event("drift_invoked_total", {"count": 1}, _iso(now)),
+            _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
+        ])
+
+        result = runner.invoke(main, ["metrics", "summary", "--domain", "backfill"])
+
+        assert result.exit_code == 0, result.output
+        # The 2 backfill counters MUST appear in the output.
+        assert "backfill_observations_total" in result.output
+        assert "backfill_with_refs_total" in result.output
+        # Other-domain counters MUST be excluded.
+        assert "binding_suggest_invoked_total" not in result.output
+        assert "drift_invoked_total" not in result.output
+        assert "vector_search_invoked_total" not in result.output
+
+    def test_metrics_summary_with_domain_filter_engine(
+        self, metrics_path: Path,
+    ) -> None:
+        """`--domain=engine` succeeds with empty filter result (RESERVED slot).
+
+        The engine domain is RESERVED per REQ-42 (deferred to v1.1). v1
+        emits no ``engine_*`` counters, so the filter result is empty.
+        The command exits 0 (not an error) and renders the default-empty
+        contract text.
+        """
+        now = datetime.now(UTC)
+        _write_jsonl(metrics_path, [
+            _event("binding_suggest_invoked_total", {"count": 1}, _iso(now)),
+            _event("drift_invoked_total", {"count": 1}, _iso(now)),
+            _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
+        ])
+
+        result = runner.invoke(main, ["metrics", "summary", "--domain", "engine"])
+
+        assert result.exit_code == 0, result.output
+        # No engine_* counters exist in v1 — the filter result is empty,
+        # so the default-empty contract emits "No metrics recorded yet."
+        assert "No metrics recorded yet." in result.output
+
+    def test_metrics_summary_with_invalid_domain_exits_2_with_helpful_message(
+        self, metrics_path: Path,
+    ) -> None:
+        """Invalid --domain exits 2 with a helpful error message.
+
+        Tests the path where click.Choice rejects the value BEFORE the
+        handler runs (no fallback through validate_domain needed).
+        """
+        result = runner.invoke(
+            main, ["metrics", "summary", "--domain", "garbage"],
+        )
+
+        assert result.exit_code == 2, result.output
+        # The error message must mention the invalid value AND list at
+        # least one of the valid domains so the operator can self-correct.
+        # click's UsageError renders to stderr; the merged output
+        # contains the message in both stdout + stderr streams.
+        combined = result.output
+        assert "garbage" in combined
+        assert "binding" in combined  # any valid domain reference
