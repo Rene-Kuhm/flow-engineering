@@ -222,9 +222,12 @@ class TestPrometheusExposition:
         events = observability.read_all_metrics()
         text = observability.prometheus_exposition(events)
 
-        assert "# HELP suggest_invoked_total" in text
-        assert "# TYPE suggest_invoked_total counter" in text
-        assert "suggest_invoked_total" in text
+        # PR#2 T2.1 (D6): the default prefix ``flow_`` is prepended to every
+        # counter name. The PR#1 placeholder emitted raw names; PR#2 extends
+        # the helper with the D6 prefix contract.
+        assert "# HELP flow_suggest_invoked_total" in text
+        assert "# TYPE flow_suggest_invoked_total counter" in text
+        assert "flow_suggest_invoked_total" in text
 
 
 # ---------- aggregate ----------
