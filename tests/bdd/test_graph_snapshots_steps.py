@@ -39,6 +39,9 @@ from pytest_bdd import given, parsers, scenario, then, when
 from flow_engineering.engram_io import InMemoryBackend
 from flow_engineering.snapshot_manager import (
     SNAPSHOT_SCHEMA_VERSION,
+    PruneNoFilterError,
+    PruneResult,
+    PruneSafetyGateError,
     RollbackConflictError,
     RollbackRefusedError,
     RollbackResult,
@@ -775,3 +778,210 @@ def _read_envelope_safe(path: Path) -> dict[str, Any]:
     import gzip as _gzip
     with _gzip.open(path, "rt", encoding="utf-8") as fh:
         return json.loads(fh.read())
+
+
+# ============================================================
+# REQ-34: snapshot retention pruning (2 scenarios)
+# ============================================================
+
+
+@scenario(
+    "../bdd/req34_snapshot_prune.feature",
+    "Prune with --keep-last evicts oldest beyond N",
+)
+def test_req34_prune_keep_last_evicts_oldest(snapshot_world):
+    pass
+
+
+@scenario(
+    "../bdd/req34_snapshot_prune.feature",
+    "Prune without --confirm is dry-run",
+)
+def test_req34_prune_dry_run_no_confirm(snapshot_world):
+    pass
+
+
+# ---------- Given steps (REQ-34) ----------
+
+
+@given(parsers.parse("{n:d} snapshots exist with timestamps spanning {n:d} days"))
+def given_n_snapshots_spanning_days(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """Create ``n`` snapshots backdated to cover ``n`` distinct days.
+
+    The newest snapshot uses ``now``; each older snapshot is backdated by
+    one additional day (via envelope ``created_at`` rewrite, since the
+    snap_id encodes the wall-clock at create time). The InMemoryBackend
+    is seeded once so all snapshots observe the same observation set.
+    """
+    snapshot_world["snapshots_dir"].mkdir(parents=True, exist_ok=True)
+    mgr = _get_manager(snapshot_world)
+    _seed_obs(snapshot_world["backend"], count=1)
+
+    from datetime import UTC, datetime, timedelta
+    import gzip as _gzip
+    import hashlib as _hashlib
+
+    ids: list[str] = []
+    for offset in range(n):
+        sid = mgr.create(description=f"day-{offset}")
+        ids.append(sid)
+        # Backdate the envelope so the ``created_at`` reflects the offset.
+        path = snapshot_world["snapshots_dir"] / f"{sid}.json.gz"
+        with _gzip.open(path, "rt", encoding="utf-8") as fh:
+            envelope = json.loads(fh.read())
+        backdated = datetime.now(UTC) - timedelta(days=(n - 1 - offset))
+        envelope["created_at"] = backdated.strftime("%Y-%m-%dT%H:%M:%SZ")
+        meta_for_hash = {
+            k: v for k, v in envelope["metadata"].items() if k != "sha256"
+        }
+        envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+        envelope_for_hash["metadata"] = meta_for_hash
+        envelope["metadata"]["sha256"] = _hashlib.sha256(
+            _canonical_json_dumps(envelope_for_hash).encode("utf-8")
+        ).hexdigest()
+        with _gzip.open(path, "wt", encoding="utf-8") as fh:
+            fh.write(_canonical_json_dumps(envelope))
+        snapshot_world["snap_ids"].append(sid)
+        snapshot_world["created_at_by_id"][sid] = envelope["created_at"]
+
+
+@given(parsers.parse("the {n:d} oldest are NOT pinned and NOT the most recent"))
+def given_n_oldest_not_pinned(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """Sanity precondition — the 3 oldest snapshots are regular (un-pinned).
+
+    The current spec creates all snapshots un-pinned by default, so this
+    step is mostly a contract assertion for the feature's intent.
+    """
+    import gzip as _gzip
+    oldest_ids = snapshot_world["snap_ids"][:n]
+    for sid in oldest_ids:
+        path = snapshot_world["snapshots_dir"] / f"{sid}.json.gz"
+        with _gzip.open(path, "rt", encoding="utf-8") as fh:
+            envelope = json.loads(fh.read())
+        assert envelope["metadata"].get("pinned", False) is False, (
+            f"expected oldest snapshot {sid} to NOT be pinned"
+        )
+
+
+@given(parsers.parse("{n:d} snapshots exist"))
+def given_n_snapshots_simple(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """Plain ``Given N snapshots exist`` setup (no date span)."""
+    snapshot_world["snapshots_dir"].mkdir(parents=True, exist_ok=True)
+    mgr = _get_manager(snapshot_world)
+    _seed_obs(snapshot_world["backend"], count=1)
+    for i in range(n):
+        sid = mgr.create(description=f"snap-{i}")
+        snapshot_world["snap_ids"].append(sid)
+        if i < n - 1:
+            time.sleep(1.01)
+
+
+# ---------- When steps (REQ-34) ----------
+
+
+@when(parsers.parse("I run flow snapshot prune with --keep-last {n:d} and --confirm"))
+def when_prune_keep_last_with_confirm(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """Invoke ``SnapshotManager.prune(keep_last=N, confirm=True)``."""
+    mgr = _get_manager(snapshot_world)
+    snapshot_world["files_before"] = sorted(
+        p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+    )
+    snapshot_world["prune_exception"] = None
+    try:
+        snapshot_world["prune_result"] = mgr.prune(keep_last=n, confirm=True)
+    except (PruneNoFilterError, PruneSafetyGateError) as exc:
+        snapshot_world["prune_exception"] = exc
+
+
+@when(parsers.parse("I run flow snapshot prune with --keep-last {n:d} (no --confirm)"))
+def when_prune_keep_last_no_confirm(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """Invoke ``SnapshotManager.prune(keep_last=N)`` (dry-run)."""
+    mgr = _get_manager(snapshot_world)
+    snapshot_world["files_before"] = sorted(
+        p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+    )
+    snapshot_world["prune_exception"] = None
+    try:
+        snapshot_world["prune_result"] = mgr.prune(keep_last=n, confirm=False)
+    except (PruneNoFilterError, PruneSafetyGateError) as exc:
+        snapshot_world["prune_exception"] = exc
+
+
+# ---------- Then steps (REQ-34) ----------
+
+
+@then(parsers.parse("exactly {n:d} snapshot files are removed"))
+def then_n_files_removed(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    before = len(snapshot_world["files_before"])
+    after_files = sorted(
+        p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+    )
+    after = len(after_files)
+    assert before - after == n, (
+        f"expected exactly {n} files removed (before={before}, after={after}); "
+        f"removed={set(snapshot_world['files_before']) - set(after_files)}"
+    )
+    snapshot_world["files_after"] = after_files
+
+
+@then(parsers.parse("the remaining {n:d} are the {n:d} most recent"))
+def then_remaining_are_most_recent(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """The ``n`` remaining snapshot ids are the ``n`` most recent (last n)."""
+    remaining_ids = [
+        p.name.replace(".json.gz", "") for p in (
+            snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+        )
+    ]
+    expected = snapshot_world["snap_ids"][-n:]
+    assert set(remaining_ids) == set(expected), (
+        f"expected remaining={expected!r}; got {remaining_ids!r}"
+    )
+
+
+@then("no snapshot files are removed")
+def then_no_files_removed(snapshot_world: dict[str, Any]) -> None:
+    after_files = sorted(
+        p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+    )
+    assert after_files == snapshot_world["files_before"], (
+        f"dry-run MUST NOT touch files; before={snapshot_world['files_before']} "
+        f"after={after_files}"
+    )
+
+
+@then(parsers.parse("the prune output lists {n:d} \"would delete\" ids"))
+def then_prune_would_delete_count(
+    snapshot_world: dict[str, Any], n: int,
+) -> None:
+    """``result.would_delete`` has ``n`` ids and ``result.dry_run`` is True."""
+    result = snapshot_world["prune_result"]
+    assert isinstance(result, PruneResult), (
+        f"expected PruneResult; got {type(result).__name__}: {result!r}"
+    )
+    assert result.dry_run is True
+    assert len(result.would_delete) == n, (
+        f"expected {n} would_delete ids; got {len(result.would_delete)}: "
+        f"{result.would_delete!r}"
+    )
+
+
+@then("the prune command exit code is 0")
+def then_prune_exit_zero(snapshot_world: dict[str, Any]) -> None:
+    """The library call returned a PruneResult (no exception)."""
+    exc = snapshot_world.get("prune_exception")
+    assert exc is None, f"unexpected prune exception: {exc!r}"
+    assert snapshot_world.get("prune_result") is not None
