@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from sdd/cross-project-federation/tasks (Engram #162; W18 checkbox flip landed as part of archive housekeeping) -->
 <!-- tasks.md: cross-project-federation. Source: manual. -->
 # Tasks: cross-project-federation
 
@@ -211,7 +212,7 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
 
 ### T1.8 — Add 3 federated observability counters + `record_federated_summary` (REQ-26)
 
-- **Type:** test + code
+- **Type:** code
 - **TDD phase:** RED → GREEN
 - **LOC:** ~40 impl + ~100 tests = ~140
 - **Files:**
@@ -219,13 +220,13 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/unit/test_observability_federated.py` (NEW)
 - **Dependencies:** none (library-only; consumed by T1.2 InMemoryBackend override + T1.6 CLI flags)
 - **Acceptance criteria:**
-  - [ ] RED: `test_record_federated_summary_emits_3_events` fails (helper missing); `test_federated_counter_names_catalog_has_3` fails; `test_federated_search_invoked_total_increments` fails
-  - [ ] GREEN: `FEDERATED_COUNTER_NAMES: list[str] = ["federated_search_invoked_total", "federated_search_projects_queried", "federated_search_results_returned_total"]` (3 names, parallels `VECTOR_COUNTER_NAMES` at `observability.py:63`)
-  - [ ] GREEN: `record_federated_summary(*, invoked=1, projects_queried=3, results_returned=7)` emits 3 JSONL events: `{"counter": "federated_search_invoked_total", "count": 1}`, `{"counter": "federated_search_projects_queried", "count": 3}`, `{"counter": "federated_search_results_returned_total", "count": 7}`
-  - [ ] GREEN: `projects_queried=None` (search-all case) emits `count=0` for the histogram bucket
-  - [ ] GREEN: `federated_search_projects_queried` has NO `_total` suffix because the value IS the count (mirrors D4 decision)
-  - [ ] GREEN: `flow metrics` summary output includes all 3 federated counter rows (assertable via test snapshot)
-- **Commit:** `feat(observability): 3 federated_* counters + record_federated_summary helper (REQ-26)`
+  - [x] RED: `test_record_federated_summary_emits_3_events` fails (helper missing); `test_federated_counter_names_catalog_has_3` fails; `test_federated_search_invoked_total_increments` fails
+  - [x] GREEN: `FEDERATED_COUNTER_NAMES: list[str] = ["federated_search_invoked_total", "federated_search_projects_queried", "federated_search_results_returned_total"]` (3 names, parallels `VECTOR_COUNTER_NAMES` at `observability.py:63`)
+  - [x] GREEN: `record_federated_summary(*, invoked=1, projects_queried=3, results_returned=7)` emits 3 JSONL events: `{"counter": "federated_search_invoked_total", "count": 1}`, `{"counter": "federated_search_projects_queried", "count": 3}`, `{"counter": "federated_search_results_returned_total", "count": 7}`
+  - [x] GREEN: `projects_queried=None` (search-all case) emits `count=0` for the histogram bucket
+  - [x] GREEN: `federated_search_projects_queried` has NO `_total` suffix because the value IS the count (mirrors D4 decision)
+  - [x] GREEN: `flow metrics` summary output includes all 3 federated counter rows (assertable via test snapshot)
+- **Commit:** `feat(observability): 3 federated_* counters + record_federated_summary helper (REQ-26)` — DONE (b31c48f GREEN + e8ecd2a BDD)
 
 ### T1.9 — BDD feature `req26_federated_observability.feature` (4 scenarios)
 
@@ -237,14 +238,14 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/bdd/test_cross_project_federation_steps.py` (extend — step glue for REQ-26)
 - **Dependencies:** T1.8
 - **Acceptance criteria:**
-  - [ ] Feature file contains 4 scenarios matching spec REQ-26:
+  - [x] Feature file contains 4 scenarios matching spec REQ-26:
     1. `federated_search_invoked_total` increments per federated call
     2. `federated_search_projects_queried` shows the count distribution (histogram of project-bucket sizes)
     3. `federated_search_results_returned_total` increments by sum of result counts
     4. All 3 counters appear in `flow metrics` output (`FEDERATED_COUNTER_NAMES` is the canonical catalog)
-  - [ ] Step defs read `~/.flow-engineering/metrics.jsonl` via `observability.snapshot()` and assert counter deltas
-  - [ ] `uv run pytest tests/bdd/req26_federated_observability.feature -v` passes all 4 scenarios
-- **Commit:** `test(bdd): req26_federated_observability feature with 4 scenarios + step glue`
+  - [x] Step defs read `~/.flow-engineering/metrics.jsonl` via `observability.snapshot()` and assert counter deltas
+  - [x] `uv run pytest tests/bdd/req26_federated_observability.feature -v` passes all 4 scenarios
+- **Commit:** `test(bdd): req26_federated_observability feature with 4 scenarios + step glue` — DONE (e8ecd2a)
 
 ### T1.10 — Implement `project-aliases.json` + `flow projects alias <old> <new>` (REQ-27)
 
@@ -258,16 +259,16 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/unit/test_cli_projects_alias.py` (NEW)
 - **Dependencies:** none (pure library + small CLI subcommand)
 - **Acceptance criteria:**
-  - [ ] RED: `test_resolve_identity_for_non_aliased` fails; `test_resolve_rewrites_aliased_name` fails; `test_load_aliases_missing_file_returns_empty` fails; `test_load_aliases_malformed_json_raises_with_path` fails; `test_save_aliases_atomic_write_via_tempfile` fails; `test_add_alias_idempotent_same_target_noop` fails; `test_add_alias_conflicting_target_errors` fails
-  - [ ] GREEN: `resolve("flow-image-generator-v2", aliases=[{"old": "flow-image-generator-v2", "new": "flow-image-generator-main", "created_at": "..."}])` returns `"flow-image-generator-main"` (forward-only)
-  - [ ] GREEN: `resolve("flow-engineering", aliases=[...])` returns `"flow-engineering"` (identity for non-aliased)
-  - [ ] GREEN: `load_aliases(path=tmp_path/"aliases.json")` returns `[]` when file missing + increments `alias_config_load_failed_total{reason="missing"}` counter
-  - [ ] GREEN: `load_aliases(path=tmp_path/"bad.json")` raises `AliasConfigParseError` with message containing `"failed to parse project-aliases.json at <path>: <json-error>"` + increments `alias_config_load_failed_total{reason="malformed"}` counter
-  - [ ] GREEN: `save_aliases([...], path=...)` writes via `tempfile.NamedTemporaryFile + Path.replace` (atomic); original file unchanged on mid-write crash (verified via `monkeypatch.setattr(Path, "replace", lambda self: raise OSError)`)
-  - [ ] GREEN: `flow projects alias flow-image-generator-v2 flow-image-generator-main` writes file (REQ-27 scenario 2); stdout contains `"alias added: flow-image-generator-v2 -> flow-image-generator-main"`
-  - [ ] GREEN: Re-invoking `flow projects alias <old> <same_new>` is no-op (REQ-27 scenario 4); stdout contains `"alias already present: <old> -> <same_new>"`
-  - [ ] GREEN: `flow projects alias <old> <different_new>` when alias exists exits non-zero (REQ-27 scenario 3); stderr contains `"alias for <old> already maps to <existing_new>; refusing to overwrite"`; existing record UNCHANGED
-- **Commit:** `feat(backend): project-aliases.json + flow projects alias subcommand with idempotency + atomic write (REQ-27)`
+  - [x] RED: `test_resolve_identity_for_non_aliased` fails; `test_resolve_rewrites_aliased_name` fails; `test_load_aliases_missing_file_returns_empty` fails; `test_load_aliases_malformed_json_raises_with_path` fails; `test_save_aliases_atomic_write_via_tempfile` fails; `test_add_alias_idempotent_same_target_noop` fails; `test_add_alias_conflicting_target_errors` fails
+  - [x] GREEN: `resolve("flow-image-generator-v2", aliases=[{"old": "flow-image-generator-v2", "new": "flow-image-generator-main", "created_at": "..."}])` returns `"flow-image-generator-main"` (forward-only)
+  - [x] GREEN: `resolve("flow-engineering", aliases=[...])` returns `"flow-engineering"` (identity for non-aliased)
+  - [x] GREEN: `load_aliases(path=tmp_path/"aliases.json")` returns `[]` when file missing + increments `alias_config_load_failed_total{reason="missing"}` counter
+  - [x] GREEN: `load_aliases(path=tmp_path/"bad.json")` raises `AliasConfigParseError` with message containing `"failed to parse project-aliases.json at <path>: <json-error>"` + increments `alias_config_load_failed_total{reason="malformed"}` counter
+  - [x] GREEN: `save_aliases([...], path=...)` writes via `tempfile.NamedTemporaryFile + Path.replace` (atomic); original file unchanged on mid-write crash (verified via `monkeypatch.setattr(Path, "replace", lambda self: raise OSError)`)
+  - [x] GREEN: `flow projects alias flow-image-generator-v2 flow-image-generator-main` writes file (REQ-27 scenario 2); stdout contains `"alias added: flow-image-generator-v2 -> flow-image-generator-main"`
+  - [x] GREEN: Re-invoking `flow projects alias <old> <same_new>` is no-op (REQ-27 scenario 4); stdout contains `"alias already present: <old> -> <same_new>"`
+  - [x] GREEN: `flow projects alias <old> <different_new>` when alias exists exits non-zero (REQ-27 scenario 3); stderr contains `"alias for <old> already maps to <existing_new>; refusing to overwrite"`; existing record UNCHANGED
+- **Commit:** `feat(backend): project-aliases.json + flow projects alias subcommand with idempotency + atomic write (REQ-27)` — DONE (97f5a94)
 
 ### T1.11 — BDD feature `req27_project_aliases.feature` (5 scenarios)
 
@@ -279,16 +280,16 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/bdd/test_cross_project_federation_steps.py` (extend — step glue for REQ-27)
 - **Dependencies:** T1.10
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-27:
+  - [x] Feature file contains 5 scenarios matching spec REQ-27:
     1. Query for `flow-image-generator-v2` returns `flow-image-generator-main` rows when alias exists
     2. `flow projects alias flow-image-generator-v2 flow-image-generator-main` writes the file
     3. `flow projects alias <old> <new>` with an existing alias for `<old>` to a `<different_new>` ERRORS (no silent history loss)
     4. Re-invoking with the same `<old> <new>` is a no-op + prints confirmation (idempotent)
     5. Alias file with malformed JSON fails fast on startup with clear error
-  - [ ] Step defs use `tmp_path` for alias config; `CliRunner` for CLI invocations
-  - [ ] Scenario 1 must trace through `project_aliases.resolve()` → `mem_search_federated` SQL → returned row's `project` field equals `"flow-image-generator-main"` (canonical name, NOT the alias)
-  - [ ] `uv run pytest tests/bdd/req27_project_aliases.feature -v` passes all 5 scenarios
-- **Commit:** `test(bdd): req27_project_aliases feature with 5 scenarios + step glue`
+  - [x] Step defs use `tmp_path` for alias config; `CliRunner` for CLI invocations
+  - [x] Scenario 1 must trace through `project_aliases.resolve()` → `mem_search_federated` SQL → returned row's `project` field equals `"flow-image-generator-main"` (canonical name, NOT the alias)
+  - [x] `uv run pytest tests/bdd/req27_project_aliases.feature -v` passes all 5 scenarios
+- **Commit:** `test(bdd): req27_project_aliases feature with 5 scenarios + step glue` — DONE (70921dc)
 
 ### T1.12 — Implement `flow projects backfill [--dry-run] [--confirm] [--project] [--since]` (REQ-24 CLI surface)
 
@@ -325,10 +326,10 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `~/.config/opencode/skills/sdd-archive/SKILL.md` (runtime)
 - **Dependencies:** all T1.1..T1.12
 - **Acceptance criteria:**
-  - [ ] `CHANGELOG.md` v0.5.0 entry lists: `--federated --projects --since --type` flags on `flow search`; `flow projects alias` + `flow projects backfill` subcommands; `mem_search_federated` ABC v1.2 + `InMemoryBackend` impl; 3 new `federated_*` counters + `record_federated_summary` helper; `project_detector` + `project_aliases` modules; `~/.config/flow-engineering/registry.json` + `project-aliases.json` runtime configs; ABC v1.1 → v1.2 bump
-  - [ ] 6 SKILL.md prose updates name all 5 REQs (REQ-23..27) and reference `mem_search_federated`, `--federated` flag, `flow projects alias`, `flow projects backfill --dry-run`, `project-aliases.json`, and the 3 federated counters in their respective "Cross-project federation hook" sections
-  - [ ] CHANGELOG entry follows the `[0.4.0]` format (Added / Tests / Notes sections)
-- **Commit:** `docs(release): CHANGELOG v0.5.0 entry + 6 SKILL.md cross-project federation hooks`
+  - [x] `CHANGELOG.md` v0.5.0 entry lists: `--federated --projects --since --type` flags on `flow search`; `flow projects alias` + `flow projects backfill` subcommands; `mem_search_federated` ABC v1.2 + `InMemoryBackend` impl; 3 new `federated_*` counters + `record_federated_summary` helper; `project_detector` + `project_aliases` modules; `~/.config/flow-engineering/registry.json` + `project-aliases.json` runtime configs; ABC v1.1 → v1.2 bump
+  - [x] 6 SKILL.md prose updates name all 5 REQs (REQ-23..27) and reference `mem_search_federated`, `--federated` flag, `flow projects alias`, `flow projects backfill --dry-run`, `project-aliases.json`, and the 3 federated counters in their respective "Cross-project federation hook" sections
+  - [x] CHANGELOG entry follows the `[0.4.0]` format (Added / Tests / Notes sections)
+- **Commit:** `docs(release): CHANGELOG v0.5.0 entry + 6 SKILL.md cross-project federation hooks` — DONE (CHANGELOG entry in PR#10 squash `bfa2db5`; 6 SKILL.md hooks shipped as part of batch C work; W17 doc-accuracy fix in `4c6b39b`)
 
 ---
 

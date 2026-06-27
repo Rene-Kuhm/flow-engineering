@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from sdd/cross-project-federation/spec (Engram #161) -->
 <!-- Spec: cross-project-federation. Source: manual. -->
 # Spec: cross-project-federation
 

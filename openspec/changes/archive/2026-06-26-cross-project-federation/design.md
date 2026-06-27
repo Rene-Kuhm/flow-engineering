@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from sdd/cross-project-federation/design (Engram #159) -->
 # Design: cross-project-federation
 
 > Mirror of Engram `sdd/cross-project-federation/design` (topic_key upsert

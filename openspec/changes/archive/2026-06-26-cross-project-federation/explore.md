@@ -1,3 +1,4 @@
+<!-- Archived 2026-06-26 from sdd/cross-project-federation/explore (Engram #156) -->
 # Explore: cross-project-federation
 
 > Mirror of Engram #156 (`sdd/cross-project-federation/explore`). Kept on disk
