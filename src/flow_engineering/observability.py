@@ -502,6 +502,7 @@ DOMAIN_BY_PREFIX: dict[str, str] = {
     "snapshot_": "snapshot",      # REQ-26 snapshot (graph-snapshots)
     "update_observation_metadata_": "metadata",  # REQ-13 / REQ-24
     "project_tag_": "metadata",   # REQ-24
+    "engine_": "engine",          # REQ-42 reserved (no v1 counters; v1.1 follow-up)
 }
 """Prefix -> domain lookup table for change #6 read-side helpers (design D5).
 
@@ -510,7 +511,52 @@ Maps each counter-name prefix to its owning domain. Used by
 :func:`read_events_by_domain` (inverse lookup: prefixes per domain).
 Counter names that do NOT match any registered prefix fall into the
 ``"unknown"`` bucket per W23 dual-name history.
+
+The 8 unique domain values (binding, backfill, drift, vector, federated,
+snapshot, metadata, engine) are exported as :data:`ALL_DOMAINS` for
+validation and CLI help-text rendering. The ``engine`` slot is RESERVED
+for REQ-42 (``engine_*`` counters deferred to v1.1) — accepting the value
+lets ``--domain=engine`` succeed with "no events matched" rather than
+erroring.
 """
+
+
+ALL_DOMAINS: tuple[str, ...] = (
+    "binding",
+    "backfill",
+    "drift",
+    "vector",
+    "federated",
+    "snapshot",
+    "metadata",
+    "engine",
+)
+"""Canonical list of accepted domain names for ``--domain=<D>`` filtering (REQ-37 / design D5).
+
+The 8-value set covers the 7 active domains (each backed by at least one
+prefix in :data:`DOMAIN_BY_PREFIX`) plus the reserved ``engine`` slot
+(REQ-42 deferred to v1.1). Order is stable for CLI ``--help`` rendering
+and for ``validate_domain`` error messages; case-sensitive.
+"""
+
+
+def validate_domain(domain: str) -> str:
+    """Validate ``domain`` is an accepted domain name; return it unchanged.
+
+    Returns the input ``domain`` string when it is one of the values in
+    :data:`ALL_DOMAINS`. Raises :class:`ValueError` with a helpful message
+    listing every valid domain otherwise — callers (e.g., the CLI) catch
+    this and emit exit-code-2 per design D9 (usage error).
+
+    Case-sensitive (mirrors ``click.Choice(ACCEPTED_DOMAINS)`` semantics):
+    ``"Binding"`` is rejected. Callers that accept case-insensitive input
+    MUST ``.lower()`` the value before calling.
+    """
+    if domain not in ALL_DOMAINS:
+        raise ValueError(
+            f"unknown domain {domain!r}; valid: {', '.join(ALL_DOMAINS)}"
+        )
+    return domain
 
 
 @dataclass(frozen=True)
