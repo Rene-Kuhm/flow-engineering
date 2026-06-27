@@ -336,8 +336,8 @@ class TestSummaryDomainFilterWidening:
 
         The engine domain is RESERVED per REQ-42 (deferred to v1.1). v1
         emits no ``engine_*`` counters, so the filter result is empty.
-        The command exits 0 (not an error) and renders the default-empty
-        contract text.
+        The command exits 0 (not an error) and renders the filter-empty
+        contract text per T1.8 (D8/D9 case 4).
         """
         now = datetime.now(UTC)
         _write_jsonl(metrics_path, [
@@ -349,9 +349,11 @@ class TestSummaryDomainFilterWidening:
         result = runner.invoke(main, ["metrics", "summary", "--domain", "engine"])
 
         assert result.exit_code == 0, result.output
-        # No engine_* counters exist in v1 — the filter result is empty,
-        # so the default-empty contract emits "No metrics recorded yet."
-        assert "No metrics recorded yet." in result.output
+        # No engine_* counters exist in v1 — the domain filter excludes
+        # every event. T1.8 contract: empty summary after filtering emits
+        # "No metrics in window/domain." (filter-empty, NOT the
+        # missing/empty-file case).
+        assert "No metrics in window/domain." in result.output
 
     def test_metrics_summary_with_invalid_domain_exits_2_with_helpful_message(
         self, metrics_path: Path,

@@ -1053,15 +1053,19 @@ def metrics_summary(
     since_iso: str | None,
     until_iso: str | None,
 ) -> None:
-    """Render the per-domain text dashboard (REQ-35 / change #6 PR#1 T1.2 + T1.5).
+    """Render the per-domain text dashboard (REQ-35 / change #6 PR#1 T1.2 + T1.5 + T1.8).
 
-    Reads metrics.jsonl via the new :func:`observability.read_all_metrics`
-    helpers, applies any active ``--window`` / ``--domain`` / ``--since` /
-    ``--until`` filter, and renders the result via :func:`observability.summarize`.
+    Uses :func:`observability.read_and_summarize` for the read+filter+summary
+    pipeline + empty-reason detection (D8 default-empty contract). Applies
+    ``--since`` / ``--until`` as a post-filter pass when those flags are set.
 
-    Default-empty contract (D8): empty / missing / no-match → exit 0 with
-    ``"No metrics recorded yet."`` on stdout. Invalid ``--window`` /
-    ``--since`` / ``--until`` values emit a stderr error and exit 2 (D9).
+    Exit-code mapping (D9):
+    - 0: success (including empty / missing → "No metrics recorded yet.").
+    - 2: invalid flag value (``--window`` parse failure, ``--since`` /
+      ``--until`` ISO parse failure, ``--domain`` unknown).
+    - 3: metrics file exists but every line is malformed
+      (D9 ``EXIT_MALFORMED_METRICS``); emits ``"Error: metrics file at
+      <path> is malformed."`` to stderr.
     """
     fmt_lower = fmt.lower()
 
@@ -1071,7 +1075,7 @@ def metrics_summary(
             since_epoch = _parse_since(since_iso)
         except ValueError as exc:
             click.echo(f"invalid --since value: {exc}", err=True)
-            sys.exit(2)
+            sys.exit(observability.EXIT_INVALID_VALUE)
 
     until_epoch: float | None = None
     if until_iso is not None:
@@ -1079,14 +1083,56 @@ def metrics_summary(
             until_epoch = _parse_since(until_iso)
         except ValueError as exc:
             click.echo(f"invalid --until value: {exc}", err=True)
-            sys.exit(2)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    # Validate --window EARLY so a bad value exits 2 even when the JSONL
+    # sink is missing (read_and_summarize short-circuits on empty reason
+    # before applying the window filter, so we must validate here).
+    if window is not None:
+        try:
+            observability.parse_window(window)
+        except ValueError as exc:
+            click.echo(f"invalid --window value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    domain_normalized: str | None = None
+    if domain is not None:
+        # click.Choice accepts mixed case (case_sensitive=False), but
+        # DOMAIN_BY_PREFIX keys are lowercase — normalize before lookup.
+        try:
+            domain_normalized = observability.validate_domain(domain.lower())
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
 
     try:
+        result = observability.read_and_summarize(
+            window=window,
+            domain=domain_normalized,
+        )
+    except ValueError as exc:
+        # unknown domain / parse_window failure — defensive fallback
+        # (click.Choice covers the validation path at parse time).
+        click.echo(str(exc), err=True)
+        sys.exit(observability.EXIT_INVALID_VALUE)
+
+    if result.empty_reason == "missing_file" or result.empty_reason == "empty_file":
+        click.echo("No metrics recorded yet.")
+        return
+    if result.empty_reason == "all_malformed":
+        click.echo(
+            f"Error: metrics file at {result.source_path} is malformed.",
+            err=True,
+        )
+        sys.exit(observability.EXIT_MALFORMED_METRICS)
+
+    summary_data = result.summary
+
+    # --since / --until are applied as a post-filter pass because
+    # read_and_summarize() handles only window+domain (per design D8/D9).
+    if since_epoch is not None or until_epoch is not None:
         events = observability.read_all_metrics()
-        if domain is not None:
-            # click.Choice accepts mixed case (case_sensitive=False), but
-            # DOMAIN_BY_PREFIX keys are lowercase — normalize before lookup.
-            domain_normalized = observability.validate_domain(domain.lower())
+        if domain_normalized is not None:
             events = observability.read_events_by_domain(domain_normalized)
         if window is not None:
             events = observability.filter_by_window(events, window)
@@ -1094,19 +1140,13 @@ def metrics_summary(
             events = [e for e in events if e.timestamp >= since_epoch]
         if until_epoch is not None:
             events = [e for e in events if e.timestamp <= until_epoch]
-    except ValueError as exc:
-        # read_events_by_domain raises on unknown domain; click's Choice
-        # already covers the validation path, but defensive in case the
-        # list is widened at runtime. Also catches parse_window errors.
-        click.echo(str(exc), err=True)
-        sys.exit(2)
+        summary_data = observability.summarize(events)
 
-    summary_data = observability.summarize(events)
+    if not any(summary_data.values()):
+        click.echo("No metrics in window/domain.")
+        return
 
     if fmt_lower == "text":
-        if not any(summary_data.values()):
-            click.echo("No metrics recorded yet.")
-            return
         for d in sorted(summary_data):
             click.echo(f"{d}:")
             for counter, count in sorted(summary_data[d].items()):
@@ -1116,7 +1156,7 @@ def metrics_summary(
         click.echo(json.dumps(summary_data, ensure_ascii=False, indent=2))
         return
     click.echo(f"unknown --format value: {fmt}", err=True)
-    sys.exit(2)
+    sys.exit(observability.EXIT_INVALID_VALUE)
 
 
 # ---------- REQ-10/11/14: flow drift <change> ----------
