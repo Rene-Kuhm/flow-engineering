@@ -544,3 +544,317 @@ class TestDiffOneArgVsLive:
         assert diff.modified[0]["id"] == 1
         assert diff.modified[0]["field"] == "content"
         assert diff.modified[0]["after"] == "v2 updated"
+
+
+# ---------- REQ-32: rollback with auto-safety snapshot ----------
+
+
+class TestRollbackRefusedWithoutConfirm:
+    """``rollback(snap_id, confirm=False)`` raises ``RollbackRefusedError``."""
+
+    def test_rollback_without_confirm_raises_refused_error(
+        self, tmp_path: Path
+    ) -> None:
+        from flow_engineering.snapshot_manager import (
+            RollbackRefusedError,
+            SnapshotManager,
+        )
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_id = manager.create(description="target")
+
+        with pytest.raises(RollbackRefusedError) as excinfo:
+            manager.rollback(snap_id, confirm=False)
+
+        # Error payload has the two required keys per REQ-32 scenario 1.
+        payload = excinfo.value.payload
+        assert payload["error"] == (
+            "--confirm required to write; use --dry-run to preview"
+        )
+        assert payload["snap_id"] == snap_id
+
+    def test_rollback_without_confirm_does_not_create_safety_snapshot(
+        self, tmp_path: Path
+    ) -> None:
+        """No Phase 1 safety snapshot must exist when --confirm is absent."""
+        from flow_engineering.snapshot_manager import (
+            RollbackRefusedError,
+            SnapshotManager,
+        )
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_id = manager.create(description="target")
+
+        # Only one snapshot file (the target) before the rollback attempt.
+        files_before = sorted(tmp_path.glob("snap_*.json.gz"))
+        assert len(files_before) == 1
+
+        with pytest.raises(RollbackRefusedError):
+            manager.rollback(snap_id, confirm=False)
+
+        # Still only one snapshot file — Phase 1 did NOT run.
+        files_after = sorted(tmp_path.glob("snap_*.json.gz"))
+        assert len(files_after) == 1, (
+            f"No safety snapshot should be created without --confirm; "
+            f"found {len(files_after)} files: {[p.name for p in files_after]}"
+        )
+
+
+class TestRollbackAutoSafetySnapshot:
+    """``rollback(snap_id, confirm=True)`` creates a safety snapshot FIRST."""
+
+    def test_rollback_creates_safety_snapshot_with_rollback_safety_trigger(
+        self, tmp_path: Path
+    ) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        result = manager.rollback(target_id, confirm=True)
+
+        # RollbackResult carries the safety snapshot id.
+        assert result.safety_snapshot_id != target_id
+        assert result.target_snapshot_id == target_id
+
+        # The safety snapshot file exists on disk.
+        safety_path = tmp_path / f"{result.safety_snapshot_id}.json.gz"
+        assert safety_path.exists()
+
+        # Its envelope trigger is ``rollback_safety`` and description
+        # references the target snapshot.
+        safety_envelope = _read_envelope(safety_path)
+        assert safety_envelope["trigger"] == "rollback_safety"
+        assert safety_envelope["description"] == f"pre_rollback_to_{target_id}"
+
+    def test_rollback_returns_rollback_result_with_required_fields(
+        self, tmp_path: Path
+    ) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        result = manager.rollback(target_id, confirm=True)
+
+        # All four required fields per the spec dataclass.
+        assert hasattr(result, "safety_snapshot_id")
+        assert hasattr(result, "target_snapshot_id")
+        assert hasattr(result, "applied")
+        assert hasattr(result, "forced")
+        assert result.forced is False
+        assert isinstance(result.applied, str)
+        assert result.applied.startswith("+") or result.applied.startswith("~")
+
+    def test_rollback_dict_shape_matches_spec_json_contract(
+        self, tmp_path: Path
+    ) -> None:
+        """The RollbackResult.to_dict() must match the spec JSON contract."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        result = manager.rollback(target_id, confirm=True)
+        as_dict = result.to_dict()
+
+        assert "safety_snapshot_id" in as_dict
+        assert "target_snapshot_id" in as_dict
+        assert "applied" in as_dict
+        assert "forced" in as_dict
+        assert as_dict["target_snapshot_id"] == target_id
+        assert as_dict["forced"] is False
+
+
+class TestRollbackConflictRefused:
+    """Conflicts without --force raise ``RollbackConflictError`` (but safety snapshot still created)."""
+
+    def test_rollback_with_added_observations_raises_conflict_error(
+        self, tmp_path: Path
+    ) -> None:
+        from flow_engineering.snapshot_manager import (
+            RollbackConflictError,
+            SnapshotManager,
+        )
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=2)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        # Add 3 new observations AFTER the target snapshot.
+        for i in range(3):
+            backend.mem_save(
+                title=f"new-{i}", content=f"new content {i}",
+                topic_key="sdd/x/spec",
+            )
+
+        files_before_rollback = sorted(tmp_path.glob("snap_*.json.gz"))
+        assert len(files_before_rollback) == 1
+
+        with pytest.raises(RollbackConflictError) as excinfo:
+            manager.rollback(target_id, confirm=True)  # no force
+
+        payload = excinfo.value.payload
+        assert payload["error"] == (
+            "live state has diverged; refusing rollback without --force"
+        )
+        # The new IDs (3, 4, 5) appear in the conflicts list with change="added".
+        conflict_ids = {c["id"] for c in payload["conflicts"]}
+        assert conflict_ids == {3, 4, 5}
+        assert all(c["change"] == "added" for c in payload["conflicts"])
+
+        # Even though conflict was raised, the safety snapshot WAS created.
+        files_after = sorted(tmp_path.glob("snap_*.json.gz"))
+        assert len(files_after) == 2, (
+            f"Safety snapshot must be created even on conflict; "
+            f"found {len(files_after)} files: {[p.name for p in files_after]}"
+        )
+
+    def test_rollback_with_modified_observations_raises_conflict_error(
+        self, tmp_path: Path
+    ) -> None:
+        from flow_engineering.snapshot_manager import (
+            RollbackConflictError,
+            SnapshotManager,
+        )
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        # Modify observation 1's content AFTER snapshot.
+        backend.update_observation(1, content="MODIFIED content")
+
+        with pytest.raises(RollbackConflictError) as excinfo:
+            manager.rollback(target_id, confirm=True)
+
+        payload = excinfo.value.payload
+        change_types = [c["change"] for c in payload["conflicts"]]
+        assert "modified" in change_types
+
+    def test_rollback_no_conflicts_succeeds_silently(
+        self, tmp_path: Path
+    ) -> None:
+        """With no conflicts, rollback succeeds without raising."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        # Live state matches snapshot exactly — no conflicts.
+        result = manager.rollback(target_id, confirm=True)
+
+        assert result.target_snapshot_id == target_id
+        assert result.forced is False
+
+
+class TestRollbackForceOverride:
+    """``--force`` overrides conflicts with warning and applies."""
+
+    def test_rollback_with_force_overrides_conflict(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=2)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        # Add a new observation (creates a conflict).
+        backend.mem_save(title="new", content="new content", topic_key="sdd/x/spec")
+
+        result = manager.rollback(target_id, confirm=True, force=True)
+
+        assert result.forced is True
+        assert result.target_snapshot_id == target_id
+
+        # Stderr warning emitted.
+        captured = capsys.readouterr()
+        assert "--force override" in captured.err, (
+            f"Expected stderr warning; got stderr={captured.err!r}"
+        )
+
+    def test_rollback_force_restores_modified_content(
+        self, tmp_path: Path
+    ) -> None:
+        """When force=True + modify conflict, rollback restores target content."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        original_content = backend.mem_get_observation(1)["content"]
+
+        # Modify observation 1.
+        backend.update_observation(1, content="MODIFIED")
+
+        result = manager.rollback(target_id, confirm=True, force=True)
+        assert result.forced is True
+
+        # Content restored.
+        restored = backend.mem_get_observation(1)["content"]
+        assert restored == original_content, (
+            f"Expected content to be restored to {original_content!r}; "
+            f"got {restored!r}"
+        )
+
+
+class TestRollbackIdempotency:
+    """Re-running rollback after a partial Phase 2 leaves a valid safety trail."""
+
+    def test_rollback_creates_safety_snapshot_each_invocation(
+        self, tmp_path: Path
+    ) -> None:
+        """Each rollback creates its own safety snapshot (idempotent retry)."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        # First rollback (no conflict).
+        result1 = manager.rollback(target_id, confirm=True)
+        # Second rollback (now the target state matches live).
+        result2 = manager.rollback(target_id, confirm=True)
+
+        # Different safety snapshot ids (each rollback is its own operation).
+        assert result1.safety_snapshot_id != result2.safety_snapshot_id
+        # Both target the same snapshot.
+        assert result1.target_snapshot_id == target_id
+        assert result2.target_snapshot_id == target_id
+
+    def test_rollback_safety_snapshot_round_trips_via_show(
+        self, tmp_path: Path
+    ) -> None:
+        """The safety snapshot created by rollback must be loadable via show()."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        target_id = manager.create(description="target")
+
+        result = manager.rollback(target_id, confirm=True)
+
+        # Show must parse + verify sha256 for the safety snapshot.
+        envelope = manager.show(result.safety_snapshot_id)
+        assert envelope["id"] == result.safety_snapshot_id
+        assert envelope["trigger"] == "rollback_safety"
