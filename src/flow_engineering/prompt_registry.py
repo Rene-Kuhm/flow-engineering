@@ -401,14 +401,107 @@ def validate_catalog(
     return errors
 
 
+
+
+
+@dataclass(frozen=True)
+class LintReport:
+    """Aggregate lint result for the prompt catalog (REQ-47 helper).
+
+    Wraps the output of :func:`validate_catalog` in a structured shape with
+    convenience properties (``is_clean``, ``error_count``, ``error_codes``)
+    and methods (``by_code()``, ``to_dict()``) that the ``flow prompts lint``
+    CLI and CI gates consume without re-parsing raw :class:`LintError` lists.
+
+    Attributes:
+        catalog: The catalog that was linted. Captured so consumers can map
+            errors back to entries without passing the catalog separately.
+        errors: The list of :class:`LintError` instances from
+            :func:`validate_catalog`. Empty list means the catalog is clean.
+    """
+
+    catalog: tuple[PromptDef, ...]
+    errors: list[LintError]
+
+    @property
+    def is_clean(self) -> bool:
+        """Return ``True`` when no errors were found."""
+        return len(self.errors) == 0
+
+    @property
+    def error_count(self) -> int:
+        """Return the number of errors found."""
+        return len(self.errors)
+
+    @property
+    def error_codes(self) -> set[str]:
+        """Return the set of distinct error codes in this report."""
+        return {e.error_code for e in self.errors}
+
+    def by_code(self, code: str) -> list[LintError]:
+        """Return the errors matching ``code`` (e.g., ``"jinja_syntax"``)."""
+        return [e for e in self.errors if e.error_code == code]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the report to a JSON-friendly dict.
+
+        Used by ``flow prompts lint --json`` and CI artifacts. The shape is
+        stable; downstream consumers MUST NOT depend on the order of
+        ``errors_by_code`` keys (dict iteration order is implementation-
+        defined for plain ``dict`` in older Python; use the explicit
+        ``errors`` list for ordering-sensitive consumers).
+        """
+        return {
+            "is_clean": self.is_clean,
+            "error_count": self.error_count,
+            "errors_by_code": {
+                code: len(self.by_code(code)) for code in self.error_codes
+            },
+            "errors": [
+                {
+                    "prompt_name": e.prompt_name,
+                    "error_code": e.error_code,
+                    "message": e.message,
+                    "line": e.line,
+                }
+                for e in self.errors
+            ],
+        }
+
+
+def lint_prompts(
+    catalog: tuple[PromptDef, ...] | None = None,
+) -> LintReport:
+    """Run :func:`validate_catalog` and wrap the result in a :class:`LintReport`.
+
+    This is the public API for CI / test surfaces (per the REQ-47 contract:
+    "the function MUST NOT raise on broken registries; it MUST return a list
+    of warnings and let the caller decide"). Use :attr:`LintReport.is_clean`
+    for the boolean clean check; use :meth:`LintReport.to_dict` for the
+    ``--json`` CLI output shape.
+
+    Args:
+        catalog: The catalog to lint. ``None`` defaults to
+            :data:`PROMPT_NAMES`.
+
+    Returns:
+        A :class:`LintReport` describing the catalog's lint state.
+    """
+    resolved = PROMPT_NAMES if catalog is None else catalog
+    errors = validate_catalog(resolved)
+    return LintReport(catalog=resolved, errors=errors)
+
+
 __all__ = [
     "LintError",
+    "LintReport",
     "PROMPT_NAMES",
     "PromptDef",
     "PromptDomain",
     "get_prompt",
     "get_prompt_metadata",
     "get_prompt_template",
+    "lint_prompts",
     "list_prompts",
     "register",
     "register_prompt",
