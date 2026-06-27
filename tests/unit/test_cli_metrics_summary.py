@@ -69,8 +69,8 @@ class TestSummaryTextFormat:
     ) -> None:
         now = datetime.now(UTC)
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 2}, _iso(now)),
-            _event("binding_suggest_invoked_total", {"count": 1}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 2}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
             _event("drift_invoked_total", {"count": 1}, _iso(now)),
         ])
 
@@ -81,7 +81,7 @@ class TestSummaryTextFormat:
         assert "binding:" in result.output
         assert "drift:" in result.output
         # The counter totals appear under their domain.
-        assert "binding_suggest_invoked_total" in result.output
+        assert "suggest_invoked_total" in result.output
         assert "drift_invoked_total" in result.output
 
 
@@ -96,7 +96,7 @@ class TestSummaryJsonFormat:
     ) -> None:
         now = datetime.now(UTC)
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 2}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 2}, _iso(now)),
             _event("vector_search_invoked_total", {"count": 3}, _iso(now)),
         ])
 
@@ -107,7 +107,7 @@ class TestSummaryJsonFormat:
         assert isinstance(payload, dict)
         assert "binding" in payload
         assert "vector" in payload
-        assert payload["binding"]["binding_suggest_invoked_total"] == 2
+        assert payload["binding"]["suggest_invoked_total"] == 2
         assert payload["vector"]["vector_search_invoked_total"] == 3
 
 
@@ -123,9 +123,9 @@ class TestSummaryWindowFilter:
         now = datetime.now(UTC)
         # 3h ago (outside 1h window) and now (inside 1h window).
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 1},
+            _event("suggest_invoked_total", {"count": 1},
                    _iso(now - timedelta(hours=3))),
-            _event("binding_suggest_invoked_total", {"count": 5}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 5}, _iso(now)),
         ])
 
         result = runner.invoke(main, ["metrics", "summary", "--window", "1h"])
@@ -141,10 +141,10 @@ class TestSummaryWindowFilter:
         # events.
         lines = [ln.strip() for ln in result.output.splitlines() if ln.strip()]
         # At minimum, the rendered dashboard must NOT contain the lone
-        # "binding_suggest_invoked_total  1" line (which would be the
+        # "suggest_invoked_total  1" line (which would be the
         # 3h-old event alone).
         assert not any(
-            line.startswith("binding_suggest_invoked_total") and "  1" in line
+            line.startswith("suggest_invoked_total") and "  1" in line
             for line in lines
         )
 
@@ -160,7 +160,7 @@ class TestSummaryDomainFilter:
     ) -> None:
         now = datetime.now(UTC)
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 1}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
             _event("drift_invoked_total", {"count": 1}, _iso(now)),
             _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
         ])
@@ -170,7 +170,7 @@ class TestSummaryDomainFilter:
         assert result.exit_code == 0, result.output
         assert "drift_invoked_total" in result.output
         # Other-domain counters MUST be excluded.
-        assert "binding_suggest_invoked_total" not in result.output
+        assert "suggest_invoked_total" not in result.output
         assert "vector_search_invoked_total" not in result.output
 
 
@@ -233,7 +233,7 @@ class TestSummaryWindowAndSinceUntil:
         now = datetime.now(UTC)
         # 25 days ago: inside 30d window
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 7},
+            _event("suggest_invoked_total", {"count": 7},
                    _iso(now - timedelta(days=25))),
             # 40 days ago: outside 30d window
             _event("drift_invoked_total", {"count": 3},
@@ -244,7 +244,7 @@ class TestSummaryWindowAndSinceUntil:
 
         assert result.exit_code == 0, result.output
         # The 25d-old binding event survives; the 40d-old drift event is excluded.
-        assert "binding_suggest_invoked_total" in result.output
+        assert "suggest_invoked_total" in result.output
         assert "drift_invoked_total" not in result.output
         assert "7" in result.output
 
@@ -261,11 +261,11 @@ class TestSummaryWindowAndSinceUntil:
     ) -> None:
         """--since/--until ISO 8601 absolute timestamps filter events correctly."""
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 1},
+            _event("suggest_invoked_total", {"count": 1},
                    "2026-06-26T10:00:00Z"),
-            _event("binding_suggest_invoked_total", {"count": 1},
+            _event("suggest_invoked_total", {"count": 1},
                    "2026-06-26T15:00:00Z"),
-            _event("binding_suggest_invoked_total", {"count": 1},
+            _event("suggest_invoked_total", {"count": 1},
                    "2026-06-26T19:00:00Z"),
         ])
 
@@ -282,9 +282,9 @@ class TestSummaryWindowAndSinceUntil:
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
         # The 10:00 event is excluded; the 15:00 + 19:00 events are kept
-        # (inclusive on both boundaries) → count=2 for binding_suggest_invoked_total.
+        # (inclusive on both boundaries) → count=2 for suggest_invoked_total.
         assert payload == {
-            "binding": {"binding_suggest_invoked_total": 2},
+            "binding": {"suggest_invoked_total": 2},
         }
 
 
@@ -313,7 +313,7 @@ class TestSummaryDomainFilterWidening:
         _write_jsonl(metrics_path, [
             _event("backfill_observations_total", {"count": 3}, _iso(now)),
             _event("backfill_with_refs_total", {"count": 2}, _iso(now)),
-            _event("binding_suggest_invoked_total", {"count": 1}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
             _event("drift_invoked_total", {"count": 1}, _iso(now)),
             _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
         ])
@@ -325,7 +325,7 @@ class TestSummaryDomainFilterWidening:
         assert "backfill_observations_total" in result.output
         assert "backfill_with_refs_total" in result.output
         # Other-domain counters MUST be excluded.
-        assert "binding_suggest_invoked_total" not in result.output
+        assert "suggest_invoked_total" not in result.output
         assert "drift_invoked_total" not in result.output
         assert "vector_search_invoked_total" not in result.output
 
@@ -341,7 +341,7 @@ class TestSummaryDomainFilterWidening:
         """
         now = datetime.now(UTC)
         _write_jsonl(metrics_path, [
-            _event("binding_suggest_invoked_total", {"count": 1}, _iso(now)),
+            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
             _event("drift_invoked_total", {"count": 1}, _iso(now)),
             _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
         ])

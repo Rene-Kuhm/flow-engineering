@@ -133,7 +133,7 @@ def given_12_events_across_4_domains(metrics_world: dict[str, Any]) -> None:
     events: list[dict] = []
     for _ in range(3):
         events.append(
-            {"name": "binding_suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)}
+            {"name": "suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)}
         )
     for _ in range(3):
         events.append(
@@ -234,9 +234,9 @@ def given_12_events_with_3_distinct_counters_per_domain(
     now = datetime.now(UTC)
     events: list[dict] = [
         # 3 binding counters (3 distinct names)
-        {"name": "binding_suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
-        {"name": "binding_bindings_confirmed_total", "fields": {"count": 1}, "ts": _iso(now)},
-        {"name": "binding_inspect_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "bindings_confirmed_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "inspect_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
         # 3 drift counters (3 distinct names)
         {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
         {"name": "drift_still_valid_total", "fields": {"count": 1}, "ts": _iso(now)},
@@ -271,9 +271,9 @@ def given_24_events_across_8_domains(
     now = datetime.now(UTC)
     events: list[dict] = [
         # 3 binding counters
-        {"name": "binding_suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
-        {"name": "binding_bindings_confirmed_total", "fields": {"count": 1}, "ts": _iso(now)},
-        {"name": "binding_inspect_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "bindings_confirmed_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "inspect_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
         # 3 backfill counters
         {"name": "backfill_observations_total", "fields": {"count": 1}, "ts": _iso(now)},
         {"name": "backfill_with_refs_total", "fields": {"count": 1}, "ts": _iso(now)},
@@ -490,9 +490,9 @@ def then_stdout_contains_only_3_snapshot_counters(
         )
     # All non-snapshot counter names MUST be excluded.
     for excluded in (
-        "binding_suggest_invoked_total",
-        "binding_bindings_confirmed_total",
-        "binding_inspect_invoked_total",
+        "suggest_invoked_total",
+        "bindings_confirmed_total",
+        "inspect_invoked_total",
         "drift_invoked_total",
         "drift_still_valid_total",
         "drift_label_drift_total",

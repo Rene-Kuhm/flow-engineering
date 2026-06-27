@@ -493,7 +493,9 @@ the value is overridable per-call via the ``path`` argument on each public helpe
 
 DOMAIN_BY_PREFIX: dict[str, str] = {
     # prefix -> domain
-    "binding_": "binding",        # REQ-8 close
+    "suggest_": "binding",        # REQ-8 close (auto_suggest_code_refs.py)
+    "bindings_": "binding",       # REQ-8 close (auto_suggest_code_refs.py: note `bindings_` plural)
+    "inspect_": "binding",        # REQ-8 close (cli.py:945-950)
     "backfill_": "backfill",      # REQ-8 close (backfill coverage)
     "drift_": "drift",            # REQ-12
     "vector_": "vector",          # REQ-22
@@ -511,6 +513,15 @@ Maps each counter-name prefix to its owning domain. Used by
 :func:`read_events_by_domain` (inverse lookup: prefixes per domain).
 Counter names that do NOT match any registered prefix fall into the
 ``"unknown"`` bucket per W23 dual-name history.
+
+The binding domain carries THREE prefixes to match production counter
+names per REQ-8 close + REQ-7: ``suggest_`` (auto-suggest invocation),
+``bindings_`` (confirmed bindings — note the plural ``bindings_`` is the
+canonical counter prefix; ``binding_`` singular would be a typo),
+``inspect_`` (``flow inspect`` invocation + render time). C1 fix from
+sdd-verify PR#1 — production emitted counters fall under binding only
+when ALL three prefixes map here; without them, six production counters
+land in the ``unknown`` bucket and the cross-domain dashboard misreports.
 
 The 8 unique domain values (binding, backfill, drift, vector, federated,
 snapshot, metadata, engine) are exported as :data:`ALL_DOMAINS` for

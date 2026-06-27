@@ -67,7 +67,7 @@ class TestReadAllMetrics:
     ) -> None:
         path = tmp_path / "metrics.jsonl"
         _write_jsonl(path, [
-            _event("binding_suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
+            _event("suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
             _event("drift_invoked_total", {"change": "observability"}, "2026-06-27T11:00:00Z"),
         ])
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
@@ -76,7 +76,7 @@ class TestReadAllMetrics:
 
         assert len(result) == 2
         assert all(isinstance(m, observability.MetricEvent) for m in result)
-        assert result[0].counter_name == "binding_suggest_invoked_total"
+        assert result[0].counter_name == "suggest_invoked_total"
         assert result[1].counter_name == "drift_invoked_total"
 
     def test_read_all_metrics_skips_malformed_lines(
@@ -134,8 +134,10 @@ class TestReadEventsByDomain:
     ) -> None:
         path = tmp_path / "metrics.jsonl"
         _write_jsonl(path, [
-            _event("binding_suggest_invoked_total"),
-            _event("binding_backfill_observations_total"),
+            _event("suggest_invoked_total"),
+            _event("bindings_confirmed_total"),
+            _event("inspect_invoked_total"),
+            _event("backfill_observations_total"),
             _event("drift_invoked_total"),
             _event("vector_search_invoked_total"),
             _event("snapshot_create_total"),
@@ -144,16 +146,20 @@ class TestReadEventsByDomain:
 
         result = observability.read_events_by_domain("binding")
         names = [m.counter_name for m in result]
+        # After C1 fix: the ``binding`` domain covers ``suggest_`` /
+        # ``bindings_`` / ``inspect_`` prefixes only; ``backfill_``
+        # resolves to its own domain.
         assert names == [
-            "binding_suggest_invoked_total",
-            "binding_backfill_observations_total",
+            "suggest_invoked_total",
+            "bindings_confirmed_total",
+            "inspect_invoked_total",
         ]
 
     def test_read_events_by_domain_raises_on_unknown_domain(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [_event("binding_suggest_invoked_total")])
+        _write_jsonl(path, [_event("suggest_invoked_total")])
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         with pytest.raises(ValueError, match="unknown domain"):
@@ -171,9 +177,9 @@ class TestSummarize:
     ) -> None:
         path = tmp_path / "metrics.jsonl"
         _write_jsonl(path, [
-            _event("binding_suggest_invoked_total", {"count": 2}),
-            _event("binding_suggest_invoked_total", {"count": 1}),
-            _event("binding_backfill_observations_total", {"count": 5}),
+            _event("suggest_invoked_total", {"count": 2}),
+            _event("suggest_invoked_total", {"count": 1}),
+            _event("backfill_observations_total", {"count": 5}),
             _event("drift_invoked_total", {"count": 1}),
             _event("vector_search_invoked_total", {"count": 3}),
             _event("vector_search_invoked_total", {"count": 4}),
@@ -185,8 +191,10 @@ class TestSummarize:
 
         assert result == {
             "binding": {
-                "binding_suggest_invoked_total": 3,
-                "binding_backfill_observations_total": 5,
+                "suggest_invoked_total": 3,
+            },
+            "backfill": {
+                "backfill_observations_total": 5,
             },
             "drift": {
                 "drift_invoked_total": 1,
@@ -208,16 +216,16 @@ class TestPrometheusExposition:
     ) -> None:
         path = tmp_path / "metrics.jsonl"
         _write_jsonl(path, [
-            _event("binding_suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
+            _event("suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
         ])
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         events = observability.read_all_metrics()
         text = observability.prometheus_exposition(events)
 
-        assert "# HELP binding_suggest_invoked_total" in text
-        assert "# TYPE binding_suggest_invoked_total counter" in text
-        assert "binding_suggest_invoked_total" in text
+        assert "# HELP suggest_invoked_total" in text
+        assert "# TYPE suggest_invoked_total counter" in text
+        assert "suggest_invoked_total" in text
 
 
 # ---------- aggregate ----------
