@@ -1,6 +1,10 @@
 """Strict TDD prompt injection.
 
 REQ-7: Strict TDD mode is the default for compatible projects.
+REQ-45 (T1.3 migration): ``STRICT_TDD_PROMPT`` is a thin alias around
+the ``prompt_registry`` catalog (per D10 alias convention). The legacy
+inline string was removed in v0.7.0; the alias is preserved for
+backwards compatibility and will be removed in v0.8.0.
 """
 
 from __future__ import annotations
@@ -10,10 +14,9 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-STRICT_TDD_PROMPT = (
-    "STRICT TDD MODE IS ACTIVE. Test runner: {test_command}. "
-    "You MUST follow strict-tdd.md. Do NOT fall back to Standard Mode."
-)
+from flow_engineering.prompt_registry import get_prompt_template
+
+STRICT_TDD_PROMPT: str = get_prompt_template("strict_tdd")
 
 
 def load_sdd_init(project_dir: Path) -> dict[str, Any] | None:
