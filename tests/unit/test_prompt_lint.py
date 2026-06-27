@@ -13,11 +13,9 @@ from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
 
-import pytest
-
+from flow_engineering import prompt_registry
 from flow_engineering.prompt_registry import (
     PROMPT_NAMES,
-    LintError,
     LintReport,
     PromptDef,
     PromptDomain,
@@ -173,14 +171,14 @@ class TestLintPromptsReportsAllErrorCodes:
 class TestLintPromptsCustomCatalogIsolation:
     def test_lint_prompts_with_custom_catalog_not_global(self) -> None:
         """``lint_prompts(custom)`` MUST NOT mutate ``PROMPT_NAMES``."""
-        before = list(prompt_registry.PROMPT_NAMES)  # type: ignore[attr-defined]
+        before = list(prompt_registry.PROMPT_NAMES)
         bad = _make_broken(name="custom_only", template="hi", version="not-semver")
         report = lint_prompts((bad,))
         assert report.error_count == 1
         # PROMPT_NAMES reference unchanged.
-        assert list(prompt_registry.PROMPT_NAMES) == before  # type: ignore[attr-defined]
+        assert list(prompt_registry.PROMPT_NAMES) == before
         # And the custom name is NOT in the global catalog.
-        names = {p.name for p in prompt_registry.PROMPT_NAMES}  # type: ignore[attr-defined]
+        names = {p.name for p in prompt_registry.PROMPT_NAMES}
         assert "custom_only" not in names
 
     def test_lint_prompts_uses_validate_catalog_under_the_hood(self) -> None:
