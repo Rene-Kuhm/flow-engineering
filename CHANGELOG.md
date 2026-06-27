@@ -36,23 +36,42 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Per-prompt LLM provider routing (deferred to v1.1)
 - Prompt A/B testing infrastructure (deferred to v1.1)
 
-## [0.8.0] - TBD (in development)
+## [0.8.0] - 2026-06-27
 
-### Breaking changes (planned)
+### Breaking changes
 
-- `decision_drift.Finding.decision_id` changes from `str` to `int` (REQ-57 migration; DeprecationWarning shim for v0.8.0, removed in v0.9.0)
-- `decision_drift.DriftReport.scanned_at` changes from `float` to `str` ISO 8601 (REQ-57)
-- `decision_drift.DriftReport.graph_unavailable: bool` + `unable_reason: str | None` (replaces `unable_to_verify: bool`) (REQ-57)
-- `classify_binding(ref, graph_nodes)` 2-arg signature (was 3 args)
+- `decision_drift.Finding.decision_id` is now `int` (was `str`). v0.7.x callers using `int(finding.decision_id)` should switch to direct access (decision_id IS int now). `Finding.from_legacy()` is the 1-release migration path; emits DeprecationWarning for legacy str usage; removed in v0.9.0. (REQ-56 W8)
+- `decision_drift.DriftReport.scanned_at` is now `str` ISO 8601 UTC Z-suffixed (was `float` epoch). v0.7.x callers should use `datetime.fromisoformat()` to parse. `DriftReport.from_legacy()` is the 1-release migration path; emits DeprecationWarning for legacy float usage; removed in v0.9.0. (REQ-56 W8)
+- `decision_drift.DriftReport.unable_reason: str | None` added (new field). `graph_unavailable: bool` retained as the canonical field name; `from_legacy()` maps legacy `unable_to_verify: bool` kwarg to `graph_unavailable`. (REQ-56 W8)
+- `classify_binding(ref, graph_nodes)` 2-arg signature (was 3-arg `classify_binding(binding, current_nodes, current_id_map)`). `classify_binding_legacy` is the 1-release 3-arg wrapper; emits DeprecationWarning; removed in v0.9.0. (REQ-56 W8)
 
-### Added (planned)
+### Added
 
-- `DriftEventLog` JSONL append-only writer at `~/.flow-engineering/drift_events.jsonl` (REQ-55)
-- Daemon still-valid silence per REQ-56
-- 21 BDD scenarios covering REQ-10/12/13/14/16 (REQ-58)
-- SnapshotMeta.size_bytes + PruneResult.freed_bytes field reconciliation (REQ-59)
-- `snapshot_pruned_total` legacy counter deprecation note (W23)
-- stderr WARN on skipped non-int decision_id in `_write_back_findings` (S2)
+- `DriftEventLog` JSONL append-only writer at `~/.flow-engineering/drift_events.jsonl` (REQ-55 W5). Thread-safe via `threading.Lock`.
+- Daemon still-valid silence: `flow watch --drift` suppresses summary line when all bindings still-valid (REQ-56 W6).
+- 21 BDD scenarios covering REQ-10/12/13/14/16 (REQ-57 W4).
+- SnapshotMeta.size_bytes + PruneResult.freed_bytes field reconciliation (REQ-58 W25/W26 — was already correct in impl, spec reconciled).
+- `snapshot_pruned_total` legacy counter deprecation note (W23 from change #5).
+- stderr WARN log on skipped non-int decision_id in `_write_back_findings` (S2, REQ-59).
+- 6 SKILL.md runtime files carry the `## Drift detection hook` section (sdd-propose, sdd-design, sdd-tasks, sdd-apply, sdd-verify, sdd-archive).
+- `openspec/specs/decision-drift/spec.md` bootstrapped (mirrors change #6 observability pattern + change #7 prompt-registry pattern).
+
+### Migration guide
+
+From v0.7.x to v0.8.0:
+1. Replace `int(finding.decision_id)` with direct `finding.decision_id` access (decision_id IS int now). For legacy str callers, use `Finding.from_legacy(decision_id="42", ...)` which emits DeprecationWarning and coerces.
+2. Replace `report.scanned_at` (float) with `datetime.fromisoformat(report.scanned_at)` (str ISO 8601). For legacy float callers, use `DriftReport.from_legacy(scanned_at=1751000000.0, ...)` which emits DeprecationWarning and coerces.
+3. Replace `report.unable_to_verify` (bool) with `report.graph_unavailable` (bool) + `report.unable_reason` (str | None). For legacy kwarg callers, use `DriftReport.from_legacy(unable_to_verify=True, ...)` which maps to `graph_unavailable`.
+4. Update `classify_binding` 3-arg callers to 2-arg `classify_binding(ref, graph_nodes)` (current_id_map derived internally). For legacy 3-arg callers, use `classify_binding_legacy` which emits DeprecationWarning.
+
+### Tests
+
+- 1115 / 1115 tests passing (`uv run pytest`).
+- 53 BDD scenarios across 24 feature files (req10/11/12/13/14/16 + req15_drift_daemon extensions + prior scenarios from earlier changes).
+
+### Notes
+
+- `drift-hardening` cluster shipped as single v0.8.0 release. Bundles breaking change (REQ-56 W8 dataclass shape migration) with related cleanup. Migration window: v0.8.0 ships with DeprecationWarning shims; shims removed in v0.9.0.
 
 ## [0.7.1] - 2026-06-27
 
