@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-06-27
+
+### Added
+- `SnapshotManager` class in `src/flow_engineering/snapshot_manager.py` with `create()`, `list()`, `show()`, `diff()`, `rollback()`, `prune()` methods (REQ-28, REQ-29, REQ-30, REQ-31, REQ-32, REQ-34).
+- `flow snapshot` CLI subcommand group: `create`, `list`, `show`, `diff`, `rollback`, `prune` (REQ-28..34).
+- `flow drift <change> --snapshot <snap_id>` flag for pinned-state scans (REQ-33, NON-BREAKING).
+- 4 observability counters: `snapshot_create_total`, `snapshot_rollback_total`, `snapshot_prune_total`, `snapshot_load_failed_total` (REQ-26). Wired in `SnapshotManager.create/rollback/prune` and `decision_drift._load_graph_from_snapshot`.
+- `record_snapshot_event(counter_name, **labels)` helper in `observability.py` (mirrors `record_vector_summary`, `record_drift_summary`).
+- `PruneResult` dataclass + `PruneNoFilterError` + `PruneSafetyGateError` exception classes.
+- `SnapshotMeta.pinned` field for retention-pin semantics.
+- 6 `SKILL.md` runtime files carry the Graph snapshots hook section.
+
+### Tests
+- 799 / 799 tests passing (`uv run pytest`).
+- 14 BDD scenarios across 14 feature files (req3 + req9 + req15 + req17..req22 + req32 + req33 + req34) — added `req34_snapshot_prune` (2 scenarios).
+- See `openspec/changes/archive/2026-06-27-graph-snapshots/` for full spec, design, and task breakdown.
+
+### Notes
+- `graph-snapshots` shipped via a single PR with 17 work-unit commits (8 from batches A + B1 + B2 + 3 from batch C T1.6 + 2 from T1.7 + 2 from T1.8 + 2 docs/housekeeping).
+- Strict TDD throughout; 4-6x LOC multiplier realized as planned.
+- Verify report: TBD (sdd-verify next).
+
 ## [0.5.0] - 2026-06-26
 
 ### Added
