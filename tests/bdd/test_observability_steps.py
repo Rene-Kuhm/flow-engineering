@@ -99,6 +99,25 @@ def test_req36_since_iso8601(metrics_world: dict[str, Any]) -> None:
     pass
 
 
+# ---------- Scenario bindings: REQ-37 ----------
+
+
+@scenario(
+    "../bdd/req37_metrics_domain.feature",
+    "--domain snapshot shows only snapshot_* counters",
+)
+def test_req37_domain_snapshot(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req37_metrics_domain.feature",
+    "No --domain shows all 8 domains aggregated",
+)
+def test_req37_no_domain_shows_all_8(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
 # ---------- Given steps ----------
 
 
@@ -191,6 +210,102 @@ def given_5_events_spanning_3_days_for_since(
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
+# ---------- REQ-37 Given steps ----------
+
+
+@given(
+    parsers.parse(
+        "12 metric events are written across 4 domains "
+        "(3 binding + 3 drift + 3 vector + 3 snapshot)"
+    )
+)
+def given_12_events_with_3_distinct_counters_per_domain(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Seed 12 events covering 4 domains with 3 distinct counter names each.
+
+    Distinct counter names per domain (so the ``--domain snapshot`` BDD
+    scenario can assert "stdout contains only the 3 snapshot_* counter
+    names" as 3 distinct names rather than 1 counter aggregated 3 times).
+    The 4 binding counters exercise REQ-8 close coverage; the 3 vector
+    counters exercise REQ-22; the 3 snapshot counters exercise REQ-26
+    graph-snapshots; the 3 drift counters exercise REQ-12.
+    """
+    now = datetime.now(UTC)
+    events: list[dict] = [
+        # 3 binding counters (3 distinct names)
+        {"name": "binding_suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "binding_bindings_confirmed_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "binding_inspect_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 drift counters (3 distinct names)
+        {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "drift_still_valid_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "drift_label_drift_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 vector counters (3 distinct names)
+        {"name": "vector_search_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "vector_search_results_returned_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "vector_search_latency_ms", "fields": {"elapsed_ms": 50}, "ts": _iso(now)},
+        # 3 snapshot counters (3 distinct names)
+        {"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "snapshot_rollback_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "snapshot_prune_total", "fields": {"count": 1}, "ts": _iso(now)},
+    ]
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@given(
+    parsers.parse(
+        "24 metric events across all 8 domains (3 each)"
+    )
+)
+def given_24_events_across_8_domains(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Seed 24 events covering all 8 accepted domains with 3 distinct counters each.
+
+    Includes 3 fake ``engine_*`` counters (queue depth, startup, errors) that
+    exercise the reserved REQ-42 slot. v1 production code emits no engine_*
+    events, but the BDD scenario needs the ``engine`` domain header to appear
+    in the no-flag default output (per design D5: 8 accepted domains).
+    """
+    now = datetime.now(UTC)
+    events: list[dict] = [
+        # 3 binding counters
+        {"name": "binding_suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "binding_bindings_confirmed_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "binding_inspect_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 backfill counters
+        {"name": "backfill_observations_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "backfill_with_refs_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "backfill_coverage_ratio", "fields": {"value": 0.85}, "ts": _iso(now)},
+        # 3 drift counters
+        {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "drift_still_valid_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "drift_label_drift_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 vector counters
+        {"name": "vector_search_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "vector_search_results_returned_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "vector_search_latency_ms", "fields": {"elapsed_ms": 50}, "ts": _iso(now)},
+        # 3 federated counters
+        {"name": "federated_search_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "federated_search_projects_queried", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "federated_search_results_returned_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 snapshot counters
+        {"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "snapshot_rollback_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "snapshot_prune_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 metadata counters (REQ-13 / REQ-24)
+        {"name": "update_observation_metadata_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "project_tag_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {"name": "project_alias_resolved_total", "fields": {"count": 1}, "ts": _iso(now)},
+        # 3 engine counters (REQ-42 reserved slot — fake for BDD coverage)
+        {"name": "engine_queue_depth", "fields": {"value": 5}, "ts": _iso(now)},
+        {"name": "engine_startup_ms", "fields": {"elapsed_ms": 120}, "ts": _iso(now)},
+        {"name": "engine_errors_total", "fields": {"count": 1}, "ts": _iso(now)},
+    ]
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
 # ---------- When steps ----------
 
 
@@ -225,6 +340,26 @@ def when_run_metrics_summary_since_iso_json(
         "metrics", "summary",
         "--since", "2026-06-26T00:00:00Z",
         "--format", "json",
+    ]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+# ---------- REQ-37 When steps ----------
+
+
+@when(
+    parsers.parse(
+        "I run `flow metrics summary --domain snapshot --format text`"
+    )
+)
+def when_run_metrics_summary_domain_snapshot_text(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Invoke ``flow metrics summary --domain snapshot --format text``."""
+    metrics_world["command"] = [
+        "metrics", "summary",
+        "--domain", "snapshot",
+        "--format", "text",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
@@ -321,3 +456,118 @@ def then_stdout_json_contains_exactly_2_events(
     assert flat == {"counter_d": 1, "counter_e": 1}, (
         f"unexpected payload: {flat!r}"
     )
+
+
+# ---------- REQ-37 Then steps ----------
+
+
+@then(parsers.parse("stdout contains only the 3 snapshot_* counter names"))
+def then_stdout_contains_only_3_snapshot_counters(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the ``--domain snapshot`` scenario: only the 3 snapshot_* counters appear.
+
+    Asserts that the rendered output contains the 3 snapshot counter names
+    (snapshot_create_total / snapshot_rollback_total / snapshot_prune_total)
+    AND does NOT contain any binding / drift / vector counter names that were
+    seeded by the Given step. The ``--domain`` flag narrows the visible
+    counter set to the snapshot domain; all 12 source events are filtered
+    down to the 3 snapshot events.
+    """
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    # The 3 distinct snapshot counter names MUST appear in the output.
+    for expected in (
+        "snapshot_create_total",
+        "snapshot_rollback_total",
+        "snapshot_prune_total",
+    ):
+        assert expected in result.output, (
+            f"expected snapshot counter {expected!r} in stdout; "
+            f"got {result.output!r}"
+        )
+    # All non-snapshot counter names MUST be excluded.
+    for excluded in (
+        "binding_suggest_invoked_total",
+        "binding_bindings_confirmed_total",
+        "binding_inspect_invoked_total",
+        "drift_invoked_total",
+        "drift_still_valid_total",
+        "drift_label_drift_total",
+        "vector_search_invoked_total",
+        "vector_search_results_returned_total",
+        "vector_search_latency_ms",
+    ):
+        assert excluded not in result.output, (
+            f"unexpected non-snapshot counter {excluded!r} in stdout: "
+            f"{result.output!r}"
+        )
+
+
+@then(
+    parsers.parse(
+        'stdout does NOT contain "binding:" or "drift:" or "vector:"'
+    )
+)
+def then_stdout_does_not_contain_other_domain_headers(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the ``--domain snapshot`` scenario: only the ``snapshot:`` header appears.
+
+    Asserts the text-dashboard section headers: with ``--domain snapshot``,
+    the only domain header rendered MUST be ``snapshot:``. The
+    ``binding:`` / ``drift:`` / ``vector:`` headers MUST NOT appear because
+    their counters are filtered out before the summary is rendered.
+    """
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    # The snapshot header MUST appear.
+    assert "snapshot:" in result.output, (
+        f"expected 'snapshot:' header in stdout; got {result.output!r}"
+    )
+    # Other-domain headers MUST NOT appear.
+    for excluded_header in ("binding:", "drift:", "vector:"):
+        assert excluded_header not in result.output, (
+            f"unexpected domain header {excluded_header!r} in stdout: "
+            f"{result.output!r}"
+        )
+
+
+@then(
+    parsers.parse(
+        "stdout contains all 8 domain headers "
+        "(binding, drift, vector, snapshot, backfill, federated, metadata, engine)"
+    )
+)
+def then_stdout_contains_all_8_domain_headers(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the no-flag scenario: the no-filter default shows all 8 domains.
+
+    Asserts that with NO ``--domain`` flag, the rendered text dashboard
+    contains the headers for all 8 accepted domains (per
+    :data:`observability.ALL_DOMAINS`). This validates that the
+    no-filter path covers the cross-domain slice expansion — operators
+    get the full picture without specifying a domain.
+    """
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    for header in (
+        "binding:",
+        "drift:",
+        "vector:",
+        "snapshot:",
+        "backfill:",
+        "federated:",
+        "metadata:",
+        "engine:",
+    ):
+        assert header in result.output, (
+            f"expected domain header {header!r} in stdout; got {result.output!r}"
+        )

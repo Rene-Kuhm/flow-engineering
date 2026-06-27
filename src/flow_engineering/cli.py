@@ -1008,7 +1008,11 @@ def metrics(ctx: click.Context, json_flag: bool) -> None:
 SUMMARY_WINDOW_CHOICES: list[str] = list(observability.WINDOW_PATTERNS.keys())
 
 # Domain choices for `flow metrics summary --domain` (REQ-37).
-SUMMARY_DOMAIN_CHOICES: list[str] = ["binding", "drift", "vector", "snapshot"]
+# Derived from observability.ALL_DOMAINS so the CLI stays in lockstep
+# with the cross-domain slice expansion (T1.6: backfill + federated +
+# metadata + engine). ``engine`` is RESERVED (REQ-42 deferred to v1.1)
+# and produces an empty filter result rather than an error.
+SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
 
 
 @metrics.command("summary")
@@ -1028,7 +1032,11 @@ SUMMARY_DOMAIN_CHOICES: list[str] = ["binding", "drift", "vector", "snapshot"]
 @click.option(
     "--domain", "domain", default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
-    help="Prefix-based domain slice (REQ-37): binding|drift|vector|snapshot.",
+    help=(
+        "Prefix-based domain slice (REQ-37): "
+        + "|".join(observability.ALL_DOMAINS)
+        + ". The engine slot is reserved (REQ-42) and returns empty in v1."
+    ),
 )
 @click.option(
     "--since", "since_iso", default=None, metavar="ISO8601",
@@ -1076,7 +1084,10 @@ def metrics_summary(
     try:
         events = observability.read_all_metrics()
         if domain is not None:
-            events = observability.read_events_by_domain(domain)
+            # click.Choice accepts mixed case (case_sensitive=False), but
+            # DOMAIN_BY_PREFIX keys are lowercase — normalize before lookup.
+            domain_normalized = observability.validate_domain(domain.lower())
+            events = observability.read_events_by_domain(domain_normalized)
         if window is not None:
             events = observability.filter_by_window(events, window)
         if since_epoch is not None:
