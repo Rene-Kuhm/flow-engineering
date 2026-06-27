@@ -65,9 +65,13 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import tempfile
+from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 DEFAULT_METRICS_DIR: Path = Path.home() / ".flow-engineering"
 DEFAULT_METRICS_FILE: str = "metrics.jsonl"
@@ -473,3 +477,277 @@ def record_snapshot_event(counter_name: str, **labels: Any) -> None:
         which swallows ``OSError`` on the underlying file write.
     """
     increment(counter_name, **labels)
+
+
+# ---------- Change #6 PR#1 T1.1: read-side observability helpers (REQ-35..39) ----------
+
+
+DEFAULT_METRICS_PATH: Path = Path.home() / ".flow-engineering" / "metrics.jsonl"
+"""Default metrics sink path used by read-side helpers when no explicit path is given.
+
+Mirrors ``_DEFAULT_PATH`` (the write-side default) and ``read_all(path)`` behavior;
+the value is overridable per-call via the ``path`` argument on each public helper.
+"""
+
+
+DOMAIN_BY_PREFIX: dict[str, str] = {
+    # prefix -> domain
+    "binding_": "binding",        # REQ-8 close
+    "backfill_": "backfill",      # REQ-8 close (backfill coverage)
+    "drift_": "drift",            # REQ-12
+    "vector_": "vector",          # REQ-22
+    "reindex_": "vector",         # REQ-22 reindex counters
+    "federated_": "federated",    # REQ-26 federated
+    "snapshot_": "snapshot",      # REQ-26 snapshot (graph-snapshots)
+    "update_observation_metadata_": "metadata",  # REQ-13 / REQ-24
+    "project_tag_": "metadata",   # REQ-24
+}
+"""Prefix -> domain lookup table for change #6 read-side helpers (design D5).
+
+Maps each counter-name prefix to its owning domain. Used by
+:func:`summarize` (to group counters by domain) and by
+:func:`read_events_by_domain` (inverse lookup: prefixes per domain).
+Counter names that do NOT match any registered prefix fall into the
+``"unknown"`` bucket per W23 dual-name history.
+"""
+
+
+@dataclass(frozen=True)
+class MetricEvent:
+    """One parsed line from the JSONL metrics sink (REQ-35 / change #6).
+
+    Attributes:
+        timestamp: Epoch seconds (float) parsed from the ISO-8601 ``ts`` field.
+        counter_name: The ``name`` field of the event (e.g. ``"drift_invoked_total"``).
+        labels: The ``fields`` dict (counter-specific labels / values).
+        raw_line: The original JSON line as written to disk (for diagnostics).
+    """
+
+    timestamp: float
+    counter_name: str
+    labels: dict[str, Any]
+    raw_line: str
+
+
+def _domain_for_counter(counter_name: str) -> str:
+    """Return the domain for a counter name via :data:`DOMAIN_BY_PREFIX`.
+
+    Unknown prefixes map to ``"unknown"`` (W23 dual-name carry-forward).
+    """
+    # Longest-prefix match — preserves determinism if two prefixes ever
+    # share a stem (e.g., ``update_observation_metadata_`` vs ``update_``).
+    best: str | None = None
+    for prefix, domain in DOMAIN_BY_PREFIX.items():
+        if counter_name.startswith(prefix):
+            if best is None or len(prefix) > len(best):
+                best = prefix
+    if best is None:
+        return "unknown"
+    return DOMAIN_BY_PREFIX[best]
+
+
+def _prefixes_for_domain(domain: str) -> list[str]:
+    """Return the registered prefixes for a domain (inverse of :data:`DOMAIN_BY_PREFIX`).
+
+    Returns an empty list when the domain is not registered — callers raise
+    ``ValueError`` to convert empty list into a user-facing error.
+    """
+    return [prefix for prefix, d in DOMAIN_BY_PREFIX.items() if d == domain]
+
+
+def _read_metrics_file(path: Path) -> list[MetricEvent]:
+    """Parse every line of the JSONL sink at ``path`` into :class:`MetricEvent` records.
+
+    Returns ``[]`` when the file is missing. Malformed lines are silently
+    skipped (best-effort sink contract per REQ-8).
+    """
+    if path is None or not path.exists():
+        return []
+    events: list[MetricEvent] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        name = payload.get("name")
+        if not isinstance(name, str):
+            continue
+        ts_raw = payload.get("ts", "")
+        fields = payload.get("fields") or {}
+        try:
+            ts_epoch = datetime.strptime(ts_raw, "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=UTC
+            ).timestamp()
+        except (TypeError, ValueError):
+            # Skip events with malformed timestamps (best-effort).
+            continue
+        events.append(
+            MetricEvent(
+                timestamp=ts_epoch,
+                counter_name=name,
+                labels=fields if isinstance(fields, dict) else {},
+                raw_line=stripped,
+            )
+        )
+    return events
+
+
+def read_all_metrics(path: Path | None = None) -> list[MetricEvent]:
+    """Return every parsed event in the JSONL sink as :class:`MetricEvent` records.
+
+    Public alias for the read-side helper. When ``path`` is ``None``, the
+    default sink path is used (overridable via the ``FLOW_METRICS_PATH`` env
+    var for tests).
+
+    Empty / missing sink → empty list (REQ-35 default-empty contract).
+    Malformed lines are silently skipped.
+    """
+    target = path if path is not None else _resolve_path()
+    return _read_metrics_file(target)
+
+
+def read_events_since(since: float, path: Path | None = None) -> list[MetricEvent]:
+    """Return events whose timestamp is ``>= since`` (epoch seconds).
+
+    Used by the CLI ``--since`` / ``--until`` / ``--window`` flag pipeline.
+    Lexicographic ISO-8601 comparison is replaced by epoch comparison
+    (the source ISO strings are Z-suffixed UTC, so lex order == chronological).
+    """
+    events = read_all_metrics(path)
+    return [e for e in events if e.timestamp >= since]
+
+
+def read_events_by_domain(domain: str, path: Path | None = None) -> list[MetricEvent]:
+    """Return events whose counter name starts with one of ``domain``'s registered prefixes.
+
+    Raises ``ValueError`` when ``domain`` is not registered — the CLI catches
+    this and emits an exit-2 error per design D9 (usage error).
+    """
+    prefixes = _prefixes_for_domain(domain)
+    if not prefixes:
+        raise ValueError(
+            f"unknown domain: {domain!r}; "
+            f"valid domains: {sorted({d for d in DOMAIN_BY_PREFIX.values()})}"
+        )
+    events = read_all_metrics(path)
+    return [e for e in events if any(e.counter_name.startswith(p) for p in prefixes)]
+
+
+def summarize(events: Iterable[MetricEvent]) -> dict[str, dict[str, int]]:
+    """Group events by domain, then by counter name, returning count totals.
+
+    Returns a nested dict ``{domain: {counter_name: count}}``. Counts are
+    summed from ``fields.count`` (fallback ``fields.confirmed``) when
+    present, otherwise each event contributes ``1`` per occurrence.
+
+    Unknown counter names (no prefix match) fall into the ``"unknown"``
+    domain bucket (W23 carry-forward).
+    """
+    grouped: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for event in events:
+        domain = _domain_for_counter(event.counter_name)
+        contribution = event.labels.get("count")
+        if contribution is None:
+            contribution = event.labels.get("confirmed", 1)
+        try:
+            n = int(contribution)
+        except (TypeError, ValueError):
+            n = 1
+        grouped[domain][event.counter_name] += n
+    # Convert inner defaultdicts to plain dicts for stable serialization.
+    return {domain: dict(counters) for domain, counters in grouped.items()}
+
+
+def prometheus_exposition(events: Iterable[MetricEvent]) -> str:
+    """Format events as Prometheus textfile exposition (D6 monotonic counter semantics).
+
+    Emits ``# HELP <name> <description>`` + ``# TYPE <name> <type>`` comments
+    plus one metric line per counter. Counter names ending in ``_total`` map
+    to Prometheus ``counter`` type; bare names map to ``gauge`` (REQ-38 D6).
+    """
+    lines: list[str] = []
+    seen_types: dict[str, str] = {}
+    metric_lines: dict[str, list[str]] = defaultdict(list)
+    for event in events:
+        name = event.counter_name
+        if name.endswith("_total"):
+            ptype = "counter"
+        else:
+            ptype = "gauge"
+        if name not in seen_types:
+            seen_types[name] = ptype
+        labels_str = ""
+        if event.labels:
+            label_parts = []
+            for k, v in event.labels.items():
+                label_parts.append(f'{k}="{v}"')
+            labels_str = "{" + ",".join(label_parts) + "}"
+        contribution = event.labels.get("count", 1)
+        try:
+            value = float(contribution)
+        except (TypeError, ValueError):
+            value = 1.0
+        metric_lines[name].append(f"{name}{labels_str} {value}")
+    for name in sorted(metric_lines):
+        ptype = seen_types[name]
+        lines.append(f"# HELP {name} flow-engineering counter {name}")
+        lines.append(f"# TYPE {name} {ptype}")
+        lines.extend(metric_lines[name])
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def aggregate(
+    values: Iterable[float], percentile: Literal[50, 95, 99]
+) -> float:
+    """Compute the requested percentile of ``values`` (D7 / REQ-39).
+
+    Uses sorted-index lookup (floor interpolation) — closest integer rank
+    is returned so a 1..100 sample yields ``p50=50``, ``p95=95``,
+    ``p99=99`` (exact, deterministic). Returns ``0.0`` when ``values`` is
+    empty (caller emits the "insufficient data" warning separately).
+    """
+    samples = list(values)
+    if not samples:
+        return 0.0
+    samples.sort()
+    if percentile <= 0 or percentile >= 100:
+        return float(samples[-1]) if samples else 0.0
+    idx = int((len(samples) - 1) * percentile / 100)
+    return float(samples[idx])
+
+
+def atomic_write_text(path: Path, content: str) -> int:
+    """Write ``content`` to ``path`` atomically (D10 / REQ-38).
+
+    Pattern: ``tempfile.NamedTemporaryFile`` in the same parent dir +
+    ``os.replace`` + cleanup on failure. Returns the number of bytes
+    written. Parent directories are created on demand.
+
+    Guarantees:
+    - The target file is never half-written (rename is atomic on POSIX
+      and Windows when both paths are on the same filesystem; the
+      ``dir=path.parent`` argument ensures that).
+    - No ``.tmp`` orphan files are left behind on failure.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".metrics-", suffix=".prom.tmp", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            tmp.write(content)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+    return len(content.encode("utf-8"))
