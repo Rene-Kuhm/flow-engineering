@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
+from flow_engineering import prompt_registry
 from flow_engineering.prompt_registry import (
-    PROMPT_NAMES,
     PromptDef,
     PromptDomain,
     get_prompt,
@@ -26,6 +26,16 @@ from flow_engineering.prompt_registry import (
     register_prompt,
     unregister_prompt,
 )
+
+
+def _names() -> list[str]:
+    """Return current catalog names via module attribute access.
+
+    ``PROMPT_NAMES`` is a module-level tuple that ``register_prompt``
+    rebinds via ``global``; tests that imported ``PROMPT_NAMES`` directly
+    would hold a stale reference. Always go through the module.
+    """
+    return [p.name for p in prompt_registry.PROMPT_NAMES]
 
 
 class TestGetPromptTemplate:
@@ -74,10 +84,10 @@ class TestRegisterPrompt:
             template="drift placeholder",
             version="0.1.0",
         )
-        original_count = len(PROMPT_NAMES)
+        original_count = len(prompt_registry.PROMPT_NAMES)
         register_prompt(new_prompt)
         try:
-            assert len(PROMPT_NAMES) == original_count + 1
+            assert len(prompt_registry.PROMPT_NAMES) == original_count + 1
             assert get_prompt("test_only_register").template == "drift placeholder"
         finally:
             unregister_prompt("test_only_register")
@@ -101,9 +111,7 @@ class TestRegisterPrompt:
         )
         register_prompt(new_prompt)
         try:
-            # The new entry is appended; the pre-existing entries keep
-            # their original positions.
-            names = [p.name for p in PROMPT_NAMES]
+            names = _names()
             assert names[-1] == "zzz_test_register"
             assert "strict_tdd" in names
         finally:
@@ -120,12 +128,12 @@ class TestUnregisterPrompt:
         )
         register_prompt(new_prompt)
         unregister_prompt("test_only_unregister")
-        assert "test_only_unregister" not in [p.name for p in PROMPT_NAMES]
+        assert "test_only_unregister" not in _names()
 
     def test_unregister_prompt_unknown_name_is_silent(self) -> None:
         # Defensive: caller may pass a stale name from a previous session;
         # unregister MUST NOT raise. Mirrors the fail-open convention used
         # elsewhere in the project (observability.increment, etc.).
-        original_count = len(PROMPT_NAMES)
+        original_count = len(prompt_registry.PROMPT_NAMES)
         unregister_prompt("nonexistent_prompt_xyz")
-        assert len(PROMPT_NAMES) == original_count
+        assert len(prompt_registry.PROMPT_NAMES) == original_count
