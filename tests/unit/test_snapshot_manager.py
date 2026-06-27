@@ -11,6 +11,11 @@ T1.5 batch B2 extension: ``SnapshotManager.create()`` MUST populate
 manual envelope rewriting. The ``TestCreatePopulatesGraphJsonContent``
 class covers the new behaviour.
 
+T1.6 batch C extension: ``SnapshotManager.prune()`` retention policy
+covers REQ-34 — the ``TestPrune`` class covers keep_last, keep_days,
+max_total_size_mb, dry-run default, most-recent safety, pinned safety,
+and ``--force`` override.
+
 Coverage map (REQ-28 + REQ-29 scenarios at the unit level):
 
 REQ-28 (create):
@@ -26,6 +31,15 @@ REQ-29 (list):
 8. ``list`` ``since`` filter excludes observations older than cutoff
 9. ``list`` ``limit`` applies AFTER ``since`` filter
 10. ``list`` empty dir returns ``[]`` (no error)
+
+REQ-34 (prune, T1.6):
+11. ``prune(keep_last=N)`` deletes oldest beyond N
+12. ``prune(keep_days=N)`` excludes snapshots older than now-N
+13. ``prune(max_total_size_mb=N)`` evicts oldest-first until total fits
+14. ``prune(confirm=False)`` is dry-run (no deletes)
+15. ``prune`` never deletes the most recent snapshot
+16. ``prune`` respects ``metadata.pinned``
+17. ``prune(force=True)`` overrides most-recent safety with stderr warning
 
 Cross-cutting:
 - SHA256 is computed over canonicalized JSON (sorted keys, no whitespace),
@@ -1079,3 +1093,310 @@ class TestCreatePopulatesGraphJsonContent:
         finally:
             _os.environ.pop("FLOW_GRAPH_JSON_PATH", None)
             _os.environ.pop("FLOW_SNAPSHOTS_DIR", None)
+
+
+# ---------- T1.6 batch C: REQ-34 prune retention policy ----------
+
+
+class TestPrune:
+    """``SnapshotManager.prune()`` retention policy (REQ-34, T1.6 batch C).
+
+    The prune method is OR-combined across three retention criteria:
+    ``keep_last`` (count), ``keep_days`` (age), ``max_total_size_mb``
+    (size). A snapshot is a candidate for deletion if ANY criterion
+    returns False for it. The method is dry-run by default; ``confirm=True``
+    actually deletes. Two safety invariants are non-negotiable:
+
+    - The most-recent snapshot is NEVER deleted (unless ``force=True``).
+    - Snapshots whose ``metadata.pinned`` is True are NEVER deleted.
+
+    Both invariants hold even in dry-run (so the would-delete list
+    excludes them).
+    """
+
+    def _seed_n_snapshots(
+        self,
+        tmp_path: Path,
+        *,
+        n: int,
+        manager_backend: InMemoryBackend | None = None,
+        interval: float = 0.0,
+    ) -> list[str]:
+        """Create ``n`` snapshots on a fresh manager. Returns ids oldest-first."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = manager_backend or InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids: list[str] = []
+        for i in range(n):
+            ids.append(manager.create(description=f"seed-{i}"))
+            if interval > 0 and i < n - 1:
+                time.sleep(interval)
+        return ids
+
+    def test_prune_keep_last_evicts_oldest(
+        self, tmp_path: Path
+    ) -> None:
+        """With 5 snapshots and keep_last=2, dry-run returns would_delete=[3 oldest]."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids = [manager.create(description=f"seed-{i}") for i in range(5)]  # type: ignore[index]  # noqa: E501
+
+        result = manager.prune(keep_last=2)  # default confirm=False (dry-run)
+
+        # 5 snapshots exist, keep_last=2 => 3 candidates for deletion.
+        assert result.deleted == [], (
+            f"dry-run MUST NOT delete; got deleted={result.deleted!r}"
+        )
+        assert result.dry_run is True
+        # would_keep = 2 newest, would_delete = 3 oldest (insertion order).
+        assert len(result.would_delete) == 3
+        assert len(result.would_keep) == 2
+        assert set(result.would_delete) == set(ids[:3])
+        assert set(result.would_keep) == set(ids[3:])
+        # All 5 files still on disk (dry-run).
+        remaining = sorted(p.name for p in tmp_path.glob("snap_*.json.gz"))
+        assert len(remaining) == 5
+
+    def test_prune_keep_days_evicts_older_than_threshold(
+        self, tmp_path: Path
+    ) -> None:
+        """keep_days=N keeps snapshots created in the last N days."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+
+        # Create one snapshot now (would-keep).
+        recent_id = manager.create(description="recent")
+        # Backdate an older snapshot file directly so we can assert
+        # age-based pruning without sleeping.
+        old_path = tmp_path / "snap_old-id-12345.json.gz"
+        old_path.write_bytes(b"placeholder")  # filename pattern only
+        # We need a real envelope so the parser succeeds; build one
+        # via a second snapshot then rename its file to the old id.
+        very_old_id = manager.create(description="very-old")
+        very_old_path = tmp_path / f"{very_old_id}.json.gz"
+        # Re-stamp the very_old envelope with a backdated created_at
+        # by patching the envelope content in place.
+        import gzip as _gzip
+        import json as _json
+
+        with _gzip.open(very_old_path, "rt", encoding="utf-8") as fh:
+            envelope = _json.loads(fh.read())
+        envelope["created_at"] = "2020-01-01T00:00:00Z"  # > 1 day ago
+        # Recompute sha256 so the integrity check still passes if we
+        # were to call show() on it; prune does NOT verify sha256, but
+        # we keep the envelope valid for any downstream tests.
+        canonical = _canonical_json_dumps(
+            {**envelope, "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"}}
+        )
+        import hashlib as _hashlib
+
+        envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        with _gzip.open(very_old_path, "wt", encoding="utf-8") as fh:
+            fh.write(_canonical_json_dumps(envelope))
+
+        # keep_days=30 keeps both (recent and backdated-2020 is older than 30 days).
+        result = manager.prune(keep_days=30)
+        assert very_old_id in result.would_delete, (
+            f"expected very_old ({very_old_id}) in would_delete; "
+            f"got would_delete={result.would_delete!r} would_keep={result.would_keep!r}"
+        )
+        assert recent_id in result.would_keep
+
+    def test_prune_max_total_size_mb_evicts_oldest_first(
+        self, tmp_path: Path
+    ) -> None:
+        """max_total_size_mb=N deletes oldest-first until total size fits."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids = [manager.create(description=f"snap-{i}") for i in range(5)]
+
+        # Get total size on disk in bytes.
+        total_bytes = sum(p.stat().st_size for p in tmp_path.glob("snap_*.json.gz"))
+        # Pick a budget smaller than total (forces deletions) but big
+        # enough to keep at least the newest snapshot.
+        target_bytes = total_bytes // 2  # arbitrary
+
+        result = manager.prune(max_total_size_mb=max(1, target_bytes // (1024 * 1024)))
+
+        # The newest snapshot is NEVER deleted.
+        assert ids[-1] not in result.would_delete, (
+            f"newest snapshot MUST never be in would_delete; got {result.would_delete!r}"
+        )
+        # The would-delete list is in chronological (oldest-first) order.
+        if len(result.would_delete) > 1:
+            ids_to_delete = result.would_delete
+            expected_oldest_first = sorted(
+                ids_to_delete, key=lambda sid: ids.index(sid)
+            )
+            assert ids_to_delete == expected_oldest_first, (
+                f"would_delete must be oldest-first; got {ids_to_delete!r} "
+                f"vs expected {expected_oldest_first!r}"
+            )
+
+    def test_prune_dry_run_when_no_confirm(
+        self, tmp_path: Path
+    ) -> None:
+        """prune() without confirm=True is dry-run; no files deleted."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids = [manager.create(description=f"snap-{i}") for i in range(4)]
+        files_before = sorted(p.name for p in tmp_path.glob("snap_*.json.gz"))
+
+        result = manager.prune(keep_last=1)
+
+        assert result.dry_run is True
+        assert result.deleted == []
+        files_after = sorted(p.name for p in tmp_path.glob("snap_*.json.gz"))
+        assert files_after == files_before, (
+            f"dry-run MUST NOT delete; before={files_before} after={files_after}"
+        )
+        # Newest snapshot is in would_keep.
+        assert ids[-1] in result.would_keep
+
+    def test_prune_confirm_true_actually_deletes(
+        self, tmp_path: Path
+    ) -> None:
+        """prune(confirm=True, keep_last=1) deletes 3 of 4 snapshots."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids = [manager.create(description=f"snap-{i}") for i in range(4)]
+
+        result = manager.prune(keep_last=1, confirm=True)
+
+        assert result.dry_run is False
+        assert sorted(result.deleted) == sorted(ids[:3]), (
+            f"expected 3 oldest deleted; got deleted={result.deleted!r}"
+        )
+        remaining = sorted(p.stem.replace(".json", "") for p in tmp_path.glob("snap_*.json.gz"))
+        assert remaining == [ids[3]], (
+            f"expected only the newest snapshot on disk; got {remaining!r}"
+        )
+
+    def test_prune_never_deletes_most_recent(
+        self, tmp_path: Path
+    ) -> None:
+        """The most-recent snapshot is in would_keep, never would_delete."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids = [manager.create(description=f"snap-{i}") for i in range(5)]
+
+        result = manager.prune(keep_last=0)  # would normally delete all
+
+        # Without --force, the most recent snapshot is protected.
+        assert ids[-1] not in result.would_delete, (
+            f"newest MUST not be in would_delete; got {result.would_delete!r}"
+        )
+        assert ids[-1] in result.would_keep
+
+    def test_prune_respects_pinned_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        """Snapshots with metadata.pinned=True are never deleted."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        # Create 3 snapshots; then mark the MIDDLE one pinned by
+        # rewriting its envelope with metadata.pinned=True.
+        ids = [manager.create(description=f"snap-{i}") for i in range(3)]
+        middle_id = ids[1]
+        middle_path = tmp_path / f"{middle_id}.json.gz"
+        import gzip as _gzip
+        import hashlib as _hashlib
+        import json as _json
+
+        with _gzip.open(middle_path, "rt", encoding="utf-8") as fh:
+            envelope = _json.loads(fh.read())
+        envelope["metadata"]["pinned"] = True
+        # Recompute sha256 so the envelope stays self-consistent (show()
+        # does not need to succeed for prune, but consistency matters
+        # for downstream consumers).
+        canonical = _canonical_json_dumps(
+            {**envelope, "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"}}
+        )
+        envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        with _gzip.open(middle_path, "wt", encoding="utf-8") as fh:
+            fh.write(_canonical_json_dumps(envelope))
+
+        result = manager.prune(keep_last=1, confirm=True)
+
+        # Pinned middle snapshot is NEVER deleted.
+        assert middle_id not in result.deleted, (
+            f"pinned snapshot MUST not be deleted; got deleted={result.deleted!r}"
+        )
+        assert (tmp_path / f"{middle_id}.json.gz").exists(), (
+            "pinned snapshot file MUST remain on disk after prune"
+        )
+
+    def test_prune_force_overrides_most_recent_safety(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """prune(force=True, keep_last=0) deletes all 5 snapshots + warns."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        ids = [manager.create(description=f"snap-{i}") for i in range(5)]
+
+        result = manager.prune(keep_last=0, confirm=True, force=True)
+
+        # All snapshots deleted (force overrides the safety net).
+        assert sorted(result.deleted) == sorted(ids), (
+            f"expected all 5 deleted with --force; got deleted={result.deleted!r}"
+        )
+        # No snapshot files left.
+        remaining = list(tmp_path.glob("snap_*.json.gz"))
+        assert remaining == [], (
+            f"all snapshot files MUST be deleted with --force; "
+            f"remaining={[p.name for p in remaining]}"
+        )
+        # Stderr warning emitted.
+        captured = capsys.readouterr()
+        assert "--force" in captured.err or "override" in captured.err.lower(), (
+            f"expected stderr warning; got stderr={captured.err!r}"
+        )
+
+    def test_prune_returns_prune_result_dataclass(
+        self, tmp_path: Path
+    ) -> None:
+        """prune() returns a PruneResult dataclass with the 5 required fields."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        manager.create(description="x")
+
+        result = manager.prune(keep_last=1)
+
+        for field in (
+            "deleted", "would_delete", "would_keep", "freed_bytes", "dry_run",
+        ):
+            assert hasattr(result, field), f"missing field {field!r}"
+        assert isinstance(result.deleted, list)
+        assert isinstance(result.would_delete, list)
+        assert isinstance(result.would_keep, list)
+        assert isinstance(result.freed_bytes, int)
+        assert isinstance(result.dry_run, bool)
