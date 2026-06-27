@@ -111,6 +111,17 @@ def classify_binding(
     return DriftClass.STILL_VALID
 
 
+class SnapshotGraphMissing(ValueError):
+    """Raised when ``scan_change(snap_id=...)`` finds no graph_json in the snapshot.
+
+    D2 graceful degradation: a snapshot created with
+    ``--no-include-graph`` has no ``graph_state.graph_json`` field, so a
+    drift-pinned scan cannot classify bindings against a frozen graph.
+    The CLI surfaces this as a structured error rather than silently
+    scanning against live disk (which would make ``--snapshot`` a no-op).
+    """
+
+
 def _parse_line(location: object) -> int:
     """Best-effort line-int coercion for graph.json schema variants."""
     if isinstance(location, int):
@@ -121,8 +132,20 @@ def _parse_line(location: object) -> int:
     return 0
 
 
-def load_graph(graph_json_path: Path) -> tuple[dict | None, dict | None, float | None]:
+def load_graph(
+    graph_json_path: Path | None = None,
+    *,
+    snap_id: str | None = None,
+) -> tuple[dict | None, dict | None, float | None]:
     """Load ``graph.json`` once for a drift scan (design #123 decision 1).
+
+    REQ-33 + design D13: the kwarg-only ``snap_id`` activates the
+    frozen-state path. When ``snap_id`` is provided, ``graph_json_path``
+    MUST be ``None`` (mutual exclusion) and the snapshot envelope's
+    ``graph_state.graph_json`` is loaded instead of the disk file. The
+    snapshot's stored ``metadata.file_size_bytes`` mtime is returned in
+    place of the live ``graph_mtime`` so audit correlation reflects the
+    frozen state.
 
     Returns a 3-tuple ``(current_nodes, current_id_map, graph_mtime)``. When
     the path is missing, the JSON is malformed, or the top-level shape is
@@ -135,6 +158,17 @@ def load_graph(graph_json_path: Path) -> tuple[dict | None, dict | None, float |
     - ``graph_mtime``: epoch seconds (float) of the snapshot, used for
       audit correlation in the resulting ``DriftReport``.
     """
+    if snap_id is not None and graph_json_path is not None:
+        raise ValueError(
+            "load_graph: snap_id and graph_json_path are mutually exclusive; "
+            "pass one or the other, never both"
+        )
+    if snap_id is not None:
+        return _load_graph_from_snapshot(snap_id)
+    if graph_json_path is None:
+        # No path, no snap_id: fail-open return (mirrors the historical
+        # ``Path is None`` behavior on the live path).
+        return (None, None, None)
     try:
         if not graph_json_path.exists():
             return (None, None, None)
@@ -145,6 +179,20 @@ def load_graph(graph_json_path: Path) -> tuple[dict | None, dict | None, float |
     if not isinstance(data, dict):
         return (None, None, None)
     nodes = data.get("nodes", [])
+    if not isinstance(nodes, list):
+        return (None, None, None)
+    return _index_graph_payload(nodes, mtime)
+
+
+def _index_graph_payload(
+    nodes: list, mtime: float | None,
+) -> tuple[dict | None, dict | None, float | None]:
+    """Convert a raw ``graph.json`` ``nodes`` list into the index tuple.
+
+    Shared between the live and snapshot-pinned branches so the binding
+    shape (``file/line`` vs ``source_file/source_location``) tolerance
+    is identical.
+    """
     if not isinstance(nodes, list):
         return (None, None, None)
     current_nodes: dict[str, dict] = {}
@@ -159,6 +207,142 @@ def load_graph(graph_json_path: Path) -> tuple[dict | None, dict | None, float |
         label = str(n.get("label", nid))
         current_id_map[nid] = (file, line, label)
     return (current_nodes, current_id_map, mtime)
+
+
+def _load_graph_from_snapshot(
+    snap_id: str,
+) -> tuple[dict | None, dict | None, float | None]:
+    """Load the frozen ``graph_state.graph_json`` from the snapshot envelope.
+
+    Reads from ``~/.flow-engineering/snapshots/<snap_id>.json.gz``. The
+    envelope is parsed via :class:`SnapshotManager.show` so the sha256
+    integrity check fires before any bytes are consumed by the scan. If
+    the snapshot was created with ``--no-include-graph``, the
+    ``graph_state.graph_json`` field is absent — we return
+    ``(None, None, None)`` so the caller fail-opens with
+    ``graph_unavailable=True`` rather than raising.
+    """
+    from flow_engineering.snapshot_manager import (
+        SnapshotEnvelopeError,
+        SnapshotManager,
+    )
+
+    # Honour the FLOW_SNAPSHOTS_DIR / test override pattern via the env
+    # variable so the production default is consistent with the CLI.
+    snapshots_dir = _resolve_snapshots_dir()
+    manager = SnapshotManager(snapshots_dir=snapshots_dir, backend=_DummyBackend())
+    try:
+        envelope = manager.show(snap_id)
+    except SnapshotEnvelopeError:
+        return (None, None, None)
+
+    graph_state = envelope.get("graph_state", {})
+    graph_json = graph_state.get("graph_json")
+    if not isinstance(graph_json, dict):
+        # No frozen graph (e.g. ``--no-include-graph`` was used at create
+        # time). Fail-open: caller will surface ``graph_unavailable=True``.
+        return (None, None, None)
+    nodes = graph_json.get("nodes", [])
+    # Use the snapshot's stored ``file_size_bytes`` as a synthetic
+    # ``graph_mtime`` so audit correlations can still distinguish frozen
+    # scans from live ones (the field is opaque to consumers; only its
+    # presence is contractually required).
+    meta = envelope.get("metadata", {})
+    synthetic_mtime = float(meta.get("file_size_bytes", 0)) or None
+    return _index_graph_payload(nodes, synthetic_mtime)
+
+
+class _DummyBackend:
+    """Backend stub used by ``_load_graph_from_snapshot``.
+
+    The ``SnapshotManager`` constructor requires an ``EngramBackend`` but
+    the snap-id branch never calls ``iter_observations`` — it only reads
+    the envelope file directly via ``show``. The dummy satisfies the
+    constructor signature without exposing any real data.
+    """
+
+    def iter_observations(self, *, project=None):  # pragma: no cover - unreachable
+        return []
+
+    def mem_search(self, *args, **kwargs):  # pragma: no cover - unreachable
+        return []
+
+
+def _resolve_snapshots_dir() -> Path:
+    """Resolve the snapshot directory path, honouring the env override.
+
+    Mirrors the cross-project-federation pattern: production default is
+    ``~/.flow-engineering/snapshots``; tests override via
+    ``FLOW_SNAPSHOTS_DIR`` (set in conftest when ``tmp_path`` is wired).
+    """
+    import os
+    env = os.environ.get("FLOW_SNAPSHOTS_DIR")
+    if env:
+        return Path(env)
+    return Path.home() / ".flow-engineering" / "snapshots"
+
+
+def _snapshot_exists(snap_id: str) -> bool:
+    """Return True iff the snapshot envelope file is on disk."""
+    return (_resolve_snapshots_dir() / f"{snap_id}.json.gz").exists()
+
+
+def _snapshot_has_graph(snap_id: str) -> bool:
+    """Return True iff the snapshot's envelope has ``graph_state.graph_json``."""
+    from flow_engineering.snapshot_manager import (
+        SnapshotEnvelopeError,
+        SnapshotManager,
+    )
+    manager = SnapshotManager(
+        snapshots_dir=_resolve_snapshots_dir(),
+        backend=_DummyBackend(),
+    )
+    try:
+        envelope = manager.show(snap_id)
+    except SnapshotEnvelopeError:
+        return False
+    return isinstance(
+        envelope.get("graph_state", {}).get("graph_json"), dict
+    )
+
+
+def _frozen_backend_from_snapshot(snap_id: str) -> "EngramBackend":
+    """Return an ``InMemoryBackend`` populated with the snapshot's frozen observations.
+
+    REQ-33 D13: the snapshot's ``graph_state.observations`` becomes the
+    implicit backend for the scan. We rebuild an ``InMemoryBackend``
+    whose ``observations`` dict matches the snapshot, so the existing
+    ``backend.iter_observations()`` scan loop runs unchanged.
+    """
+    from flow_engineering.engram_io import InMemoryBackend
+    from flow_engineering.snapshot_manager import (
+        SnapshotEnvelopeError,
+        SnapshotManager,
+    )
+
+    manager = SnapshotManager(
+        snapshots_dir=_resolve_snapshots_dir(),
+        backend=_DummyBackend(),
+    )
+    try:
+        envelope = manager.show(snap_id)
+    except SnapshotEnvelopeError:
+        return InMemoryBackend()
+
+    obs_list = envelope.get("graph_state", {}).get("observations", [])
+    frozen = InMemoryBackend()
+    if not isinstance(obs_list, list):
+        return frozen
+    for o in obs_list:
+        if not isinstance(o, dict) or "id" not in o:
+            continue
+        # Preserve the snapshot's id so iteration returns the same
+        # observation set the scan saw at snapshot time.
+        oid = int(o["id"])
+        frozen.observations[oid] = dict(o)
+        if oid >= frozen.next_id:
+            frozen.next_id = oid + 1
+    return frozen
 
 
 def _detect_contradicted(findings: list[Finding]) -> set[int]:
@@ -188,12 +372,13 @@ def _detect_contradicted(findings: list[Finding]) -> set[int]:
 def scan_change(
     change_name: str,
     *,
-    graph_json_path: Path,
+    graph_json_path: Path | None = None,
     backend: "EngramBackend | None" = None,
     include_obsolete: bool = False,
     since: float | None = None,
+    snap_id: str | None = None,
 ) -> DriftReport:
-    """Scan a change for decision-to-code drift (REQ-9 + REQ-12).
+    """Scan a change for decision-to-code drift (REQ-9 + REQ-12 + REQ-33).
 
     Aggregates per-binding classifications into a ``DriftReport``. Fails
     open: every error path returns a safe report (graph_unavailable=True
@@ -201,37 +386,93 @@ def scan_change(
     MUST NOT raise — callers (``flow drift`` CLI, daemon) rely on a
     terminal ``DriftReport``.
 
+    REQ-33 + design D13 + D5: the kwarg-only ``snap_id`` activates the
+    frozen-state path. When ``snap_id`` is provided:
+
+    - ``backend`` MUST be ``None`` (mutual exclusion — the snapshot
+      provides the observation set implicitly).
+    - ``graph_json_path`` SHOULD be ``None`` (the snapshot provides the
+      graph.json content implicitly).
+    - Internally calls ``load_graph(snap_id=snap_id)`` to load the
+      frozen graph.
+    - Builds an ``InMemoryBackend`` from the snapshot's
+      ``graph_state.observations`` so the rest of the scan logic runs
+      unchanged against the frozen observation set.
+
     Args:
         change_name: The OpenSpec/SDD change identifier.
-        graph_json_path: Path to ``graph.json`` snapshot.
+        graph_json_path: Path to ``graph.json`` snapshot. Ignored when
+            ``snap_id`` is provided.
         backend: ``EngramBackend`` exposing ``iter_observations()``. When
-            ``None``, an empty ``InMemoryBackend`` is used (zero decisions).
+            ``None``, an empty ``InMemoryBackend`` is used (zero decisions)
+            OR a frozen-backend derived from the snapshot when
+            ``snap_id`` is set.
         include_obsolete: When ``True``, query ``graphify_query`` for
             decisions without code_refs and emit ``OBSOLETE`` when zero
             candidates clear the threshold. Defaults ``False`` per design
             #123 decision 3 (LLM cost bound).
         since: Epoch seconds; skip observations whose ``created_at`` is
             strictly less than the cutoff.
+        snap_id: When set, scan the snapshot's frozen observations
+            instead of the live Engram backend. REQ-33 D5 headline —
+            different snapshots → different drift reports.
 
     Returns:
         ``DriftReport`` aggregating per-binding classifications.
     """
     scanned_at = time.time()
+    if snap_id is not None and backend is not None:
+        # Mutual exclusion enforced as a ``ValueError`` so callers can
+        # branch on it; ``load_graph`` mirrors this with its own check.
+        raise ValueError(
+            "scan_change: snap_id and backend are mutually exclusive; "
+            "pass one or the other, never both"
+        )
     try:
-        current_nodes, current_id_map, graph_mtime = load_graph(graph_json_path)
-        if current_nodes is None:
-            return DriftReport(
-                change_name=change_name,
-                scanned_at=scanned_at,
-                graph_mtime=None,
-                decisions_total=0,
-                bindings_total=0,
-                graph_unavailable=True,
+        # When ``snap_id`` is set, ``graph_json_path`` is loaded from the
+        # snapshot envelope. When not, fall through to the existing
+        # behavior — load from disk.
+        if snap_id is not None:
+            current_nodes, current_id_map, graph_mtime = load_graph(
+                graph_json_path=None, snap_id=snap_id,
             )
+            if current_nodes is None:
+                # Either the envelope is corrupt or ``--no-include-graph``
+                # was used at create time. D2 graceful degradation: raise
+                # ``SnapshotGraphMissing`` so the CLI can render a
+                # structured error rather than silently scanning live.
+                # We only raise when the snapshot exists but its graph
+                # is missing; an unreadable envelope returns the same
+                # ``graph_unavailable=True`` report as the live path.
+                if _snapshot_exists(snap_id) and not _snapshot_has_graph(snap_id):
+                    raise SnapshotGraphMissing(
+                        f"snapshot {snap_id} has no graph_json (created with "
+                        f"--no-include-graph); drift-pinned scan unavailable"
+                    )
+                return DriftReport(
+                    change_name=change_name,
+                    scanned_at=scanned_at,
+                    graph_mtime=None,
+                    decisions_total=0,
+                    bindings_total=0,
+                    graph_unavailable=True,
+                )
+            backend = _frozen_backend_from_snapshot(snap_id)
+        else:
+            current_nodes, current_id_map, graph_mtime = load_graph(graph_json_path)
+            if current_nodes is None:
+                return DriftReport(
+                    change_name=change_name,
+                    scanned_at=scanned_at,
+                    graph_mtime=None,
+                    decisions_total=0,
+                    bindings_total=0,
+                    graph_unavailable=True,
+                )
 
-        if backend is None:
-            from flow_engineering.engram_io import InMemoryBackend
-            backend = InMemoryBackend()
+            if backend is None:
+                from flow_engineering.engram_io import InMemoryBackend
+                backend = InMemoryBackend()
 
         try:
             observations = backend.iter_observations()
@@ -347,6 +588,12 @@ def scan_change(
             findings=findings,
             graph_unavailable=False,
         )
+    except SnapshotGraphMissing:
+        # Configuration error: caller asked for ``snap_id`` scan but the
+        # snapshot's graph is missing. Re-raise so the CLI can render a
+        # structured error; do NOT fail-open (the user explicitly asked
+        # for the frozen scan and we cannot satisfy it).
+        raise
     except Exception:
         return DriftReport(
             change_name=change_name,
