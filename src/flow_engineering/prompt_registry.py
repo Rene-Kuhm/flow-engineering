@@ -19,10 +19,15 @@ Public surface:
 - :func:`get_prompt_metadata` -- shorthand for ``get_prompt(name).metadata``.
 - :func:`register_prompt` -- append a NEW prompt (idempotency check).
 - :func:`unregister_prompt` -- inverse of register, primarily for tests.
+- :func:`register` -- positional-args shorthand that wraps ``register_prompt``.
+- :func:`validate_catalog` -- REQ-47 lint foundation: detect the 5 catalog
+  error codes BEFORE the heavier :func:`lint_prompts` helper builds on top.
+- :class:`LintError` -- frozen dataclass describing one catalog violation.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -232,7 +237,172 @@ def unregister_prompt(name: str) -> None:
     PROMPT_NAMES = tuple(p for p in PROMPT_NAMES if p.name != name)
 
 
+@dataclass(frozen=True)
+class LintError:
+    """One validation error in the prompt catalog (REQ-47 foundation).
+
+    Attributes:
+        prompt_name: The :class:`PromptDef` name that failed validation.
+        error_code: One of ``"duplicate_name"``, ``"invalid_domain"``,
+            ``"jinja_syntax"``, ``"undefined_var"``, ``"invalid_version"``.
+        message: Human-readable diagnostic surfaced by ``flow prompts lint``.
+        line: 1-indexed template line number when available; ``None`` for
+            catalog-level checks (duplicate name, invalid domain, invalid
+            version).
+    """
+
+    prompt_name: str
+    error_code: str
+    message: str
+    line: int | None = None
+
+
+def register(
+    name: str,
+    template: str,
+    domain: PromptDomain,
+    *,
+    version: str = "1.0.0",
+    **metadata: Any,
+) -> None:
+    """Shorthand :func:`register_prompt` with positional arguments.
+
+    Convenience wrapper for plugin / test paths that build the catalog
+    dynamically. Production prompts should be added to :data:`PROMPT_NAMES`
+    directly so the catalog stays statically discoverable.
+
+    Args:
+        name: Unique identifier for the new prompt.
+        template: The prompt string (Python ``.format()`` style for v1).
+        domain: :class:`PromptDomain` category.
+        version: SemVer ``MAJOR.MINOR.PATCH`` (default ``"1.0.0"``).
+        **metadata: Stored on :attr:`PromptDef.metadata`. Common keys:
+            ``model``, ``max_tokens``, ``required_vars``.
+
+    Raises:
+        ValueError: When a prompt with the same ``name`` is already in the
+            catalog (delegated to :func:`register_prompt`).
+    """
+    register_prompt(
+        PromptDef(
+            name=name,
+            domain=domain,
+            template=template,
+            version=version,
+            metadata=dict(metadata),
+        )
+    )
+
+
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def validate_catalog(
+    catalog: tuple[PromptDef, ...] | None = None,
+) -> list[LintError]:
+    """Validate the prompt catalog (REQ-47 lint foundation).
+
+    Detects the 5 catalog-level error codes without raising. Callers (the
+    ``flow prompts lint`` CLI, pytest fixtures, CI gates) decide how to
+    surface the result.
+
+    Checks:
+        1. ``duplicate_name`` -- the same name appears twice in the catalog.
+        2. ``invalid_domain`` -- ``entry.domain`` is not a :class:`PromptDomain`
+            value (defensive; allows subclasses / mocks to surface a useful
+            error).
+        3. ``jinja_syntax`` -- the template body fails Jinja2 parse.
+        4. ``undefined_var`` -- a Jinja2 ``{{ var }}`` placeholder appears in
+            the template body but is not declared in ``metadata.required_vars``.
+            Templates using Python ``.format()`` style (e.g., ``{test_command}``)
+            are valid literal text in Jinja2 and therefore do NOT trigger this
+            check; the catalog is format-agnostic at v1.
+        5. ``invalid_version`` -- ``entry.version`` does not match the SemVer
+            ``MAJOR.MINOR.PATCH`` regex.
+
+    Args:
+        catalog: The catalog to validate. ``None`` defaults to
+            :data:`PROMPT_NAMES`. An empty tuple returns ``[]``.
+
+    Returns:
+        A list of :class:`LintError` instances. Empty list means the catalog
+        is well-formed. Order is unspecified; callers MUST NOT depend on
+        ordering.
+    """
+    if catalog is None:
+        catalog = PROMPT_NAMES
+    errors: list[LintError] = []
+    seen_names: set[str] = set()
+
+    for entry in catalog:
+        if entry.name in seen_names:
+            errors.append(
+                LintError(
+                    prompt_name=entry.name,
+                    error_code="duplicate_name",
+                    message=f"prompt {entry.name!r} already in catalog",
+                )
+            )
+        else:
+            seen_names.add(entry.name)
+
+        if not isinstance(entry.domain, PromptDomain):
+            errors.append(
+                LintError(
+                    prompt_name=entry.name,
+                    error_code="invalid_domain",
+                    message=f"domain {entry.domain!r} is not a PromptDomain value",
+                )
+            )
+
+        try:
+            from jinja2 import Environment
+            from jinja2 import meta as jinja_meta
+
+            env = Environment()
+            ast = env.parse(entry.template)
+            undeclared = jinja_meta.find_undeclared_variables(ast)
+            declared = entry.metadata.get("required_vars", set())
+            for var in undeclared:
+                if var not in declared:
+                    errors.append(
+                        LintError(
+                            prompt_name=entry.name,
+                            error_code="undefined_var",
+                            message=(
+                                f"variable {var!r} used in template but not "
+                                "in metadata.required_vars"
+                            ),
+                        )
+                    )
+        except Exception as exc:
+            line = getattr(exc, "lineno", None)
+            errors.append(
+                LintError(
+                    prompt_name=entry.name,
+                    error_code="jinja_syntax",
+                    message=f"Jinja2 parse failed: {exc}",
+                    line=line,
+                )
+            )
+
+        if not _SEMVER_RE.match(entry.version):
+            errors.append(
+                LintError(
+                    prompt_name=entry.name,
+                    error_code="invalid_version",
+                    message=(
+                        f"version {entry.version!r} is not a valid SemVer "
+                        "MAJOR.MINOR.PATCH string"
+                    ),
+                )
+            )
+
+    return errors
+
+
 __all__ = [
+    "LintError",
     "PROMPT_NAMES",
     "PromptDef",
     "PromptDomain",
@@ -240,6 +410,8 @@ __all__ = [
     "get_prompt_metadata",
     "get_prompt_template",
     "list_prompts",
+    "register",
     "register_prompt",
     "unregister_prompt",
+    "validate_catalog",
 ]
