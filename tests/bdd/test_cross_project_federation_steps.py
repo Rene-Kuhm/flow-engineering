@@ -1,43 +1,42 @@
-"""BDD step definitions for cross-project-federation REQ-23.
+"""BDD step definitions for cross-project-federation REQ-23, REQ-24, REQ-25.
 
-Covers ``req23_federated_search.feature`` (5 scenarios) — the BDD acceptance
-gate for the federated multi-project search API on ``EngramBackend`` v1.2.
+Covers three feature files:
 
-REQ-23 scenarios exercise ``InMemoryBackend.mem_search_federated`` with
-three orthogonal filters (projects, since, type_filter) plus the ABC default
-behaviour for third-party subclasses:
-
-- Scenario 1: federation across 3 projects preserves the ``project`` field
-  on every returned row.
-- Scenario 2: ``projects=["flow-engineering"]`` restricts the result set
-  (no leakage from other projects).
-- Scenario 3: ``since="2026-06-01"`` uses lexicographic ``>=`` against the
-  ``YYYY-MM-DD HH:MM:SS`` TEXT format.
-- Scenario 4: ``type_filter=["decision", "bugfix"]`` matches by exact type.
-- Scenario 5: ABC default raises ``NotImplementedError`` when not overridden.
+- ``req23_federated_search.feature`` (5 scenarios) — REQ-23 acceptance gate
+  for the federated multi-project search API on ``EngramBackend`` v1.2.
+- ``req24_project_detector.feature`` (6 scenarios) — REQ-24 acceptance gate
+  for ``project_detector.detect`` + ``flow projects backfill`` safety gate.
+- ``req25_cli_federated.feature`` (5 scenarios) — REQ-25 acceptance gate
+  for the four opt-in federated flags on the ``flow search`` CLI.
 
 Test isolation:
-- Each scenario gets a fresh ``InMemoryBackend`` (no SQLite, no real DB).
-- Observations are seeded with explicit ``project`` and ``created_at`` so
-  filtering assertions are deterministic.
-- The ABC-default scenario uses a local ``PlainBackend`` subclass that does
-  NOT override ``mem_search_federated``.
-
-Steps are reusable: batches B and C will add REQ-24 / REQ-25 step glue to
-this file under their own prefixes (the fixture and helper structure here
-is the common pattern).
+- REQ-23: each scenario gets a fresh ``InMemoryBackend`` (no SQLite).
+- REQ-24: scenarios 1-2 exercise ``project_detector.detect`` directly;
+  scenarios 3-6 invoke the CLI through ``CliRunner`` with a monkeypatched
+  ``_default_save_backend`` factory returning the fixture backend.
+- REQ-25: every scenario invokes the CLI through ``CliRunner`` with a
+  monkeypatched backend (mirrors the unit-test pattern from
+  ``tests/unit/test_cli_federated.py``).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import CliRunner
 from pytest_bdd import given, parsers, scenario, then, when
 
+from flow_engineering.cli import main
 from flow_engineering.engram_io import EngramBackend, InMemoryBackend
+from flow_engineering.project_detector import detect
 
 
-# ---------- World fixture ----------
+runner = CliRunner()
+
+
+# ---------- World fixtures ----------
 
 
 @pytest.fixture
@@ -50,7 +49,39 @@ def federated_world(tmp_path) -> dict[str, Any]:
     }
 
 
-# ---------- Scenario bindings ----------
+@pytest.fixture
+def req24_world(tmp_path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-24 scenarios 1-2 (detect only).
+
+    Holds:
+    - ``cwd``: the synthetic Path used by scenarios 1-2.
+    - ``detected``: the string/None return value from ``detect()``.
+    """
+    return {
+        "cwd": None,
+        "detected": None,
+    }
+
+
+@pytest.fixture
+def cli_world(tmp_path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-24 (scenarios 3-6) and REQ-25.
+
+    One world covers BOTH REQ-24 backfill CLI scenarios AND REQ-25 federated
+    CLI scenarios so a single set of shared ``Then`` steps can run against
+    either family of scenarios. REQ-23 keeps its own ``federated_world``
+    because it doesn't touch the CLI runner.
+    """
+    return {
+        "backend": InMemoryBackend(),
+        "exit_code": None,
+        "output": None,
+        "stdout": None,
+        "payload": None,
+    }
+
+
+# ---------- REQ-23 scenario bindings ----------
 
 
 @scenario(
@@ -93,7 +124,101 @@ def test_req23_abc_default_raises(federated_world):
     pass
 
 
-# ---------- Given steps ----------
+# ---------- REQ-24 scenario bindings ----------
+
+
+@scenario(
+    "../bdd/req24_project_detector.feature",
+    "detect returns the project name when cwd is under dev/proyects",
+)
+def test_req24_detect_returns_project_name(req24_world):
+    pass
+
+
+@scenario(
+    "../bdd/req24_project_detector.feature",
+    "detect returns None when cwd is not under a projects dir",
+)
+def test_req24_detect_returns_none_for_unknown(req24_world):
+    pass
+
+
+@scenario(
+    "../bdd/req24_project_detector.feature",
+    "flow projects backfill with no flags defaults to dry-run",
+)
+def test_req24_backfill_default_is_dry_run(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req24_project_detector.feature",
+    "flow projects backfill --confirm --project=<key> writes tags",
+)
+def test_req24_backfill_confirm_project_writes(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req24_project_detector.feature",
+    "flow projects backfill --confirm without --project refuses with non-zero exit",
+)
+def test_req24_backfill_confirm_no_project_refuses(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req24_project_detector.feature",
+    "flow projects backfill --dry-run emits a JSON report to stdout",
+)
+def test_req24_backfill_dry_run_emits_json(cli_world):
+    pass
+
+
+# ---------- REQ-25 scenario bindings ----------
+
+
+@scenario(
+    "../bdd/req25_cli_federated.feature",
+    "flow search without --federated is byte-identical to pre-change behaviour",
+)
+def test_req25_no_federated_byte_identical(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req25_cli_federated.feature",
+    "flow search --federated returns results from all projects",
+)
+def test_req25_federated_returns_all_projects(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req25_cli_federated.feature",
+    "flow search --federated --projects=<csv> restricts to the named projects",
+)
+def test_req25_federated_projects_csv_restricts(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req25_cli_federated.feature",
+    "flow search --federated --since=<iso> excludes observations created before that date",
+)
+def test_req25_federated_since_excludes_older(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req25_cli_federated.feature",
+    "flow search --federated --type=<csv> includes only matching type observations",
+)
+def test_req25_federated_type_restricts(cli_world):
+    pass
+
+
+# ---------- Given steps (REQ-23) ----------
 
 
 @given("an InMemoryBackend seeded with 3 observations across 3 distinct projects")
@@ -188,10 +313,10 @@ def build_plain_backend(federated_world):
     federated_world["backend"] = PlainBackend()
 
 
-# ---------- When steps ----------
+# ---------- When steps (REQ-23) ----------
 
 
-@when("I call mem_search_federated(\"drift\") with all 3 projects")
+@when('I call mem_search_federated("drift") with all 3 projects')
 def call_federated_all_three(federated_world):
     try:
         federated_world["results"] = federated_world["backend"].mem_search_federated(
@@ -256,7 +381,7 @@ def call_federated_on_plain_backend(federated_world, query: str):
         federated_world["raised"] = exc
 
 
-# ---------- Then steps ----------
+# ---------- Then steps (REQ-23) ----------
 
 
 @then(parsers.parse("{n:d} results are returned"))
@@ -328,4 +453,361 @@ def not_implemented_error_raised(federated_world):
 def error_message_includes(federated_world, needle: str):
     assert needle in str(federated_world["raised"]), (
         f"Expected '{needle}' in error message, got: {federated_world['raised']!r}"
+    )
+
+
+# ---------- Given steps (REQ-24) ----------
+
+
+@given(parsers.parse('a project_detector with cwd "{cwd}"'))
+def set_req24_cwd(req24_world: dict[str, Any], cwd: str) -> None:
+    req24_world["cwd"] = Path(cwd)
+
+
+def _seed_untagged(backend: InMemoryBackend) -> int:
+    """Seed one observation WITHOUT a project tag (REQ-24 backfill fixture).
+
+    Overwrites the auto-default ``"insyd"`` tag with ``None`` to model the
+    "historical observation that lost its tag" case the backfill exists
+    to repair. Returns the observation id.
+    """
+    obs = backend.mem_save(
+        title="legacy drift entry",
+        content="drift detection strategy",
+        topic_key="sdd/x/spec",
+    )
+    obs["project"] = None
+    return int(obs["id"])
+
+
+@given("an InMemoryBackend with 1 untagged observation")
+def seed_one_untagged(cli_world: dict[str, Any]) -> None:
+    _seed_untagged(cli_world["backend"])
+
+
+# ---------- When steps (REQ-24) ----------
+
+
+@when("I call detect() with that cwd")
+def call_detect_with_cwd(req24_world: dict[str, Any]) -> None:
+    req24_world["detected"] = detect(req24_world["cwd"])
+
+
+def _run_backfill(cli_world: dict[str, Any], cli_args: list[str]) -> None:
+    """Invoke ``flow projects backfill <cli_args>`` with a seeded backend."""
+    from flow_engineering import cli as cli_mod
+
+    backend = cli_world["backend"]
+    cli_mod._default_save_backend = lambda: backend  # type: ignore[assignment]
+    result = runner.invoke(main, ["projects", "backfill", *cli_args])
+    cli_world["exit_code"] = result.exit_code
+    cli_world["output"] = result.output
+    cli_world["stdout"] = (
+        result.output if result.stdout is None else f"{result.stdout}"
+    )
+    # If the CLI streams to stderr, the combined ``output`` still has it;
+    # pytest's CliRunner joins them. We try to parse JSON from stdout first.
+    if result.stdout:
+        try:
+            cli_world["stdout"] = result.stdout
+        except Exception:
+            pass
+
+
+@when(parsers.parse('I run the CLI "flow projects backfill {flags}"'))
+def run_backfill_cli(cli_world: dict[str, Any], flags: str) -> None:
+    """Invoke ``flow projects backfill <flags>``. ``flags`` is one or more CLI args.
+
+    The bare ``flow projects backfill`` (no flags) variant is handled by
+    :func:`run_backfill_no_flags` because ``{flags:w}`` requires a non-empty
+    capture.
+    """
+    tokens = flags.split()
+    _run_backfill(cli_world, tokens)
+
+
+@when("I run the flow projects backfill CLI with no flags")
+def run_backfill_no_flags(cli_world: dict[str, Any]) -> None:
+    """Invoke ``flow projects backfill`` (default dry-run)."""
+    _run_backfill(cli_world, [])
+
+
+# ---------- Then steps (REQ-24) ----------
+
+
+@then(parsers.parse('the returned project is "{expected}"'))
+def then_detected_is(req24_world: dict[str, Any], expected: str) -> None:
+    assert req24_world["detected"] == expected, (
+        f"Expected detect() == {expected!r}, got {req24_world['detected']!r}"
+    )
+
+
+@then("the returned project is None")
+def then_detected_is_none(req24_world: dict[str, Any]) -> None:
+    assert req24_world["detected"] is None, (
+        f"Expected detect() == None, got {req24_world['detected']!r}"
+    )
+
+
+@then("the exit code is 0")
+def then_exit_code_zero(cli_world: dict[str, Any]) -> None:
+    assert cli_world["exit_code"] == 0, (
+        f"Expected exit 0, got {cli_world['exit_code']}; output={cli_world['output']!r}"
+    )
+
+
+@then("the exit code is non-zero")
+def then_exit_code_nonzero(cli_world: dict[str, Any]) -> None:
+    assert cli_world["exit_code"] != 0, (
+        f"Expected non-zero exit, got 0; output={cli_world['output']!r}"
+    )
+
+
+@then("the observation is still untagged")
+def then_observation_still_untagged(cli_world: dict[str, Any]) -> None:
+    backend = cli_world["backend"]
+    untagged = [
+        obs for obs in backend.observations.values() if obs.get("project") in (None, "")
+    ]
+    assert untagged, (
+        f"Expected at least one untagged observation; backend={backend.observations!r}"
+    )
+
+
+@then(parsers.parse('the observation is tagged with "{project}"'))
+def then_observation_tagged_with(cli_world: dict[str, Any], project: str) -> None:
+    backend = cli_world["backend"]
+    tagged = [
+        obs for obs in backend.observations.values() if obs.get("project") == project
+    ]
+    assert tagged, (
+        f"Expected at least one observation tagged {project!r}; "
+        f"observations={[(o['id'], o.get('project')) for o in backend.observations.values()]!r}"
+    )
+
+
+@then("stdout is valid JSON")
+def then_stdout_is_valid_json(cli_world: dict[str, Any]) -> None:
+    raw = cli_world["stdout"] or ""
+    parsed = json.loads(raw)
+    assert isinstance(parsed, (dict, list)), (
+        f"Expected JSON object or array, got {type(parsed).__name__}: {parsed!r}"
+    )
+
+
+@then("the JSON report mentions the observation id")
+def then_json_mentions_obs_id(cli_world: dict[str, Any]) -> None:
+    raw = cli_world["stdout"] or ""
+    parsed = json.loads(raw)
+    # Either a list of dicts with observation_id keys, or a dict with a
+    # ``changes`` list. The new T1.12 contract is the dict shape; the BDD
+    # spec lists both forms across the scenario set. Accept either.
+    if isinstance(parsed, list):
+        ids = [int(item.get("observation_id")) for item in parsed if isinstance(item, dict)]
+    else:
+        changes = parsed.get("changes") if isinstance(parsed, dict) else None
+        ids = [int(item.get("observation_id")) for item in (changes or []) if isinstance(item, dict)]
+    assert ids, f"Expected at least one observation_id in JSON report, got {parsed!r}"
+
+
+# ---------- Given steps (REQ-25) ----------
+
+
+def _seed_obs(
+    backend: InMemoryBackend,
+    *,
+    obs_id: int,
+    project: str | None,
+    type: str = "manual",
+    created_at: str = "2026-06-15 10:00:00",
+    title: str = "",
+    content: str = "drift detection strategy",
+) -> None:
+    obs = {
+        "id": obs_id,
+        "title": title or f"obs {obs_id}",
+        "content": content,
+        "topic_key": "sdd/test/phase",
+        "type": type,
+        "scope": "project",
+        "project": project,
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+    backend.observations[obs_id] = obs
+    backend.next_id = max(backend.next_id, obs_id + 1)
+
+
+@given("an InMemoryBackend with drift observations in 2 projects")
+def seed_two_projects(cli_world: dict[str, Any]) -> None:
+    backend = cli_world["backend"]
+    _seed_obs(backend, obs_id=1, project="flow-engineering", title="fe drift")
+    _seed_obs(backend, obs_id=2, project="mockup-2-blog", title="m2b drift")
+    _install_backend(cli_world, backend)
+
+
+@given("an InMemoryBackend with drift observations in 3 projects")
+def seed_three_projects(cli_world: dict[str, Any]) -> None:
+    backend = cli_world["backend"]
+    _seed_obs(backend, obs_id=1, project="flow-engineering", title="fe drift")
+    _seed_obs(backend, obs_id=2, project="mockup-2-blog", title="m2b drift")
+    _seed_obs(
+        backend,
+        obs_id=3,
+        project="tecnodespegue-landing",
+        title="tdl drift",
+    )
+    _install_backend(cli_world, backend)
+
+
+def _install_backend(cli_world: dict[str, Any], backend: InMemoryBackend) -> None:
+    from flow_engineering import cli as cli_mod
+
+    cli_mod._default_save_backend = lambda: backend  # type: ignore[assignment]
+
+
+@given("an InMemoryBackend with drift observations on 2026-05-15 and 2026-06-15")
+def seed_two_dates(cli_world: dict[str, Any]) -> None:
+    backend = cli_world["backend"]
+    _seed_obs(
+        backend,
+        obs_id=1,
+        project="flow-engineering",
+        title="old drift 2026-05-15",
+        created_at="2026-05-15 10:00:00",
+    )
+    _seed_obs(
+        backend,
+        obs_id=2,
+        project="flow-engineering",
+        title="recent drift 2026-06-15",
+        created_at="2026-06-15 10:00:00",
+    )
+    _install_backend(cli_world, backend)
+
+
+@given("an InMemoryBackend with drift observations of mixed types")
+def seed_mixed_types(cli_world: dict[str, Any]) -> None:
+    backend = cli_world["backend"]
+    _seed_obs(
+        backend,
+        obs_id=1,
+        project="flow-engineering",
+        type="decision",
+        title="drift decision",
+    )
+    _seed_obs(
+        backend,
+        obs_id=2,
+        project="flow-engineering",
+        type="bugfix",
+        title="drift bugfix",
+    )
+    _seed_obs(
+        backend,
+        obs_id=3,
+        project="flow-engineering",
+        type="pattern",
+        title="drift pattern",
+    )
+    _install_backend(cli_world, backend)
+
+
+# ---------- When steps (REQ-25) ----------
+
+
+@when(parsers.parse('I run the CLI "flow {args}"'))
+def run_search_cli(cli_world: dict[str, Any], args: str) -> None:
+    from flow_engineering import cli as cli_mod
+
+    # Default backend factory already monkeypatched by the GIVEN step.
+    # We re-patch in case the user constructed the world out-of-order.
+    cli_mod._default_save_backend = lambda: cli_world["backend"]  # type: ignore[assignment]
+    # ``args`` is the entire CLI tail after ``flow `` (e.g. ``search drift``
+    # or ``projects backfill --confirm``). Split on whitespace for Click.
+    tokens = args.split()
+    result = runner.invoke(main, tokens)
+    cli_world["exit_code"] = result.exit_code
+    cli_world["output"] = result.output
+    cli_world["stdout"] = result.stdout or ""
+    if result.stdout:
+        try:
+            cli_world["payload"] = json.loads(result.stdout)
+        except Exception:
+            cli_world["payload"] = None
+
+
+# ---------- Then steps (REQ-25) ----------
+
+
+
+
+
+@then(parsers.parse("the JSON has results from {n:d} distinct projects"))
+def then_json_has_n_distinct_projects(cli_world: dict[str, Any], n: int) -> None:
+    payload = cli_world["payload"]
+    assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
+    results = payload.get("results", [])
+    projects = {r.get("project") for r in results}
+    assert len(projects) == n, (
+        f"Expected {n} distinct projects, got {len(projects)} ({projects!r})"
+    )
+
+
+@then(parsers.parse('every result has project "{a}" or "{b}"'))
+def then_every_result_in_set(cli_world: dict[str, Any], a: str, b: str) -> None:
+    payload = cli_world["payload"]
+    assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
+    allowed = {a, b}
+    for r in payload.get("results", []):
+        assert r.get("project") in allowed, (
+            f"Expected project in {allowed}, got {r.get('project')!r} in {r!r}"
+        )
+
+
+@then(parsers.parse('no result has project "{forbidden}"'))
+def then_no_result_has_project(cli_world: dict[str, Any], forbidden: str) -> None:
+    payload = cli_world["payload"]
+    assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
+    for r in payload.get("results", []):
+        assert r.get("project") != forbidden, (
+            f"Expected no result with project {forbidden!r}, got {r!r}"
+        )
+
+
+@then(parsers.parse('the result titles include "{title}"'))
+def then_titles_include_title(cli_world: dict[str, Any], title: str) -> None:
+    payload = cli_world["payload"]
+    assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
+    titles = [r.get("title", "") for r in payload.get("results", [])]
+    assert any(title in t for t in titles), (
+        f"Expected title containing {title!r}; got titles={titles!r}"
+    )
+
+
+@then(parsers.parse('the result titles do NOT include "{title}"'))
+def then_titles_exclude_title(cli_world: dict[str, Any], title: str) -> None:
+    payload = cli_world["payload"]
+    assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
+    titles = [r.get("title", "") for r in payload.get("results", [])]
+    assert not any(title in t for t in titles), (
+        f"Expected NO title containing {title!r}; got titles={titles!r}"
+    )
+
+
+@then(parsers.parse("the search returns {n:d} result"))
+@then(parsers.parse("the search returns {n:d} results"))
+def then_search_returns_n(cli_world: dict[str, Any], n: int) -> None:
+    """Count rows in the JSON payload (non-federated and --federated --json)."""
+    payload = cli_world["payload"]
+    if payload is None:
+        # Fall back to counting ``obs N`` markers in the text table.
+        count = (cli_world["stdout"] or "").count("obs ")
+        assert count == n, (
+            f"Expected {n} results; got {count} 'obs ' markers in stdout={cli_world['stdout']!r}"
+        )
+        return
+    results = payload.get("results", [])
+    assert len(results) == n, (
+        f"Expected {n} results, got {len(results)}: {[r.get('title') for r in results]!r}"
     )
