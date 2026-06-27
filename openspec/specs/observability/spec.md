@@ -75,26 +75,72 @@ registered for `D` in `DOMAIN_BY_PREFIX`. Accepted values:
 When `--domain` is absent, no domain filter is applied. Unknown domain
 values exit `2` with a JSON error on stderr (D9).
 
-### REQ-38 — Prometheus textfile export (`--prometheus` / `--out`)
+### REQ-38 — Prometheus textfile export (`flow metrics export` subcommand)
 
-The system SHALL extend `flow metrics` with `--prometheus` and
-`--out=<path>` flags. The Prometheus textfile exposition emits one metric
-line per `(counter_name, label-tuple)` combination with the type
-derivation rule: `_total` → `counter`; `_ms` / `_seconds` → `summary`;
-bare → `gauge`. Override map: `METRIC_TYPE_OVERRIDES`.
+The system SHALL expose Prometheus textfile export via a dedicated
+`flow metrics export` subcommand (the legacy `flow metrics` flat dump
+and `flow metrics --json` close contract per REQ-8 are preserved on
+the parent `metrics` group). Flags:
 
-`--out=<path>` writes atomically (`tempfile.NamedTemporaryFile` +
-`os.replace`) per design D10. Write failures exit `4`.
+- `--format text|json|prometheus` (default `text`).
+- `--out=<path>` writes atomically (`tempfile.NamedTemporaryFile` +
+  `os.replace`) per design D10. Write failures exit `4`.
+- `--window=<1h|24h|7d>` rolling shorthand (composes with `--domain`,
+  `--since`, `--until` per REQ-36 + REQ-37).
+- `--since=<iso>` / `--until=<iso>` absolute window (REQ-36).
+- `--domain=<D>` prefix slice (REQ-37).
 
-### REQ-39 — Percentile + aggregations (`--percentile` / `--aggregations`)
+The Prometheus textfile exposition emits one metric line per
+`(counter_name, label-tuple)` combination with the type derivation
+rule: `_total` → `counter`; `_ms` / `_seconds` → `summary`;
+bare → `gauge`. Override map: `METRIC_TYPE_OVERRIDES` (D6 priority 1).
 
-The system SHALL extend `flow metrics` with `--percentile=<p50|p95|p99>`,
-`--aggregations`, and `--field=<name>` flags. Percentile uses
-`statistics.quantiles` (or equivalent sorted-index lookup) per design D7.
+### REQ-39 — Percentile aggregation (`flow metrics aggregate` subcommand)
 
-Counters with <2 numeric samples emit `insufficient data` on stdout and
-a stderr JSON warning (`{warning, counter, count}`) — the command STILL
-exits `0`. Invalid `--percentile` value exits `3`.
+The system SHALL expose percentile aggregation via a dedicated
+`flow metrics aggregate` subcommand. Flags:
+
+- `--percentile <p50|p95|p99>` (repeatable; at least one required).
+- `--reservoir-size=<int>` (default `1000`; Vitter's Algorithm R).
+- `--window=<1h|24h|7d>` / `--since` / `--until` / `--domain` (REQ-36
+  + REQ-37, same semantics as the `export` subcommand).
+- `--format text|json` (default `text`; aligned table vs JSON dict).
+
+Percentile uses a floor(sorted-index) lookup (`int((n - 1) * pct / 100)`
+on the sorted sample list) per design D7 — equivalent to
+`statistics.quantiles(data, n=100, method="inclusive")` for the
+worked example `aggregate(list(range(10, 1001, 10)), 95) → 950` (the
+midpoint sample; the inclusive-quantile reference value is `950.5`,
+off by one index — see drift note below).
+
+**Drift note (carried forward from PR#1 W5):** the implementation
+preserves the PR#1 `aggregate(values, percentile) → float` contract
+(sorted-index lookup) and the design D7 `aggregate → dict[str, float]`
+contract is satisfied via the additive `aggregate_many()` shim
+(`dict[int, float]`) and `aggregate_percentile(events, ...)` reservoir
+helper (`dict[str, float]`). Operators should default to
+`aggregate_percentile` (the most general) for new code.
+
+Counters with fewer than 2 numeric samples render `not enough data
+points` inline in the text-table output (and an empty value in JSON)
+— the command STILL exits `0`. Invalid `--percentile` value exits `2`
+(handled by `click.Choice`). Invalid `--reservoir-size` exits `2`.
+
+Text output renders an aligned 3-column table per the
+`format_percentile_report` helper:
+
+```
+Counter                                p50    p95    p99
+bindings_confirmed_total                 2      2
+drift_contradicted_total       not enough data points
+...
+```
+
+Each requested percentile gets a column header; unrequested columns
+appear blank in the data rows. The `<counter_name> <pct>: <value>`
+per-line shape from the original PR#1 spec was replaced by the
+table format during PR#2 (operator-friendly alignment for parallel
+counter comparison).
 
 ## BDD scenarios
 
@@ -107,9 +153,9 @@ verbatim into this baseline:
   absolute, `--window=1h` rolling).
 - `tests/bdd/req37_metrics_domain.feature` — 2 scenarios
   (`--domain=snapshot` filter, no `--domain` = all).
-- `tests/bdd/req38_metrics_prometheus.feature` — 3 scenarios
+- `tests/bdd/req38_metrics_export.feature` — 3 scenarios
   (stdout exposition, `--out` atomic write, `--window` composition).
-- `tests/bdd/req39_metrics_percentile.feature` — 2 scenarios
+- `tests/bdd/req39_metrics_aggregate.feature` — 2 scenarios
   (p95 worked example, insufficient data warning).
 
 Step definitions land in `tests/bdd/test_observability_steps.py`
