@@ -41,6 +41,7 @@ def metrics_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
     return {
         "metrics_path": metrics_file,
+        "tmp_path": tmp_path,
         "result": None,
         "command": None,
     }
@@ -115,6 +116,33 @@ def test_req37_domain_snapshot(metrics_world: dict[str, Any]) -> None:
     "No --domain shows all 8 domains aggregated",
 )
 def test_req37_no_domain_shows_all_8(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
+# ---------- Scenario bindings: REQ-38 (Prometheus export) ----------
+
+
+@scenario(
+    "../bdd/req38_metrics_export.feature",
+    "Export to stdout in Prometheus textfile format",
+)
+def test_req38_export_stdout_prometheus(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req38_metrics_export.feature",
+    "Export to file at --out path (atomic write)",
+)
+def test_req38_export_file_atomic(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req38_metrics_export.feature",
+    "Export with --window filters exported counters",
+)
+def test_req38_export_window_filter(metrics_world: dict[str, Any]) -> None:
     pass
 
 
@@ -570,4 +598,207 @@ def then_stdout_contains_all_8_domain_headers(
     ):
         assert header in result.output, (
             f"expected domain header {header!r} in stdout; got {result.output!r}"
+        )
+
+
+# ---------- REQ-38 (Prometheus export) Given / When / Then steps ----------
+
+
+@given(
+    parsers.parse(
+        "5 metric events are written "
+        "(3 snapshot_create_total + 2 drift_invoked_total)"
+    )
+)
+def given_5_events_3_snapshot_2_drift(metrics_world: dict[str, Any]) -> None:
+    """Seed 5 events: 3 snapshot_create_total + 2 drift_invoked_total.
+
+    The 3 snapshot_create_total events aggregate to value=3.0 (cumulative
+    counter semantics per D6). The 2 drift_invoked_total events share the
+    same ``change`` label so they aggregate to value=2.0.
+    """
+    now = datetime.now(UTC)
+    events: list[dict] = []
+    for _ in range(3):
+        events.append(
+            {
+                "name": "snapshot_create_total",
+                "fields": {"count": 1},
+                "ts": _iso(now),
+            }
+        )
+    for _ in range(2):
+        events.append(
+            {
+                "name": "drift_invoked_total",
+                "fields": {"count": 1, "change": "observability"},
+                "ts": _iso(now),
+            }
+        )
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@given(
+    parsers.parse(
+        "3 metric events (one each of binding / drift / vector)"
+    )
+)
+def given_3_events_one_per_domain(metrics_world: dict[str, Any]) -> None:
+    """Seed 3 events, one per domain (binding / drift / vector).
+
+    Each event has a unique counter name and a non-zero ``count`` so the
+    textfile exposition emits 3 distinct ``# HELP`` + ``# TYPE`` + metric
+    line triplets.
+    """
+    now = datetime.now(UTC)
+    events: list[dict] = [
+        {
+            "name": "suggest_invoked_total",
+            "fields": {"count": 4},
+            "ts": _iso(now),
+        },
+        {
+            "name": "drift_invoked_total",
+            "fields": {"count": 2, "change": "observability"},
+            "ts": _iso(now),
+        },
+        {
+            "name": "vector_search_invoked_total",
+            "fields": {"count": 7},
+            "ts": _iso(now),
+        },
+    ]
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@given(
+    parsers.parse(
+        "6 metric events spanning 3 days "
+        "(binding_event_oldest_3d, binding_event_2d, binding_event_1d, "
+        "binding_event_90m, binding_event_30m, binding_event_5m)"
+    )
+)
+def given_6_events_spanning_3_days_for_window(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Seed 6 events at -3d / -2d / -1d / -90m / -30m / -5m offsets.
+
+    With ``--window=1h`` (rolling), only the -30m and -5m events survive
+    (the -90m event is 1.5h old, just outside the 60-minute window).
+    """
+    now = datetime.now(UTC)
+    offsets_and_names = [
+        (timedelta(days=3), "binding_event_oldest_3d"),
+        (timedelta(days=2), "binding_event_2d"),
+        (timedelta(days=1), "binding_event_1d"),
+        (timedelta(minutes=90), "binding_event_90m"),
+        (timedelta(minutes=30), "binding_event_30m"),
+        (timedelta(minutes=5), "binding_event_5m"),
+    ]
+    events: list[dict] = []
+    for offset, name in offsets_and_names:
+        events.append({
+            "name": name,
+            "fields": {"count": 1},
+            "ts": _iso(now - offset),
+        })
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@when(parsers.parse("I run `flow metrics export --format prometheus`"))
+def when_run_metrics_export_prometheus(metrics_world: dict[str, Any]) -> None:
+    """Invoke ``flow metrics export --format prometheus`` via CliRunner."""
+    metrics_world["command"] = ["metrics", "export", "--format", "prometheus"]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@when(
+    parsers.parse(
+        "I run `flow metrics export --format prometheus --out metrics.prom`"
+    )
+)
+def when_run_metrics_export_prometheus_to_file(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Invoke ``flow metrics export --format prometheus --out <path>``."""
+    out_path = metrics_world["tmp_path"] / "metrics.prom"
+    metrics_world["out_path"] = out_path
+    metrics_world["command"] = [
+        "metrics", "export", "--format", "prometheus",
+        "--out", str(out_path),
+    ]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@when(
+    parsers.parse(
+        "I run `flow metrics export --format prometheus --window 1h`"
+    )
+)
+def when_run_metrics_export_prometheus_window_1h(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Invoke ``flow metrics export --format prometheus --window 1h``."""
+    metrics_world["command"] = [
+        "metrics", "export", "--format", "prometheus",
+        "--window", "1h",
+    ]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@then(
+    parsers.parse(
+        "stdout contains only the in-window counters "
+        "(binding_event_30m, binding_event_5m)"
+    )
+)
+def then_stdout_contains_only_in_window_counters(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the --window=1h scenario: only -30m / -5m events survive."""
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    assert "binding_event_30m" in result.output, (
+        f"expected in-window counter binding_event_30m in stdout; "
+        f"got {result.output!r}"
+    )
+    assert "binding_event_5m" in result.output, (
+        f"expected in-window counter binding_event_5m in stdout; "
+        f"got {result.output!r}"
+    )
+    # All out-of-window events MUST be excluded.
+    for excluded in (
+        "binding_event_oldest_3d",
+        "binding_event_2d",
+        "binding_event_1d",
+        "binding_event_90m",
+    ):
+        assert excluded not in result.output, (
+            f"unexpected out-of-window counter {excluded!r} in stdout: "
+            f"{result.output!r}"
+        )
+
+
+@then(parsers.parse("file metrics.prom exists with valid Prometheus content"))
+def then_file_metrics_prom_valid(metrics_world: dict[str, Any]) -> None:
+    """For the --out=<path> scenario: file exists with valid textfile content."""
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    out_path = metrics_world["out_path"]
+    assert out_path.exists(), f"expected output file at {out_path!r}"
+    content = out_path.read_text(encoding="utf-8")
+    # Every metric line MUST be preceded by HELP + TYPE.
+    for line in content.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        metric_name = line.split("{", 1)[0].split(" ", 1)[0]
+        assert f"# HELP {metric_name}" in content, (
+            f"missing HELP comment for metric {metric_name!r}: {content!r}"
+        )
+        assert f"# TYPE {metric_name}" in content, (
+            f"missing TYPE comment for metric {metric_name!r}: {content!r}"
         )
