@@ -30,10 +30,12 @@ import json
 import os
 import re
 import time
+import warnings
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from flow_engineering import graphify_query
 from flow_engineering.binding import CodeRef, ParseError, extract_code_refs
@@ -59,38 +61,169 @@ class DriftClass(str, Enum):
 
 @dataclass(frozen=True)
 class Finding:
-    """One per-binding classification result."""
+    """One per-binding classification result.
 
-    decision_id: str
+    v0.8.0 migration (REQ-56 W8 / REQ-57):
+    - ``decision_id`` is now ``int`` (was ``str``). Legacy numeric ``str``
+      inputs are accepted via :meth:`from_legacy` which emits
+      ``DeprecationWarning`` and coerces via ``int()``. Hard break in v0.9.0.
+    """
+
+    decision_id: int  # was: str  (REQ-56 W8)
     binding: CodeRef
     drift_class: DriftClass
     detail: str
 
+    @classmethod
+    def from_legacy(
+        cls,
+        *,
+        decision_id: Any,
+        binding: CodeRef,
+        drift_class: Any,
+        detail: str = "",
+        **kwargs: Any,
+    ) -> "Finding":
+        """Backward-compat factory for v0.7.x callers.
+
+        Emits ``DeprecationWarning`` and coerces legacy ``str`` decision_id
+        values to ``int`` via ``int()``. Non-numeric ``str`` values raise
+        :class:`ValueError` so callers see the migration signal rather than
+        a silent ``0`` coercion. Removed in v0.9.0.
+        """
+        if isinstance(decision_id, str):
+            warnings.warn(
+                f"Finding.decision_id constructed with str {decision_id!r}; "
+                "int required in v0.9.0 (REQ-56 W8)",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            try:
+                decision_id = int(decision_id)
+            except ValueError as exc:
+                raise ValueError(
+                    f"decision_id must be int or numeric str, got {decision_id!r}"
+                ) from exc
+        elif not isinstance(decision_id, int):
+            raise ValueError(
+                f"decision_id must be int, got {type(decision_id).__name__}"
+            )
+        return cls(
+            decision_id=decision_id,
+            binding=binding,
+            drift_class=drift_class,
+            detail=detail,
+            **kwargs,
+        )
+
 
 @dataclass
 class DriftReport:
-    """Aggregate result for a full scan of one change."""
+    """Aggregate result for a full scan of one change.
+
+    v0.8.0 migration (REQ-56 W8 / REQ-57):
+    - ``scanned_at`` is now ``str`` ISO 8601 UTC ``Z``-suffixed (was
+      ``float`` epoch). Legacy ``float`` epoch inputs are accepted via
+      :meth:`from_legacy` which coerces to ISO via the internal
+      ``_epoch_to_iso`` helper. Hard break in v0.9.0.
+    - Added ``unable_reason: str | None`` for structured ``unable_to_verify``
+      diagnostics (e.g. ``graph_json_missing``).
+    """
 
     change_name: str
-    scanned_at: float
-    graph_mtime: float | None
+    scanned_at: str  # was: float  (REQ-56 W8) — ISO 8601 UTC Z-suffixed
+    graph_mtime: str | None  # was: float | None  (REQ-56 W8)
     decisions_total: int
     bindings_total: int
     class_counts: dict[DriftClass, int] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     graph_unavailable: bool = False
+    unable_reason: str | None = None  # REQ-56 W8 NEW field
+
+    @classmethod
+    def from_legacy(
+        cls,
+        *,
+        change_name: str,
+        scanned_at: Any,
+        graph_mtime: Any = None,
+        decisions_total: int = 0,
+        bindings_total: int = 0,
+        class_counts: dict[DriftClass, int] | None = None,
+        findings: list[Finding] | None = None,
+        graph_unavailable: bool = False,
+        unable_to_verify: bool | None = None,
+        unable_reason: str | None = None,
+        **kwargs: Any,
+    ) -> "DriftReport":
+        """Backward-compat factory for v0.7.x callers.
+
+        Emits ``DeprecationWarning`` and coerces legacy ``float`` epoch
+        inputs (for both ``scanned_at`` and ``graph_mtime``) to ISO 8601
+        ``str`` via :func:`_epoch_to_iso`. Also maps the legacy
+        ``unable_to_verify: bool`` kwarg to ``graph_unavailable: bool``
+        when supplied. Removed in v0.9.0.
+        """
+        warnings.warn(
+            f"DriftReport constructed with legacy float scanned_at; "
+            "str (ISO 8601) required in v0.9.0 (REQ-56 W8)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        scanned_iso = (
+            _epoch_to_iso(scanned_at)
+            if isinstance(scanned_at, (int, float))
+            else scanned_at
+        )
+        mtime_iso = (
+            _epoch_to_iso(graph_mtime)
+            if isinstance(graph_mtime, (int, float))
+            else graph_mtime
+        )
+        resolved_graph_unavailable = (
+            bool(unable_to_verify) if unable_to_verify is not None else graph_unavailable
+        )
+        return cls(
+            change_name=change_name,
+            scanned_at=scanned_iso,
+            graph_mtime=mtime_iso,
+            decisions_total=decisions_total,
+            bindings_total=bindings_total,
+            class_counts=class_counts if class_counts is not None else {},
+            findings=findings if findings is not None else [],
+            graph_unavailable=resolved_graph_unavailable,
+            unable_reason=unable_reason,
+            **kwargs,
+        )
+
+
+def _epoch_to_iso(epoch: float | int) -> str:
+    """Convert a Unix epoch (float seconds) to an ISO 8601 ``str`` with ``Z`` suffix.
+
+    Used by :meth:`DriftReport.from_legacy` and other v0.7.x migration
+    sites to coerce legacy ``float`` epoch inputs into the v0.8.0
+    ``str`` ISO 8601 contract.
+    """
+    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
 
 
 def classify_binding(
-    binding: CodeRef,
-    current_nodes: dict[str, dict],
-    current_id_map: dict[str, tuple[str, int, str]],
+    ref: CodeRef,
+    graph_nodes: dict[str, dict],
 ) -> DriftClass:
-    """Classify a single ``CodeRef`` against the current graph state.
+    """Classify a single ``CodeRef`` against the current graph state (REQ-9).
+
+    v0.8.0 signature (REQ-56 W8): 2-arg ``(ref, graph_nodes)``. The
+    ``current_id_map`` lookup table is derived internally from
+    ``graph_nodes`` in O(N) at function entry. The legacy 3-arg signature
+    is retained as :func:`classify_binding_legacy` for one release with a
+    ``DeprecationWarning`` shim; it is removed in v0.9.0.
 
     Algorithm (REQ-9):
-        1. ``current_nodes`` is ``None`` or empty -> ``UNABLE_TO_VERIFY``.
-        2. ``binding.id`` absent from ``current_id_map`` -> ``STALE_ID``.
+        1. ``graph_nodes`` is ``None`` or empty -> ``UNABLE_TO_VERIFY``.
+        2. ``ref.id`` absent from derived ``current_id_map`` -> ``STALE_ID``.
         3. ``(file, line)`` differ from current -> ``STALE_LOCATION``.
         4. ``label`` differs from current -> ``LABEL_DRIFT``.
         5. Otherwise -> ``STILL_VALID``.
@@ -99,6 +232,25 @@ def classify_binding(
     (design #123 decisions 2 + 3) — they require cross-decision aggregation
     that only ``scan_change`` performs.
     """
+    if not graph_nodes:
+        return DriftClass.UNABLE_TO_VERIFY
+    current_id_map: dict[str, tuple[str, int, str]] = {
+        node_id: (
+            str(node.get("file") or node.get("source_file", "")),
+            _parse_line(node.get("line") or node.get("source_location", 0)),
+            str(node.get("label", node_id)),
+        )
+        for node_id, node in graph_nodes.items()
+    }
+    return _classify_with_id_map(ref, graph_nodes, current_id_map)
+
+
+def _classify_with_id_map(
+    binding: CodeRef,
+    current_nodes: dict[str, dict],
+    current_id_map: dict[str, tuple[str, int, str]],
+) -> DriftClass:
+    """Core classification algorithm shared by the 2-arg and 3-arg surfaces."""
     if not current_nodes:
         return DriftClass.UNABLE_TO_VERIFY
     entry = current_id_map.get(binding.id)
@@ -110,6 +262,27 @@ def classify_binding(
     if cur_label != binding.label:
         return DriftClass.LABEL_DRIFT
     return DriftClass.STILL_VALID
+
+
+def classify_binding_legacy(
+    binding: CodeRef,
+    current_nodes: dict[str, dict],
+    current_id_map: dict[str, tuple[str, int, str]],
+) -> DriftClass:
+    """Backward-compat 3-arg classifier for v0.7.x callers (REQ-56 W8).
+
+    Emits ``DeprecationWarning`` and delegates to the 2-arg
+    :func:`classify_binding` after deriving ``current_id_map`` from
+    ``current_nodes`` (the 3-arg shape is preserved for one release).
+    Removed in v0.9.0.
+    """
+    warnings.warn(
+        "classify_binding 3-arg signature deprecated; "
+        "use 2-arg classify_binding(ref, graph_nodes) (REQ-56 W8)",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return classify_binding(binding, current_nodes)
 
 
 class SnapshotGraphMissing(ValueError):
@@ -471,7 +644,7 @@ def scan_change(
     Returns:
         ``DriftReport`` aggregating per-binding classifications.
     """
-    scanned_at = time.time()
+    scanned_at = _epoch_to_iso(time.time())
     if snap_id is not None and backend is not None:
         # Mutual exclusion enforced as a ``ValueError`` so callers can
         # branch on it; ``load_graph`` mirrors this with its own check.
@@ -593,9 +766,7 @@ def scan_change(
 
                 for binding in refs:
                     bindings_total += 1
-                    drift_class = classify_binding(
-                        binding, current_nodes, current_id_map
-                    )
+                    drift_class = classify_binding(binding, current_nodes)
                     findings.append(
                         Finding(
                             decision_id=decision_id,
@@ -642,7 +813,11 @@ def scan_change(
         return DriftReport(
             change_name=change_name,
             scanned_at=scanned_at,
-            graph_mtime=graph_mtime,
+            graph_mtime=(
+                _epoch_to_iso(graph_mtime)
+                if isinstance(graph_mtime, (int, float))
+                else graph_mtime
+            ),
             decisions_total=len(observations),
             bindings_total=bindings_total,
             class_counts=class_counts,
