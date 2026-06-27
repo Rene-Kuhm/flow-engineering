@@ -169,31 +169,34 @@ class TestBackfillConfirmWithProject:
         assert backfill_backend.observations[1]["project"] is None
 
 
-# ---------- REQ-24 scenario 5: --confirm without --project REFUSES ----------
+# ---------- REQ-24 scenario 5 + REQ-27 integration: --confirm without --project iterates the alias map ----------
 
 
-class TestBackfillConfirmRefusesWithoutProject:
-    """``flow projects backfill --confirm`` without ``--project`` REFUSES.
+class TestBackfillConfirmWithoutProjectIteratesAliases:
+    """``flow projects backfill --confirm`` (no --project) iterates the alias map.
 
-    Scope is ambiguous (multiple project keys could match) — the safety
-    gate forces the caller to be explicit. Mirrors the dry-run default:
-    no silent mass-rename ever runs.
+    Batch B2 deviation (Engram #167): the previously-refused invocation
+    now resolves via the alias map (REQ-27 integration). When no alias
+    matches any observation, the operation completes with zero changes
+    (NOT a refusal). When an alias matches, the corresponding observations
+    are re-tagged in one invocation.
     """
 
-    def test_confirm_without_project_exits_nonzero(
+    def test_confirm_without_project_no_aliases_exits_zero(
         self, backfill_backend: InMemoryBackend
     ) -> None:
+        # No alias config: 0 matches → 0 changes → exit 0 (NOT a refusal).
         result = runner.invoke(main, ["projects", "backfill", "--confirm"])
-        assert result.exit_code != 0, (
-            f"Expected non-zero exit; got {result.exit_code}; output={result.output!r}"
+        assert result.exit_code == 0, (
+            f"Expected exit 0; got {result.exit_code}; output={result.output!r}"
         )
 
-    def test_confirm_without_project_does_not_mutate(
+    def test_confirm_without_project_no_aliases_does_not_mutate(
         self, backfill_backend: InMemoryBackend
     ) -> None:
-        result = runner.invoke(main, ["projects", "backfill", "--confirm"])
-        assert result.exit_code != 0
-        # Even though the refusal exit was non-zero, observations MUST stay unchanged.
+        # Untagged observations stay untagged; already-tagged observations
+        # stay tagged (no alias ⇒ no re-tag).
+        runner.invoke(main, ["projects", "backfill", "--confirm"])
         assert backfill_backend.observations[1]["project"] is None
         assert backfill_backend.observations[2]["project"] == "insyd"
 
@@ -243,20 +246,25 @@ class TestBackfillDryRunJsonReport:
 
 
 class TestBackfillExitCodes:
-    """Exit codes: 0 = success / dry-run, 1 = empty corpus, 2 = invalid args."""
+    """Exit codes: 0 = success / dry-run / empty alias match; 2 = invalid args."""
 
-    def test_empty_corpus_exits_one(self, empty_backend: InMemoryBackend) -> None:
+    def test_empty_corpus_exits_zero(self, empty_backend: InMemoryBackend) -> None:
+        # REQ-27 integration: empty corpus + no aliases ⇒ empty changes,
+        # exit 0 (NOT a refusal). The empty-corpus case is no-op success.
         result = runner.invoke(main, ["projects", "backfill"])
-        assert result.exit_code == 1, (
-            f"Expected exit 1 (empty corpus); got {result.exit_code}; output={result.output!r}"
+        assert result.exit_code == 0, (
+            f"Expected exit 0 (empty corpus is no-op success); got {result.exit_code}; output={result.output!r}"
         )
 
-    def test_confirm_without_project_exits_two(
+    def test_invalid_since_exits_two(
         self, backfill_backend: InMemoryBackend
     ) -> None:
-        result = runner.invoke(main, ["projects", "backfill", "--confirm"])
+        # Invalid --since string is the remaining case that exits 2.
+        result = runner.invoke(
+            main, ["projects", "backfill", "--since=not-a-date"]
+        )
         assert result.exit_code == 2, (
-            f"Expected exit 2 (invalid args); got {result.exit_code}; output={result.output!r}"
+            f"Expected exit 2 (invalid --since); got {result.exit_code}; output={result.output!r}"
         )
 
 

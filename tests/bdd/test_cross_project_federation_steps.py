@@ -167,9 +167,9 @@ def test_req24_backfill_confirm_project_writes(cli_world):
 
 @scenario(
     "../bdd/req24_project_detector.feature",
-    "flow projects backfill --confirm without --project refuses with non-zero exit",
+    "flow projects backfill --confirm without --project iterates the alias map (REQ-27 integration)",
 )
-def test_req24_backfill_confirm_no_project_refuses(cli_world):
+def test_req24_backfill_confirm_no_project_iterates(cli_world):
     pass
 
 
@@ -489,6 +489,42 @@ def _seed_untagged(backend: InMemoryBackend) -> int:
 @given("an InMemoryBackend with 1 untagged observation")
 def seed_one_untagged(cli_world: dict[str, Any]) -> None:
     _seed_untagged(cli_world["backend"])
+
+
+def _seed_tagged(backend: InMemoryBackend, *, project: str) -> int:
+    """Seed one observation WITH a known project tag (REQ-24 alias fixture)."""
+    obs = backend.mem_save(
+        title=f"{project} drift entry",
+        content="drift detection strategy",
+        topic_key="sdd/x/spec",
+    )
+    obs["project"] = project
+    obs["created_at"] = "2026-06-15 10:00:00"
+    return int(obs["id"])
+
+
+@given(parsers.parse('an InMemoryBackend with 1 observation tagged "{project}"'))
+def seed_one_tagged(cli_world: dict[str, Any], project: str) -> None:
+    _seed_tagged(cli_world["backend"], project=project)
+
+
+@given(
+    parsers.parse(
+        'a project-aliases config mapping "{old_key} -> {new_key}"'
+    )
+)
+def seed_alias_config(
+    cli_world: dict[str, Any], tmp_path, monkeypatch: pytest.MonkeyPatch,
+    old_key: str, new_key: str,
+) -> None:
+    """Seed ``~/.config/flow-engineering/project-aliases.json`` for the scenario."""
+    from flow_engineering import project_aliases as _aliases
+
+    path = tmp_path / "project-aliases.json"
+    monkeypatch.setattr(_aliases, "DEFAULT_ALIASES_PATH", path)
+    cli_world["aliases_path"] = path
+    result = _aliases.add_alias(old_key, new_key, path=path)
+    assert result["status"] == "added"
 
 
 # ---------- When steps (REQ-24) ----------

@@ -1244,32 +1244,36 @@ def projects_backfill(
     project_key: str | None,
     since: str | None,
 ) -> None:
-    """Re-tag observations safely (REQ-24, design D3 safety gate).
+    """Re-tag observations safely (REQ-24, design D3 safety gate + REQ-27 alias iteration).
 
     The default mode is a DRY-RUN preview: every observation that would be
     re-tagged is listed in the JSON report on stdout, but the database is
     NOT touched. To apply changes the caller MUST pass ``--confirm``.
 
     Scope (which observations are eligible for re-tagging):
-    - With ``--project=<key>``: observations currently WITHOUT a project tag
-      (i.e. ``project is None or ""``). The proposed tag is ``<key>``.
-    - Without ``--project``: same untagged scope, but no proposed tag is
-      available — every entry becomes ``action="skip_no_match"`` unless
-      ``FLOW_AUTO_PROJECT_TAG=1`` is set (then ``detect(cwd)`` supplies it).
 
-    Safety gate (REQ-24 scenario 6 + design D3):
-    - ``--confirm`` without ``--project=<key>`` REFUSES with a non-zero exit.
-      The scope is ambiguous (a future auto-detect could land on any project)
-      so we force the caller to be explicit. Use ``--dry-run`` to preview.
+    - With ``--project=<key>``: observations currently WITHOUT a project tag
+      (i.e. ``project is None or ""``) AND observations currently tagged
+      ``<key>`` (the alias-driven re-tag path: ``--project=<alias.old>``
+      re-tags observations currently tagged ``<alias.old>`` to
+      ``<alias.new>`` when an alias exists).
+    - Without ``--project``: iterate the alias map (``project-aliases.json``)
+      and re-tag every observation whose CURRENT ``project`` matches an
+      ``alias.old`` to the corresponding ``alias.new``. This closes the
+      batch B2 deviation: the previously-refused invocation now resolves
+      via the alias map (REQ-24 scenario 5 + REQ-27 integration).
+
+    Safety gate (REQ-24 + REQ-27):
+    - ``--confirm`` is REQUIRED to write; ``--dry-run`` is the default
+      and overrides ``--confirm`` (a ``--dry-run --confirm`` invocation
+      still does no writes).
 
     Exit codes:
-    - 0: success (dry-run completed OR --confirm applied changes).
-    - 1: no observations to backfill (empty corpus OR nothing matched scope).
-    - 2: invalid args (``--confirm`` without ``--project``, ``--since`` parse error).
+    - 0: success (dry-run completed OR --confirm applied changes OR
+      no-op with empty alias map).
+    - 2: invalid args (``--since`` parse error).
 
-    JSON output shape (always, even on refusal -- non-JSON on --confirm refusal):
-
-    ::
+    JSON output shape::
 
         {
           "would_change": <int>,
@@ -1296,37 +1300,34 @@ def projects_backfill(
             click.echo(str(exc), err=True)
             sys.exit(2)
 
-    if confirm_flag and not project_key:
-        click.echo(
-            "--confirm requires --project=<key>; refusing ambiguous scope. "
-            "Re-run with --dry-run for a preview or pass --project=<key>.",
-            err=True,
-        )
-        sys.exit(2)
+    from flow_engineering import project_aliases as _aliases
 
     backend = _default_save_backend()
     all_observations = list(backend.iter_observations())
 
-    candidates = [o for o in all_observations if not o.get("project")]
+    alias_records = _aliases.load_aliases()
+    alias_map: dict[str, str] = {r["old"]: r["new"] for r in alias_records}
+
+    candidates: list[dict[str, Any]]
+    if project_key is not None:
+        # Single-key scope (legacy REQ-24 + alias-key re-tag).
+        candidates = [
+            o
+            for o in all_observations
+            if (not o.get("project")) or o.get("project") == project_key
+        ]
+    else:
+        # No --project: iterate the alias map (REQ-27 integration).
+        candidates = [
+            o
+            for o in all_observations
+            if o.get("project") in alias_map
+        ]
 
     if since is not None:
         candidates = [
             o for o in candidates if str(o.get("created_at", "")) >= since
         ]
-
-    if not candidates:
-        click.echo(
-            json.dumps(
-                {"would_change": 0, "would_skip": 0, "changes": []},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        sys.exit(1)
-
-    auto_detect_key: str | None = None
-    if project_key is None and os.environ.get("FLOW_AUTO_PROJECT_TAG") == "1":
-        auto_detect_key = _detect_project(Path.cwd())
 
     would_change = 0
     would_skip = 0
@@ -1335,10 +1336,15 @@ def projects_backfill(
 
     for obs in candidates:
         current_tag = obs.get("project")
-        if project_key is not None:
-            proposed_tag: str | None = project_key
+        # Resolve the proposed tag for this row.
+        if current_tag in alias_map:
+            # Alias-driven re-tag (iteration path OR --project=<alias.old>).
+            proposed_tag: str | None = alias_map[current_tag]
+        elif project_key is not None and not current_tag:
+            # Legacy REQ-24 untagged-observation path.
+            proposed_tag = project_key
         else:
-            proposed_tag = auto_detect_key
+            proposed_tag = None
 
         if proposed_tag is None:
             action = "skip_no_match"
@@ -1375,6 +1381,52 @@ def projects_backfill(
     }
     click.echo(json.dumps(report, ensure_ascii=False, indent=2))
     sys.exit(0)
+
+
+# ---------- REQ-27: flow projects alias ----------
+
+
+@projects_group.command(name="alias")
+@click.argument("old_key")
+@click.argument("new_key")
+def projects_alias(old_key: str, new_key: str) -> None:
+    """Append a rename record to ``project-aliases.json`` (REQ-27).
+
+    The alias map is the source of truth for renaming absorption:
+    ``flow-image-generator-v2 → flow-image-generator-main`` is applied
+    at every federated query so the user-facing contract treats the
+    alias as a synonym.
+
+    Exit codes:
+    - 0: alias added (or already present — idempotent re-invoke).
+    - 1: conflicting rewrite (existing alias for ``old_key`` already
+      points to a different ``new_key``). The existing record is
+      preserved unchanged so audit history is never silently lost.
+
+    Stdout on success:
+    - New alias: ``alias added: <old_key> -> <new_key>``.
+    - Idempotent re-invoke: ``alias already present: <old_key> -> <new_key>``.
+
+    On conflict, stderr reports the existing target so the user knows
+    what to edit (or which entry to remove) before re-invoking.
+    """
+    from flow_engineering import project_aliases
+
+    try:
+        result = project_aliases.add_alias(old_key, new_key)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    status = result["status"]
+    if status == "added":
+        click.echo(f"alias added: {old_key} -> {new_key}")
+        return
+    if status == "already_present":
+        click.echo(f"alias already present: {old_key} -> {new_key}")
+        return
+    # Defensive fallback — unknown statuses should not reach this point.
+    click.echo(f"alias status: {status}", err=True)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -41,14 +41,16 @@ Feature: Project detector + backfill CLI (REQ-24)
     Then the exit code is 0
     And the observation is tagged with "flow-engineering"
 
-  Scenario: flow projects backfill --confirm without --project refuses with non-zero exit
-    Given an InMemoryBackend with 1 untagged observation
+  Scenario: flow projects backfill --confirm without --project iterates the alias map (REQ-27 integration)
+    Given an InMemoryBackend with 1 observation tagged "flow-image-generator-v2"
+    And a project-aliases config mapping "flow-image-generator-v2 -> flow-image-generator-main"
     When I run the CLI "flow projects backfill --confirm"
-    Then the exit code is non-zero
-    And the observation is still untagged
+    Then the exit code is 0
+    And the observation is tagged with "flow-image-generator-main"
 
   Scenario: flow projects backfill --dry-run emits a JSON report to stdout
-    Given an InMemoryBackend with 1 untagged observation
+    Given an InMemoryBackend with 1 observation tagged "flow-image-generator-v2"
+    And a project-aliases config mapping "flow-image-generator-v2 -> flow-image-generator-main"
     When I run the CLI "flow projects backfill --dry-run"
     Then the exit code is 0
     And stdout is valid JSON

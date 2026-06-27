@@ -325,6 +325,22 @@ class InMemoryBackend(EngramBackend):
         """
         if projects is not None and len(projects) == 0:
             raise ValueError("projects must be None or non-empty list")
+        # REQ-27: forward alias resolution applied BEFORE the SQL filter so
+        # ``flow-image-generator-v2`` transparently becomes
+        # ``flow-image-generator-main``. Identity for non-aliased names so
+        # the no-alias case is a cheap pass-through. Missing file → empty
+        # list (fail-open); malformed file → empty list too so a broken
+        # config can never break retrieval.
+        if projects is not None:
+            try:
+                from flow_engineering import project_aliases as _aliases
+
+                _alias_records = _aliases.load_aliases()
+                if _alias_records:
+                    projects = [_aliases.resolve(p, aliases=_alias_records) for p in projects]
+            except Exception:
+                # Alias resolution is best-effort; never block retrieval.
+                pass
         results: list[dict[str, Any]] = []
         for obs in sorted(
             self.observations.values(), key=lambda o: o["id"], reverse=True

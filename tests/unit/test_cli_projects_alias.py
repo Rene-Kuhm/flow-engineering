@@ -273,14 +273,15 @@ class TestProjectsBackfillAliasIteration:
     ) -> None:
         # Empty alias map + no --project: nothing to do (the previous B2
         # refusal was a safety gate; with alias iteration in place, the
-        # empty-alias-map case yields zero changes).
+        # empty-alias-map case yields zero changes because no observation
+        # matches an ``alias.old`` key).
         self._seed_multi_alias_corpus(alias_backend)
         result = runner.invoke(main, ["projects", "backfill", "--confirm"])
         # Exit code 0 with empty changes report (not a refusal).
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         assert payload["would_change"] == 0
-        assert payload["would_skip"] == 3
+        assert payload["changes"] == []
         # No writes happened.
         for obs in alias_backend.observations.values():
             assert obs.get("project") != "new-key-A"
