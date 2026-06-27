@@ -276,13 +276,24 @@ The system SHALL extend the existing `flow watch` daemon to support a `--drift` 
 - AND a file change does NOT alter any binding's resolution
 - WHEN the daemon observes the change
 - THEN `drift_still_valid_total` increments by `1`
-- AND no event-log line is appended (still-valid findings go to counters only)
+- AND no stdout summary line is emitted (REQ-56 silence) — still-valid findings go to counters only
 
 #### Scenario: Daemon missing graph.json does not crash the watcher
 - GIVEN the daemon is running and `graph.json` is absent
 - WHEN the watcher ticks
 - THEN it logs `unable_to_verify` once to the event log
 - AND the watcher process remains alive
+
+> **Drift note (post-drift-hardening, 2026-06-27)**: scenario 2 was reconciled
+> per W6 carry-forward resolution. The original spec said "no event-log
+> line" but the JSONL append-only writer at `~/.flow-engineering/drift_events.jsonl`
+> is shipped separately in change #8 `drift-hardening` (REQ-55). The
+> `flow watch --drift` daemon emits a single stdout summary line via the
+> `on_summary` callback in `daemon.py::handle_apply_progress_event`; that
+> line is now suppressed when `report.total == 0 and not report.graph_unavailable`
+> per design D4 (REQ-56 W6 silence rule). The `unable_to_verify` edge
+> case preserves the summary line so the user still sees a graph-unavailable
+> signal.
 
 ---
 
