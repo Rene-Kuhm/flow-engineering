@@ -42,6 +42,12 @@ def _append_drift_events(
     rule (W6 / D4) treats them as "no event of interest", so they do not
     pollute the audit trail. Per design D11, this is best-effort and never
     raises into the caller (``DriftEventLog.append`` swallows OSError).
+
+    v0.8.0 (REQ-56 W8): ``finding.decision_id`` is now ``int`` (was ``str``).
+    The wire-format ``DriftEvent`` dataclass still requires ``str`` (legacy
+    JSONL consumers expect it), so we coerce via ``str()`` here. Future v1
+    follow-up may flip ``DriftEvent.decision_id`` to ``int`` once the wire
+    format itself migrates.
     """
     log = DriftEventLog(path=path) if path is not None else DriftEventLog()
     detected_at = time.time()
