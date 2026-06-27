@@ -27,10 +27,7 @@ import math
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from flow_engineering import observability
-
 
 # ---------- ReservoirSampler ----------
 

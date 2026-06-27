@@ -1362,6 +1362,146 @@ def metrics_export(
         sys.exit(observability.EXIT_WRITE_FAILURE)
 
 
+# ---------- REQ-39: flow metrics aggregate (percentile aggregation via reservoir sampling) ----------
+
+
+# Percentile choices for `flow metrics aggregate --percentile` (REQ-39).
+# Mirrors observability._VALID_PERCENTILES (50/95/99) so the CLI stays
+# in lockstep with the helper's validation set.
+AGGREGATE_PERCENTILE_CHOICES: list[str] = ["p50", "p95", "p99"]
+
+
+@metrics.command("aggregate")
+@click.option(
+    "--percentile", "percentiles",
+    type=click.Choice(AGGREGATE_PERCENTILE_CHOICES, case_sensitive=False),
+    multiple=True, default=("p95",),
+    help=(
+        "Percentile(s) to compute (REQ-39): p50 / p95 / p99. "
+        "Repeatable; default = p95. Uses reservoir sampling for "
+        "memory efficiency on large event streams."
+    ),
+)
+@click.option(
+    "--window", "window", default=None,
+    help=(
+        "Rolling time-window filter (REQ-36): preset "
+        "(1h|24h|7d|30d) or custom '<int><h|d>'."
+    ),
+)
+@click.option(
+    "--since", "since_iso", default=None, metavar="ISO8601",
+    help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
+)
+@click.option(
+    "--until", "until_iso", default=None, metavar="ISO8601",
+    help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
+)
+@click.option(
+    "--domain", "domain", default=None,
+    type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
+    help="Prefix-based domain slice (REQ-37).",
+)
+@click.option(
+    "--reservoir-size", "reservoir_size", default=1000, type=int,
+    help=(
+        "Sample-size ceiling per counter for the reservoir sampler "
+        "(REQ-39 / D7). Default 1000."
+    ),
+)
+@click.option(
+    "--format", "fmt", default="text",
+    type=click.Choice(["text", "json"], case_sensitive=False),
+    help="Output format (REQ-39): text (default aligned table) or json.",
+)
+def metrics_aggregate(
+    percentiles: tuple[str, ...],
+    window: str | None,
+    since_iso: str | None,
+    until_iso: str | None,
+    domain: str | None,
+    reservoir_size: int,
+    fmt: str,
+) -> None:
+    """Compute percentiles over counter values (REQ-39 / change #6 PR#2 T2.5).
+
+    Consumes :func:`observability.aggregate_percentile` (reservoir-sampled,
+    memory-bounded at ``--reservoir-size``) over the filtered event set
+    and renders the result as either an aligned text table (default) or
+    a flat JSON dict.
+
+    Exit-code mapping (D9):
+    - 0: success (including default-empty per D8: empty sink emits
+      a header-only table in text mode or ``{}`` in JSON mode).
+    - 2: invalid flag value (Click ``click.Choice`` validation failure
+      on ``--percentile`` / ``--domain``; ``--window`` parse failure;
+      ``--since`` / ``--until`` ISO parse failure).
+    """
+    fmt_lower = fmt.lower()
+
+    # Parse the --percentile labels into integers; validate against the
+    # helper's accepted set (defensive: Click already validates at parse
+    # time, but the explicit check keeps the helper self-contained).
+    pct_ints: list[int] = []
+    for label in percentiles:
+        pct_ints.append(int(label.lower().lstrip("p")))
+
+    since_epoch: float | None = None
+    if since_iso is not None:
+        try:
+            since_epoch = _parse_since(since_iso)
+        except ValueError as exc:
+            click.echo(f"invalid --since value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    until_epoch: float | None = None
+    if until_iso is not None:
+        try:
+            until_epoch = _parse_since(until_iso)
+        except ValueError as exc:
+            click.echo(f"invalid --until value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    if window is not None:
+        try:
+            observability.parse_window(window)
+        except ValueError as exc:
+            click.echo(f"invalid --window value: {exc}", err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    domain_normalized: str | None = None
+    if domain is not None:
+        try:
+            domain_normalized = observability.validate_domain(domain.lower())
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(observability.EXIT_INVALID_VALUE)
+
+    events = observability.read_all_metrics()
+    filtered = _apply_metrics_filters(
+        events,
+        window=window,
+        domain=domain_normalized,
+        since_epoch=since_epoch,
+        until_epoch=until_epoch,
+    )
+
+    result = observability.aggregate_percentile(
+        filtered,
+        percentiles=tuple(pct_ints),  # type: ignore[arg-type]
+        reservoir_size=reservoir_size,
+    )
+
+    if fmt_lower == "json":
+        click.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if fmt_lower == "text":
+        click.echo(observability.format_percentile_report(result), nl=False)
+        return
+    click.echo(f"unknown --format value: {fmt}", err=True)
+    sys.exit(observability.EXIT_INVALID_VALUE)
+
+
 # ---------- REQ-10/11/14: flow drift <change> ----------
 
 
