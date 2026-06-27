@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -974,11 +974,20 @@ def _summarize_metrics(events: list[dict]) -> dict[str, int]:
     return summary
 
 
-@main.command()
+@main.group(invoke_without_command=True)
 @click.option("--json", "json_flag", is_flag=True, default=False,
               help="Emit machine-readable JSON instead of a text summary.")
-def metrics(json_flag: bool) -> None:
-    """Dump the JSONL counter sink as a summary (REQ-8 close)."""
+@click.pass_context
+def metrics(ctx: click.Context, json_flag: bool) -> None:
+    """Dump the JSONL counter sink as a summary (REQ-8 close).
+
+    With no subcommand, renders the legacy flat text/JSON dump (REQ-8 close
+    contract; byte-identical to v0.6.0). The ``summary`` subcommand renders
+    the new per-domain dashboard (REQ-35).
+    """
+    if ctx.invoked_subcommand is not None:
+        # Subcommand handles its own output (e.g. `flow metrics summary`).
+        return
     events = observability.read_all()
     summary = _summarize_metrics(events)
     if json_flag:
@@ -990,6 +999,78 @@ def metrics(json_flag: bool) -> None:
     name_width = max(len(name) for name in summary)
     for name in sorted(summary):
         click.echo(f"{name.ljust(name_width)}  {summary[name]}")
+
+
+# Window choices for `flow metrics summary --window` (REQ-35/REQ-36).
+SUMMARY_WINDOW_CHOICES: list[str] = ["1h", "24h", "7d"]
+
+# Domain choices for `flow metrics summary --domain` (REQ-37).
+SUMMARY_DOMAIN_CHOICES: list[str] = ["binding", "drift", "vector", "snapshot"]
+
+
+@metrics.command("summary")
+@click.option(
+    "--format", "fmt", default="text",
+    type=click.Choice(["text", "json", "json-detailed"], case_sensitive=False),
+    help="Output format (REQ-35: text default, json for machine-readable).",
+)
+@click.option(
+    "--window", "window", default=None,
+    type=click.Choice(SUMMARY_WINDOW_CHOICES, case_sensitive=False),
+    help="Rolling time-window filter (REQ-35/REQ-36): 1h|24h|7d.",
+)
+@click.option(
+    "--domain", "domain", default=None,
+    type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
+    help="Prefix-based domain slice (REQ-37): binding|drift|vector|snapshot.",
+)
+def metrics_summary(fmt: str, window: str | None, domain: str | None) -> None:
+    """Render the per-domain text dashboard (REQ-35 / change #6 PR#1 T1.2).
+
+    Reads metrics.jsonl via the new :func:`observability.read_all_metrics`
+    helpers, applies any active ``--window`` / ``--domain`` filter, and
+    renders the result via :func:`observability.summarize`.
+
+    Default-empty contract (D8): empty / missing / no-match → exit 0 with
+    ``"No metrics recorded yet."`` on stdout.
+    """
+    fmt_lower = fmt.lower()
+    try:
+        events = observability.read_all_metrics()
+        if domain is not None:
+            events = observability.read_events_by_domain(domain)
+        if window is not None:
+            delta_map = {
+                "1h": timedelta(hours=1),
+                "24h": timedelta(hours=24),
+                "7d": timedelta(days=7),
+            }
+            delta = delta_map[window.lower()]
+            rolling_since = (datetime.now(UTC) - delta).timestamp()
+            events = [e for e in events if e.timestamp >= rolling_since]
+    except ValueError as exc:
+        # read_events_by_domain raises on unknown domain; click's Choice
+        # already covers the validation path, but defensive in case the
+        # list is widened at runtime.
+        click.echo(str(exc), err=True)
+        sys.exit(2)
+
+    summary_data = observability.summarize(events)
+
+    if fmt_lower == "text":
+        if not any(summary_data.values()):
+            click.echo("No metrics recorded yet.")
+            return
+        for d in sorted(summary_data):
+            click.echo(f"{d}:")
+            for counter, count in sorted(summary_data[d].items()):
+                click.echo(f"  {counter}: {count}")
+        return
+    if fmt_lower in ("json", "json-detailed"):
+        click.echo(json.dumps(summary_data, ensure_ascii=False, indent=2))
+        return
+    click.echo(f"unknown --format value: {fmt}", err=True)
+    sys.exit(2)
 
 
 # ---------- REQ-10/11/14: flow drift <change> ----------
