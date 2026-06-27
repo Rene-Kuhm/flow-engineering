@@ -359,6 +359,194 @@ class TestStillValidSilence:
         assert "1 LABEL_DRIFT" in line
 
 
+# ---------- REQ-55 W5 daemon -> JSONL wiring ----------
+
+
+class TestDriftEventLogWiring:
+    """REQ-55 W5: ``handle_apply_progress_event`` MUST append one JSONL
+    line per non-STILL_VALID finding to ``DriftEventLog``.
+
+    Per the spec the JSONL line schema is
+    ``{change, decision_id, binding_id, event_class, detected_at}``.
+    Per the REQ-56 / W6 still-valid silence rule, STILL_VALID findings
+    MUST NOT be appended (the on-disk audit trail stays quiet on a
+    no-drift tick).
+    """
+
+    def test_daemon_appends_to_drift_event_log_per_finding(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 2-finding report (1 STALE_ID + 1 LABEL_DRIFT) results in 2
+        ``DriftEventLog.append`` calls — one per non-STILL_VALID finding."""
+        from flow_engineering.drift_event_log import DriftEventLog
+
+        event_log_path = tmp_path / "drift_events.jsonl"
+        appended: list[tuple[str, str, str, str, float]] = []
+
+        class _FakeLog:
+            def __init__(self, path: object = None) -> None:
+                self.path = path
+
+            def append(self, event: object) -> None:
+                appended.append((
+                    event.change,
+                    event.decision_id,
+                    event.binding_id,
+                    event.event_class,
+                    event.detected_at,
+                ))
+
+        monkeypatch.setattr(daemon, "DriftEventLog", _FakeLog)
+
+        metrics = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics))
+        graph = tmp_path / "graph.json"
+        graph.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+
+        report = DriftReport(
+            change_name="obs",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=2,
+            bindings_total=2,
+            class_counts={
+                DriftClass.STALE_ID: 1,
+                DriftClass.LABEL_DRIFT: 1,
+            },
+            findings=[
+                _make_finding(obs_id=10, drift_class=DriftClass.STALE_ID),
+                _make_finding(obs_id=11, drift_class=DriftClass.LABEL_DRIFT),
+            ],
+        )
+        monkeypatch.setattr(
+            daemon.decision_drift, "scan_change", lambda *a, **kw: report
+        )
+
+        daemon.handle_apply_progress_event(
+            "obs",
+            {"tasks": {"T1": {"status": "merged"}}},
+            graph_json_path=graph,
+        )
+
+        assert len(appended) == 2, f"expected 2 appends; got {appended}"
+        # Each append carries the spec schema: change, decision_id,
+        # binding_id, event_class, detected_at.
+        for change, decision_id, binding_id, event_class, detected_at in appended:
+            assert change == "obs"
+            assert decision_id in {"10", "11"}
+            assert binding_id.startswith("n")
+            assert event_class in {"STALE_ID", "LABEL_DRIFT"}
+            assert isinstance(detected_at, float)
+
+    def test_daemon_no_jsonl_line_when_silent_per_req56(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When every binding is STILL_VALID (W6 silence rule), the daemon
+        MUST NOT append any JSONL line — STILL_VALID is intentionally
+        skipped per spec REQ-55 W5 ("only non-still-valid findings get
+        persisted").
+        """
+        from flow_engineering.drift_event_log import DriftEventLog
+
+        appended: list[object] = []
+
+        class _FakeLog:
+            def __init__(self, path: object = None) -> None:
+                self.path = path
+
+            def append(self, event: object) -> None:
+                appended.append(event)
+
+        monkeypatch.setattr(daemon, "DriftEventLog", _FakeLog)
+
+        metrics = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics))
+        graph = tmp_path / "graph.json"
+        graph.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+
+        report = DriftReport(
+            change_name="obs",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=3,
+            bindings_total=3,
+            class_counts={DriftClass.STILL_VALID: 3},
+            findings=[
+                _make_finding(obs_id=1, drift_class=DriftClass.STILL_VALID),
+                _make_finding(obs_id=2, drift_class=DriftClass.STILL_VALID),
+                _make_finding(obs_id=3, drift_class=DriftClass.STILL_VALID),
+            ],
+        )
+        monkeypatch.setattr(
+            daemon.decision_drift, "scan_change", lambda *a, **kw: report
+        )
+
+        daemon.handle_apply_progress_event(
+            "obs",
+            {"tasks": {"T1": {"status": "merged"}}},
+            graph_json_path=graph,
+        )
+
+        assert appended == [], (
+            f"expected 0 JSONL appends on still-valid silence; got {len(appended)}"
+        )
+
+    def test_daemon_jsonl_line_keys_match_spec(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The actual JSONL line written by DriftEventLog has the spec
+        schema keys: change, decision_id, binding_id, event_class,
+        detected_at (archived REQ-15 line 272).
+        """
+        from flow_engineering.drift_event_log import DriftEventLog
+
+        event_log_path = tmp_path / "drift_events.jsonl"
+        monkeypatch.setattr(
+            daemon, "DriftEventLog", lambda path=None: DriftEventLog(path=event_log_path)
+        )
+
+        metrics = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics))
+        graph = tmp_path / "graph.json"
+        graph.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+
+        report = DriftReport(
+            change_name="obs",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=1,
+            bindings_total=1,
+            class_counts={DriftClass.STALE_ID: 1},
+            findings=[_make_finding(obs_id=42, drift_class=DriftClass.STALE_ID)],
+        )
+        monkeypatch.setattr(
+            daemon.decision_drift, "scan_change", lambda *a, **kw: report
+        )
+
+        daemon.handle_apply_progress_event(
+            "obs",
+            {"tasks": {"T1": {"status": "merged"}}},
+            graph_json_path=graph,
+        )
+
+        assert event_log_path.exists()
+        lines = event_log_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        parsed = json.loads(lines[0])
+        assert set(parsed.keys()) == {
+            "change",
+            "decision_id",
+            "binding_id",
+            "event_class",
+            "detected_at",
+        }
+        assert parsed["change"] == "obs"
+        assert parsed["decision_id"] == "42"
+        assert parsed["binding_id"] == "n42"
+        assert parsed["event_class"] == "STALE_ID"
+        assert isinstance(parsed["detected_at"], float)
+
+
 # ---------- start_watch drift wiring ----------
 
 
