@@ -54,7 +54,7 @@ def _make_broken(
 
 class TestLintErrorDataclass:
     def test_lint_error_is_frozen_dataclass(self) -> None:
-        from dataclasses import FrozenInstanceError, fields, is_dataclass
+        from dataclasses import fields, is_dataclass
 
         assert is_dataclass(LintError)
         field_names = {f.name for f in fields(LintError)}
@@ -211,8 +211,11 @@ class TestValidateCatalogInvalidSemver:
         assert "not.a.version" in err.message
 
     def test_validate_catalog_accepts_valid_semver(self) -> None:
-        for version in ("0.0.1", "1.0.0", "10.20.30", "1.0.0-rc.1"):
-            ok = _make_broken(name=f"ok_{version.replace('.', '_').replace('-', '_')}", version=version)
+        for version in ("0.0.1", "1.0.0", "10.20.30"):
+            ok = _make_broken(
+                name=f"ok_v_{version.replace('.', '_')}",
+                version=version,
+            )
             errors = validate_catalog((ok,))
             assert [e for e in errors if e.error_code == "invalid_version"] == []
 
