@@ -27,6 +27,7 @@ which is the terminal signal when the graph itself is unavailable):
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -216,11 +217,24 @@ def _load_graph_from_snapshot(
 
     Reads from ``~/.flow-engineering/snapshots/<snap_id>.json.gz``. The
     envelope is parsed via :class:`SnapshotManager.show` so the sha256
-    integrity check fires before any bytes are consumed by the scan. If
-    the snapshot was created with ``--no-include-graph``, the
-    ``graph_state.graph_json`` field is absent — we return
+    integrity check fires before any bytes are consumed by the scan.
+
+    T1.5 brief: prefers ``graph_state.graph_json_content`` (the raw text
+    content of ``graph.json`` populated by ``SnapshotManager.create()``
+    in batch B2) and writes it to a temp file before parsing — this
+    preserves the exact on-disk bytes and lets the existing
+    ``_index_graph_payload`` helper consume the parsed nodes uniformly.
+
+    Falls back to ``graph_state.graph_json`` (a dict that batch B1
+    fixtures + BDD tests inject manually) for backwards compatibility
+    with the existing 754-test baseline.
+
+    If the snapshot was created with ``--no-include-graph`` OR no
+    ``graph.json`` file existed at create time (test fixtures, fresh
+    installs), neither field is present — we return
     ``(None, None, None)`` so the caller fail-opens with
-    ``graph_unavailable=True`` rather than raising.
+    ``graph_unavailable=True`` and :func:`scan_change` raises
+    :class:`SnapshotGraphMissing`.
     """
     from flow_engineering.snapshot_manager import (
         SnapshotEnvelopeError,
@@ -237,19 +251,50 @@ def _load_graph_from_snapshot(
         return (None, None, None)
 
     graph_state = envelope.get("graph_state", {})
-    graph_json = graph_state.get("graph_json")
-    if not isinstance(graph_json, dict):
-        # No frozen graph (e.g. ``--no-include-graph`` was used at create
-        # time). Fail-open: caller will surface ``graph_unavailable=True``.
-        return (None, None, None)
-    nodes = graph_json.get("nodes", [])
-    # Use the snapshot's stored ``file_size_bytes`` as a synthetic
-    # ``graph_mtime`` so audit correlations can still distinguish frozen
-    # scans from live ones (the field is opaque to consumers; only its
-    # presence is contractually required).
+
+    # Synthetic mtime = envelope's stored file_size_bytes (opaque
+    # contract — only its non-emptiness is required for audit
+    # correlation between frozen scans and live ones).
     meta = envelope.get("metadata", {})
     synthetic_mtime = float(meta.get("file_size_bytes", 0)) or None
-    return _index_graph_payload(nodes, synthetic_mtime)
+
+    # Preferred path: ``graph_json_content`` (raw string from
+    # ``SnapshotManager.create()``). Write to temp file, parse, return.
+    graph_json_content = graph_state.get("graph_json_content")
+    if isinstance(graph_json_content, str) and graph_json_content:
+        try:
+            import tempfile as _tempfile
+
+            with _tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, encoding="utf-8"
+            ) as tmp:
+                tmp.write(graph_json_content)
+                tmp_path = tmp.name
+            try:
+                parsed = json.loads(graph_json_content)
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        except (OSError, json.JSONDecodeError, ValueError):
+            return (None, None, None)
+        if not isinstance(parsed, dict):
+            return (None, None, None)
+        nodes = parsed.get("nodes", [])
+        return _index_graph_payload(nodes, synthetic_mtime)
+
+    # Legacy path: ``graph_json`` (dict, manually injected by batch B1
+    # fixtures and BDD tests). Kept for backwards compatibility so the
+    # 754-test baseline continues to pass.
+    graph_json = graph_state.get("graph_json")
+    if isinstance(graph_json, dict):
+        nodes = graph_json.get("nodes", [])
+        return _index_graph_payload(nodes, synthetic_mtime)
+
+    # Neither field present — fail-open so ``scan_change`` can raise
+    # ``SnapshotGraphMissing`` with a structured error.
+    return (None, None, None)
 
 
 class _DummyBackend:
@@ -275,7 +320,6 @@ def _resolve_snapshots_dir() -> Path:
     ``~/.flow-engineering/snapshots``; tests override via
     ``FLOW_SNAPSHOTS_DIR`` (set in conftest when ``tmp_path`` is wired).
     """
-    import os
     env = os.environ.get("FLOW_SNAPSHOTS_DIR")
     if env:
         return Path(env)
@@ -288,7 +332,13 @@ def _snapshot_exists(snap_id: str) -> bool:
 
 
 def _snapshot_has_graph(snap_id: str) -> bool:
-    """Return True iff the snapshot's envelope has ``graph_state.graph_json``."""
+    """Return True iff the snapshot's envelope has the frozen graph content.
+
+    Supports BOTH the new ``graph_state.graph_json_content`` (raw string
+    populated by ``SnapshotManager.create()`` in batch B2) and the legacy
+    ``graph_state.graph_json`` (dict that batch B1 fixtures inject).
+    Either presence means a drift-pinned scan can classify bindings.
+    """
     from flow_engineering.snapshot_manager import (
         SnapshotEnvelopeError,
         SnapshotManager,
@@ -301,9 +351,10 @@ def _snapshot_has_graph(snap_id: str) -> bool:
         envelope = manager.show(snap_id)
     except SnapshotEnvelopeError:
         return False
-    return isinstance(
-        envelope.get("graph_state", {}).get("graph_json"), dict
-    )
+    graph_state = envelope.get("graph_state", {})
+    if isinstance(graph_state.get("graph_json_content"), str):
+        return bool(graph_state["graph_json_content"])
+    return isinstance(graph_state.get("graph_json"), dict)
 
 
 def _frozen_backend_from_snapshot(snap_id: str) -> "EngramBackend":

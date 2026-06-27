@@ -56,6 +56,14 @@ if TYPE_CHECKING:
 SNAPSHOT_SCHEMA_VERSION: int = 1
 """Bump when the envelope shape changes incompatibly."""
 
+DEFAULT_GRAPH_JSON_PATH: Path = Path.home() / ".flow-engineering" / "graph.json"
+"""Production default path for the graph.json correlator file.
+
+Mirrors the cross-project-federation pattern at ``cli.py:DEFAULT_GRAPH_JSON``.
+Tests override via the ``FLOW_GRAPH_JSON_PATH`` env var so the
+``SnapshotManager.create()`` path under test is deterministic.
+"""
+
 
 # ---------- Exceptions + dataclasses ----------
 
@@ -66,6 +74,25 @@ class SnapshotEnvelopeError(Exception):
 
     REQ-30 (show) MUST raise this rather than silently rendering a
     tampered envelope.
+    """
+
+
+class SnapshotGraphMissing(Exception):
+    """Raised when a snapshot envelope lacks the frozen ``graph.json`` content.
+
+    REQ-33 D2 graceful degradation: a snapshot created against an
+    Engram backend with no corresponding ``graph.json`` correlator file
+    has no ``graph_state.graph_json_content`` field — a drift-pinned
+    scan (``decision_drift.scan_change(snap_id=...)``) cannot classify
+    bindings against a frozen graph, so it raises this exception rather
+    than silently scanning against live disk (which would make
+    ``--snapshot`` a no-op).
+
+    Inherits from ``Exception`` per T1.5 brief. The
+    ``flow_engineering.decision_drift`` module exposes a parallel class
+    (``SnapshotGraphMissing(ValueError)``) for backwards compat with
+    batch B1 BDD tests — the two are semantically equivalent and
+    interchangeable from a caller's perspective.
     """
 
 
@@ -215,6 +242,44 @@ def _build_snapshot_id() -> str:
     return f"snap_{iso}-{hex_suffix}"
 
 
+def _resolve_graph_json_path() -> Path:
+    """Return the path to read graph.json content from.
+
+    Honour the ``FLOW_GRAPH_JSON_PATH`` env override (used by tests +
+    parallel deploys); fall back to the production default
+    ``~/.flow-engineering/graph.json``. Mirrors the
+    ``_resolve_snapshots_dir`` pattern in ``decision_drift`` so the
+    two paths stay in lockstep.
+    """
+    env = os.environ.get("FLOW_GRAPH_JSON_PATH")
+    if env:
+        return Path(env)
+    return DEFAULT_GRAPH_JSON_PATH
+
+
+def _read_graph_json_content() -> str | None:
+    """Return the raw text content of ``graph.json``, or ``None`` when missing.
+
+    T1.5 brief: ``SnapshotManager.create()`` MUST serialise the current
+    ``graph.json`` content into ``envelope.graph_state.graph_json_content``
+    (as a ``str``). When the file does not exist (test fixtures, fresh
+    installs) the field is omitted from the envelope and
+    ``decision_drift.scan_change(snap_id=...)`` raises
+    ``SnapshotGraphMissing`` for drift-pinned scans (D2 graceful
+    degradation).
+
+    We deliberately return the RAW text (not a parsed dict) so the
+    snapshot envelope preserves the exact on-disk bytes — the loader
+    writes the string to a temp file and parses from there, which
+    avoids subtle round-trip issues with key ordering or whitespace.
+    """
+    path = _resolve_graph_json_path()
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, FileNotFoundError):
+        return None
+
+
 # ---------- SnapshotManager ----------
 
 
@@ -290,16 +355,27 @@ class SnapshotManager:
         # Project set for the metadata count (D2: ``project_count``).
         project_count = len({p for p in project_tags.values() if p})
 
+        # T1.5 brief: populate ``graph_state.graph_json_content`` from the
+        # current ``graph.json`` correlator file (REQ-33 D2 default-on).
+        # When the file is missing (test fixtures, fresh installs), the
+        # field is omitted; ``scan_change(snap_id=...)`` will then raise
+        # ``SnapshotGraphMissing`` for drift-pinned scans.
+        graph_json_content = _read_graph_json_content()
+
+        graph_state: dict[str, Any] = {
+            "observations": observations,
+            "project_tags": project_tags,
+        }
+        if graph_json_content is not None:
+            graph_state["graph_json_content"] = graph_json_content
+
         envelope: dict[str, Any] = {
             "schema": SNAPSHOT_SCHEMA_VERSION,
             "id": snap_id,
             "created_at": _now_iso_z(),
             "trigger": trigger,
             "description": effective_description,
-            "graph_state": {
-                "observations": observations,
-                "project_tags": project_tags,
-            },
+            "graph_state": graph_state,
             "metadata": {
                 "obs_count": obs_count,
                 "project_count": project_count,
@@ -776,6 +852,7 @@ class SnapshotManager:
 
 __all__ = [
     "SnapshotEnvelopeError",
+    "SnapshotGraphMissing",
     "SnapshotMeta",
     "SnapshotDiff",
     "RollbackResult",
@@ -783,4 +860,5 @@ __all__ = [
     "RollbackConflictError",
     "SnapshotManager",
     "SNAPSHOT_SCHEMA_VERSION",
+    "DEFAULT_GRAPH_JSON_PATH",
 ]

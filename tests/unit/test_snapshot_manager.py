@@ -6,6 +6,11 @@ commit wires ``src/flow_engineering/snapshot_manager.py`` with the
 envelope write, atomic temp-file replace, and reverse-chronological list
 with ``since`` + ``limit`` filtering.
 
+T1.5 batch B2 extension: ``SnapshotManager.create()`` MUST populate
+``graph_state.graph_json_content`` so drift-pinned scans work without
+manual envelope rewriting. The ``TestCreatePopulatesGraphJsonContent``
+class covers the new behaviour.
+
 Coverage map (REQ-28 + REQ-29 scenarios at the unit level):
 
 REQ-28 (create):
@@ -858,3 +863,219 @@ class TestRollbackIdempotency:
         envelope = manager.show(result.safety_snapshot_id)
         assert envelope["id"] == result.safety_snapshot_id
         assert envelope["trigger"] == "rollback_safety"
+
+
+# ---------- T1.5 batch B2: REQ-33 graph_json gap fix ----------
+
+
+class TestCreatePopulatesGraphJsonContent:
+    """``SnapshotManager.create()`` MUST populate ``graph_state.graph_json_content``.
+
+    REQ-33 D2 + brief T1.5: ``decision_drift.load_graph(snap_id=...)`` reads
+    the frozen ``graph.json`` content from the envelope. Without this field
+    populated by default, drift-pinned scans against freshly-created
+    snapshots have NO graph to classify bindings against and the user has
+    to manually edit the .gz file to inject one. The fix: ``create()``
+    reads ``~/.flow-engineering/graph.json`` (or ``FLOW_GRAPH_JSON_PATH``
+    override) and serialises the raw content into
+    ``graph_state.graph_json_content`` as a ``str``.
+
+    When the graph.json file does not exist (test fixtures, fresh
+    installs), the field is omitted; drift-pinned scans of such snapshots
+    will raise ``SnapshotGraphMissing`` from
+    ``decision_drift.scan_change`` (D2 graceful degradation — already
+    wired in batch B1).
+    """
+
+    def test_create_populates_graph_json_content_when_file_exists(
+        self, tmp_path: Path
+    ) -> None:
+        """create() reads graph.json from disk and stores raw content as a string."""
+        import json as _json
+
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        # Lay down a graph.json file in a temp location and point the
+        # ``FLOW_GRAPH_JSON_PATH`` env at it so the production code path
+        # picks it up. We also make sure ``snapshots_dir`` is empty so
+        # the auto-``initial_state`` label applies — irrelevant to this
+        # assertion but keeps the envelope deterministic.
+        graph_path = tmp_path / "graph.json"
+        graph_payload = {
+            "nodes": [
+                {
+                    "id": "vec_store",
+                    "label": "SQLiteVecStore",
+                    "file": "vectors/sqlite_vec_store.py",
+                    "line": 42,
+                },
+            ]
+        }
+        graph_path.write_text(
+            _json.dumps(graph_payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+        snaps_dir = tmp_path / "snaps"
+        import os as _os
+        old_env = _os.environ.get("FLOW_GRAPH_JSON_PATH")
+        _os.environ["FLOW_GRAPH_JSON_PATH"] = str(graph_path)
+        try:
+            backend = InMemoryBackend()
+            _seed_backend(backend, n=2)
+            manager = SnapshotManager(snapshots_dir=snaps_dir, backend=backend)
+            snap_id = manager.create(description="graph-test")
+
+            envelope = _read_envelope(snaps_dir / f"{snap_id}.json.gz")
+        finally:
+            if old_env is None:
+                _os.environ.pop("FLOW_GRAPH_JSON_PATH", None)
+            else:
+                _os.environ["FLOW_GRAPH_JSON_PATH"] = old_env
+
+        # The new field is present and is a STRING (per the brief).
+        graph_state = envelope.get("graph_state", {})
+        assert "graph_json_content" in graph_state, (
+            f"graph_state missing graph_json_content; keys: {sorted(graph_state.keys())!r}"
+        )
+        assert isinstance(graph_state["graph_json_content"], str), (
+            f"graph_json_content must be a string, got {type(graph_state['graph_json_content']).__name__}"
+        )
+        # The content matches the file content (raw JSON serialisation).
+        assert graph_state["graph_json_content"] == _json.dumps(
+            graph_payload, ensure_ascii=False
+        )
+
+    def test_create_omits_graph_json_content_when_file_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """Without graph.json on disk, the field is absent — drift scans refuse."""
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        snaps_dir = tmp_path / "snaps"
+        # Ensure no FLOW_GRAPH_JSON_PATH and no ~/.flow-engineering/graph.json
+        # is reachable from this test (pointed elsewhere via HOME so the
+        # production default is also a non-existent file).
+        import os as _os
+
+        old_graph_env = _os.environ.get("FLOW_GRAPH_JSON_PATH")
+        old_home = _os.environ.get("HOME") or _os.environ.get("USERPROFILE")
+        non_home = tmp_path / "fakehome"
+        non_home.mkdir()
+        _os.environ.pop("FLOW_GRAPH_JSON_PATH", None)
+        _os.environ["HOME"] = str(non_home)
+        try:
+            backend = InMemoryBackend()
+            _seed_backend(backend, n=2)
+            manager = SnapshotManager(snapshots_dir=snaps_dir, backend=backend)
+            snap_id = manager.create(description="no-graph-test")
+            envelope = _read_envelope(snaps_dir / f"{snap_id}.json.gz")
+        finally:
+            if old_graph_env is not None:
+                _os.environ["FLOW_GRAPH_JSON_PATH"] = old_graph_env
+            if old_home is not None:
+                _os.environ["HOME"] = old_home
+            else:
+                _os.environ.pop("HOME", None)
+
+        graph_state = envelope.get("graph_state", {})
+        # Field absent — drift-pinned scan will refuse with SnapshotGraphMissing.
+        assert "graph_json_content" not in graph_state, (
+            f"graph_json_content must be absent when graph.json missing; got: {graph_state['graph_json_content']!r}"
+        )
+
+    def test_drift_scan_with_snap_id_reads_frozen_graph_from_envelope(
+        self, tmp_path: Path
+    ) -> None:
+        """End-to-end: snapshot has graph_json_content, scan reads frozen state.
+
+        Mirrors the brief's acceptance criterion: "create a snapshot, call
+        ``load_graph(snap_id=<that_id>)``, verify the drift scan reads the
+        snapshot's frozen graph (not live)".
+        """
+        import json as _json
+        import os as _os
+
+        from flow_engineering import decision_drift
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        # Set up graph.json with one valid node.
+        graph_path = tmp_path / "graph.json"
+        graph_payload = {
+            "nodes": [
+                {
+                    "id": "vec_store",
+                    "label": "SQLiteVecStore",
+                    "file": "vectors/sqlite_vec_store.py",
+                    "line": 42,
+                },
+            ]
+        }
+        graph_path.write_text(
+            _json.dumps(graph_payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+        snaps_dir = tmp_path / "snaps"
+        _os.environ["FLOW_GRAPH_JSON_PATH"] = str(graph_path)
+        _os.environ["FLOW_SNAPSHOTS_DIR"] = str(snaps_dir)
+        try:
+            # Seed an observation whose binding matches the graph node so
+            # the scan can classify it as STILL_VALID against the frozen graph.
+            from flow_engineering.binding import CodeRef, format_code_refs_block
+
+            cref = CodeRef(
+                project="insyd",
+                id="vec_store",
+                label="SQLiteVecStore",
+                file="vectors/sqlite_vec_store.py",
+                line=42,
+                confidence=0.9,
+                source="manual",
+            )
+            content = (
+                "## Decision\n\nSnapshot-pinned binding.\n"
+                + format_code_refs_block([cref], source="manual")
+            )
+            backend = InMemoryBackend()
+            backend.mem_save(
+                title="t15-fixture/phase_0",
+                content=content,
+                topic_key="sdd/vector-semantic-search/spec",
+            )
+
+            manager = SnapshotManager(snapshots_dir=snaps_dir, backend=backend)
+            snap_id = manager.create(description="e2e-frozen")
+            # Now MUTATE the live graph.json so the snapshot's frozen state
+            # diverges — proves the scan reads the envelope, not live disk.
+            mutated_path = tmp_path / "mutated.json"
+            mutated_path.write_text(
+                _json.dumps(
+                    {"nodes": [{"id": "vec_store", "label": "STALE",
+                                "file": "x.py", "line": 99}]},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            _os.environ["FLOW_GRAPH_JSON_PATH"] = str(mutated_path)
+
+            report = decision_drift.scan_change(
+                "vector-semantic-search",
+                graph_json_path=None,
+                backend=None,
+                snap_id=snap_id,
+            )
+
+            # The frozen graph classified the binding as STILL_VALID
+            # (the live graph would have classified it as STALE_LOCATION
+            # because file=x.py / line=99 no longer matches).
+            assert report.findings, "expected at least one finding"
+            from flow_engineering.decision_drift import DriftClass
+
+            assert any(
+                f.drift_class == DriftClass.STILL_VALID for f in report.findings
+            ), (
+                f"expected STILL_VALID against frozen graph; got "
+                f"{[(f.drift_class.value, f.binding.id) for f in report.findings]!r}"
+            )
+        finally:
+            _os.environ.pop("FLOW_GRAPH_JSON_PATH", None)
+            _os.environ.pop("FLOW_SNAPSHOTS_DIR", None)
