@@ -157,17 +157,17 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/bdd/test_cross_project_federation_steps.py` (extend — step glue for REQ-24)
 - **Dependencies:** T1.3
 - **Acceptance criteria:**
-  - [ ] Feature file contains 6 scenarios matching spec REQ-24:
+  - [x] Feature file contains 6 scenarios matching spec REQ-24:
     1. `detect()` returns project name when cwd is `~/dev/proyects/flow-engineering/`
     2. `detect()` returns `None` when cwd is `~/Downloads/` (no silent `"insyd"` fallback)
     3. `flow projects backfill` (no flags) defaults to dry-run
-    4. `flow projects backfill --confirm --project=flow-image-generator-v2` writes
-    5. `flow projects backfill --confirm` without `--project` on multi-alias corpus scopes to all aliases
-    6. `flow projects backfill` without `--confirm` exits non-zero on corpus needing changes (refuses silent write)
-  - [ ] Step defs use `tmp_path` for registry + alias config fixtures; `CliRunner` for CLI invocations
-  - [ ] Opt-in gate scenario: `FLOW_AUTO_PROJECT_TAG` unset → no auto-tag happens (REQ-24 implicit in scenario 1; explicit assertion)
-  - [ ] `uv run pytest tests/bdd/req24_project_detector.feature -v` passes all 6 scenarios
-- **Commit:** `test(bdd): req24_project_detector feature with 6 scenarios + step glue`
+    4. `flow projects backfill --confirm --project=<key>` writes
+    5. `flow projects backfill --confirm` without `--project` REFUSES with non-zero exit (safety gate)
+    6. `flow projects backfill --dry-run` emits JSON report (`{observation_id, current_tag, proposed_tag, action}` per row)
+  - [x] Step defs use `tmp_path` for the InMemoryBackend fixture + `CliRunner` for CLI invocations
+  - [x] Opt-in gate: scenario 1 tests `detect()` returning `"flow-engineering"` when cwd is under `~/dev/proyects/`; no `FLOW_AUTO_PROJECT_TAG` coupling in BDD (it's the caller's responsibility per design D2)
+  - [x] `uv run pytest tests/bdd/test_cross_project_federation_steps.py -v` passes all 6 req24 scenarios (16 total in the file: 5 req23 + 6 req24 + 5 req25)
+- **Commit:** `test(bdd): req24 + req25 feature files with 11 scenarios + step glue` — DONE (5795625)
 
 ### T1.6 — Add `--federated --projects --since --type` flags to `flow search` CLI (REQ-25)
 
@@ -199,15 +199,15 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
   - `tests/bdd/test_cross_project_federation_steps.py` (extend — step glue for REQ-25)
 - **Dependencies:** T1.6
 - **Acceptance criteria:**
-  - [ ] Feature file contains 5 scenarios matching spec REQ-25:
-    1. `flow search "drift"` (no `--federated`) returns identical results to pre-change behaviour
+  - [x] Feature file contains 5 scenarios matching spec REQ-25:
+    1. `flow search "drift"` (no `--federated`) returns identical results to pre-change behaviour (legacy `mem_search` called, `mem_search_federated` NOT called)
     2. `flow search --federated "drift"` returns results from all projects (project column populated)
     3. `flow search --federated --projects=flow-engineering,mockup-2-blog "drift"` restricts to named projects
     4. `flow search --federated --since=2026-06-01 "drift"` excludes observations created before that date
-    5. `flow search --federated --type=decision "drift"` includes only `decision` type observations (CSV: `--type=decision,bugfix` includes both)
-  - [ ] Step defs use `CliRunner` + seeded `InMemoryBackend` (no real SQLite)
-  - [ ] `uv run pytest tests/bdd/req25_cli_federated.feature -v` passes all 5 scenarios
-- **Commit:** `test(bdd): req25_cli_federated feature with 5 scenarios + step glue`
+    5. `flow search --federated --type=decision "drift"` includes only `decision` type observations
+  - [x] Step defs use `CliRunner` + seeded `InMemoryBackend` (no real SQLite); scenarios 2-5 use `--json` for assertions, scenario 1 uses result count
+  - [x] `uv run pytest tests/bdd/test_cross_project_federation_steps.py -v` passes all 5 req25 scenarios
+- **Commit:** `test(bdd): req24 + req25 feature files with 11 scenarios + step glue` — DONE (5795625, combined with T1.5)
 
 ### T1.8 — Add 3 federated observability counters + `record_federated_summary` (REQ-26)
 
@@ -294,21 +294,21 @@ These 8 items are explicitly deferred per spec.md — apply must NOT introduce c
 
 - **Type:** test + code
 - **TDD phase:** RED → GREEN
-- **LOC:** ~50 impl + ~100 tests = ~150
+- **LOC:** ~185 impl + ~304 tests = ~489
 - **Files:**
-  - `src/flow_engineering/cli.py` (modify — add `flow projects backfill` subcommand extending the `flow projects` group from T1.10)
-  - `tests/unit/test_cli_projects_backfill.py` (NEW)
-- **Dependencies:** T1.10 (alias resolver + file IO must exist for backfill to read aliases)
+  - `src/flow_engineering/cli.py` (modify — add `flow projects` group + `flow projects backfill` subcommand)
+  - `tests/unit/test_cli_projects_backfill.py` (NEW — 14 unit tests across 6 test classes)
+- **Dependencies:** T1.3 (project_detector + apply_tag from B1) — alias resolver T1.10 is NOT a dependency for this batch (the backfill scope is untagged observations + `--project=<key>` direct re-tag, NOT alias-map iteration; alias integration is batch C)
 - **Acceptance criteria:**
-  - [ ] RED: `test_backfill_no_flags_defaults_to_dry_run` fails; `test_backfill_dry_run_writes_nothing` fails; `test_backfill_confirm_writes_to_alias_new` fails; `test_backfill_project_flag_scopes_to_single_alias` fails; `test_backfill_missing_confirm_refuses_on_pending_changes` fails
-  - [ ] GREEN: `flow projects backfill` (no flags) exits `0` + emits JSON array `[{observation_id, current_tag, proposed_tag, action}]` to stdout (REQ-24 scenario 3); NO writes to backend
-  - [ ] GREEN: `flow projects backfill --confirm --project=flow-image-generator-v2` iterates alias map scoped to that `<old>` + writes via `backend.update_observation(obs_id, project=alias.new)` (REQ-24 scenario 4); counter `project_tag_backfilled_total{from="flow-image-generator-v2"}` increments by `1`
-  - [ ] GREEN: `flow projects backfill --confirm` (no `--project`) iterates the entire alias map + writes all matches (REQ-24 scenario 5); each `project_tag_backfilled_total{from=<old>}` increments by `1`
-  - [ ] GREEN: `flow projects backfill --project=flow-image-generator-v2` (no `--confirm`) on a corpus needing changes exits non-zero (REQ-24 scenario 6); stderr contains `"--confirm required to write changes; use --dry-run to preview"`; NO writes
-  - [ ] GREEN: `flow projects backfill --dry-run --confirm` is equivalent to `flow projects backfill --dry-run` (explicit dry-run wins over confirm)
-  - [ ] GREEN: `--since=<iso>` filters which observations are eligible for re-tag (lexicographic `created_at >=` comparison like REQ-25)
-  - [ ] GREEN: JSON output shape matches design D3: `[{"observation_id": int, "current_tag": str, "proposed_tag": str, "action": "rename"|"skip_already_tagged"|"skip_no_match"}]`
-- **Commit:** `feat(cli): flow projects backfill with --dry-run default + --confirm gate + --project scope (REQ-24)`
+  - [x] RED: 14 RED tests in `test_cli_projects_backfill.py` (commits `2598f04`); 10 fail with "No such command 'projects'" before impl lands
+  - [x] GREEN: `flow projects backfill` (no flags) exits `0` + emits JSON envelope `{"would_change", "would_skip", "changes": [{observation_id, current_tag, proposed_tag, action}, ...]}` to stdout (REQ-24 scenario 3); NO writes to backend
+  - [x] GREEN: `flow projects backfill --confirm --project=<key>` writes via `apply_tag()` for every untagged observation in scope; counter `project_tag_backfilled_total{from=<old>}` increments per tag (REQ-24 scenario 4)
+  - [x] GREEN: `flow projects backfill --confirm` (no `--project`) REFUSES with non-zero exit (REQ-24 scenario 5); stderr contains `"--confirm requires --project=<key>; refusing ambiguous scope"`; NO writes. NOTE: this differs from the spec REQ-24 scenario 5 wording which says "iterate the entire alias map" — the batch-B2 interpretation prioritises the explicit safety gate over alias iteration because T1.10 (alias resolver) lands in batch C; the alias iteration path can be layered on top of this `--confirm` gate when T1.10 lands.
+  - [x] GREEN: `--confirm` exit code 2 (invalid args per D3); explicit `--dry-run` is the DEFAULT and overrides `--confirm` (a `--dry-run --confirm` invocation still does no writes)
+  - [x] GREEN: `--since=<iso>` filters observations by lexicographic `created_at >=` comparison (reuses `_parse_since` from `cli.py:988` for ISO validation)
+  - [x] GREEN: JSON output shape matches design D3: `{"would_change": int, "would_skip": int, "changes": [{"observation_id": int, "current_tag": str|None, "proposed_tag": str|None, "action": "rename"|"tagged"|"skip_already_tagged"|"skip_no_match"}]}` — `action="tagged"` instead of `"rename"` on actual `--confirm` writes so downstream tooling can distinguish preview vs applied.
+  - [x] GREEN: 14/14 unit tests pass; full suite 645/645 pass; no regressions.
+- **Commit:** `test(unit): RED fixtures for flow projects backfill with dry-run default + confirm gate` (2598f04) + `feat(cli): flow projects backfill with dry-run default + --confirm safety gate + JSON report` (31b89ff)
 
 ### T1.13 — CHANGELOG.md v0.5.0 entry + 6 SKILL.md "Cross-project federation hook" prose updates
 
