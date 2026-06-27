@@ -1144,7 +1144,11 @@ class TestPrune:
         backend = InMemoryBackend()
         _seed_backend(backend, n=3)
         manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
-        ids = [manager.create(description=f"seed-{i}") for i in range(5)]  # type: ignore[index]  # noqa: E501
+        ids: list[str] = []
+        for i in range(5):
+            ids.append(manager.create(description=f"seed-{i}"))
+            if i < 4:
+                time.sleep(1.01)
 
         result = manager.prune(keep_last=2)  # default confirm=False (dry-run)
 
@@ -1174,35 +1178,28 @@ class TestPrune:
 
         # Create one snapshot now (would-keep).
         recent_id = manager.create(description="recent")
-        # Backdate an older snapshot file directly so we can assert
-        # age-based pruning without sleeping.
-        old_path = tmp_path / "snap_old-id-12345.json.gz"
-        old_path.write_bytes(b"placeholder")  # filename pattern only
-        # We need a real envelope so the parser succeeds; build one
-        # via a second snapshot then rename its file to the old id.
+        # Create another snapshot and backdate its envelope to 2020-01-01
+        # so keep_days=30 evicts it. Prune reads created_at from the
+        # envelope (NOT file mtime), so backdating the envelope is the
+        # right lever for the test.
         very_old_id = manager.create(description="very-old")
         very_old_path = tmp_path / f"{very_old_id}.json.gz"
-        # Re-stamp the very_old envelope with a backdated created_at
-        # by patching the envelope content in place.
         import gzip as _gzip
+        import hashlib as _hashlib
         import json as _json
 
         with _gzip.open(very_old_path, "rt", encoding="utf-8") as fh:
             envelope = _json.loads(fh.read())
-        envelope["created_at"] = "2020-01-01T00:00:00Z"  # > 1 day ago
-        # Recompute sha256 so the integrity check still passes if we
-        # were to call show() on it; prune does NOT verify sha256, but
-        # we keep the envelope valid for any downstream tests.
+        envelope["created_at"] = "2020-01-01T00:00:00Z"  # > 30 days ago
+        # Recompute sha256 so the envelope stays self-consistent.
         canonical = _canonical_json_dumps(
             {**envelope, "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"}}
         )
-        import hashlib as _hashlib
-
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with _gzip.open(very_old_path, "wt", encoding="utf-8") as fh:
             fh.write(_canonical_json_dumps(envelope))
 
-        # keep_days=30 keeps both (recent and backdated-2020 is older than 30 days).
+        # keep_days=30 keeps recent, evicts backdated-2020.
         result = manager.prune(keep_days=30)
         assert very_old_id in result.would_delete, (
             f"expected very_old ({very_old_id}) in would_delete; "
@@ -1253,7 +1250,11 @@ class TestPrune:
         backend = InMemoryBackend()
         _seed_backend(backend, n=3)
         manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
-        ids = [manager.create(description=f"snap-{i}") for i in range(4)]
+        ids: list[str] = []
+        for i in range(4):
+            ids.append(manager.create(description=f"snap-{i}"))
+            if i < 3:
+                time.sleep(1.01)
         files_before = sorted(p.name for p in tmp_path.glob("snap_*.json.gz"))
 
         result = manager.prune(keep_last=1)
@@ -1276,7 +1277,11 @@ class TestPrune:
         backend = InMemoryBackend()
         _seed_backend(backend, n=3)
         manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
-        ids = [manager.create(description=f"snap-{i}") for i in range(4)]
+        ids: list[str] = []
+        for i in range(4):
+            ids.append(manager.create(description=f"snap-{i}"))
+            if i < 3:
+                time.sleep(1.01)
 
         result = manager.prune(keep_last=1, confirm=True)
 
@@ -1284,7 +1289,9 @@ class TestPrune:
         assert sorted(result.deleted) == sorted(ids[:3]), (
             f"expected 3 oldest deleted; got deleted={result.deleted!r}"
         )
-        remaining = sorted(p.stem.replace(".json", "") for p in tmp_path.glob("snap_*.json.gz"))
+        remaining = sorted(
+            p.name.replace(".json.gz", "") for p in tmp_path.glob("snap_*.json.gz")
+        )
         assert remaining == [ids[3]], (
             f"expected only the newest snapshot on disk; got {remaining!r}"
         )
@@ -1298,7 +1305,11 @@ class TestPrune:
         backend = InMemoryBackend()
         _seed_backend(backend, n=3)
         manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
-        ids = [manager.create(description=f"snap-{i}") for i in range(5)]
+        ids: list[str] = []
+        for i in range(5):
+            ids.append(manager.create(description=f"snap-{i}"))
+            if i < 4:
+                time.sleep(1.01)
 
         result = manager.prune(keep_last=0)  # would normally delete all
 

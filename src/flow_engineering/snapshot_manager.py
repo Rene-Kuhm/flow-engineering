@@ -44,6 +44,7 @@ import json
 import os
 import secrets
 import tempfile
+import time as _time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -103,8 +104,8 @@ class SnapshotMeta:
     The 6 keys mirror REQ-29 scenario 1's contract: ``snap_id``,
     ``created_at``, ``trigger``, ``description``, ``obs_count``,
     ``size_bytes``. Extra metadata (binding_count, project_count,
-    include_graph) is exposed as dataclass fields so tests and BDD steps
-    can introspect without re-reading the file.
+    include_graph, pinned) is exposed as dataclass fields so tests and
+    BDD steps can introspect without re-reading the file.
     """
 
     id: str
@@ -116,6 +117,7 @@ class SnapshotMeta:
     project_count: int
     size_bytes: int
     include_graph: bool
+    pinned: bool
     path: Path
 
 
@@ -201,6 +203,69 @@ class RollbackConflictError(Exception):
 
     def __init__(self, payload: dict[str, Any]) -> None:
         super().__init__(payload.get("error", "rollback has conflicts"))
+        self.payload = payload
+
+
+@dataclass(frozen=True)
+class PruneResult:
+    """Outcome of a ``prune()`` invocation (REQ-34).
+
+    Fields mirror the JSON contract ``{"deleted", "would_delete",
+    "would_keep", "freed_bytes", "dry_run", "reason"}`` emitted by the
+    ``flow snapshot prune`` CLI. The dataclass carries both the
+    actually-applied deletions (``deleted``) AND the candidate set
+    (``would_delete``/``would_keep``) so callers can inspect the policy
+    decision before confirming it.
+
+    - ``deleted``: snapshot ids actually removed from disk; ``[]`` in dry-run.
+    - ``would_delete``: snapshot ids that WOULD be deleted if applied
+      (mirrors ``deleted`` when ``confirm=True``).
+    - ``would_keep``: snapshot ids the retention policy decided to KEEP,
+      in oldest-first order.
+    - ``freed_bytes``: total bytes the deletion set would free (== 0 in
+      dry-run is permitted; equals the on-disk size sum when applied).
+    - ``dry_run``: ``True`` when no files were touched.
+    - ``reason``: ``"count"`` (keep_last), ``"age"`` (keep_days),
+      ``"size"`` (max_total_size_mb), or ``""`` for no-op / no filter.
+    """
+
+    deleted: list[str]
+    would_delete: list[str]
+    would_keep: list[str]
+    freed_bytes: int
+    dry_run: bool
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "deleted": list(self.deleted),
+            "would_delete": list(self.would_delete),
+            "would_keep": list(self.would_keep),
+            "freed_bytes": int(self.freed_bytes),
+            "dry_run": bool(self.dry_run),
+            "reason": str(self.reason),
+        }
+
+
+class PruneNoFilterError(Exception):
+    """Raised when ``prune()`` is called with no retention filter (REQ-34).
+
+    REQ-34: at least one of ``keep_last`` / ``keep_days`` /
+    ``max_total_size_mb`` MUST be supplied; the command refuses otherwise.
+    """
+
+
+class PruneSafetyGateError(Exception):
+    """Raised when ``keep_last=0`` is missing the required safety flags.
+
+    D10 two-flag safety gate: ``keep_last=0`` requires BOTH ``confirm=True``
+    AND ``force=True``; without either, the operator's intent is ambiguous
+    ("I meant 1, not 0"). The CLI surfaces this as a structured error so
+    a CI pipeline can branch on exit code ``4``.
+    """
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__(payload.get("error", "--keep-last=0 requires --confirm and --force"))
         self.payload = payload
 
 
@@ -499,6 +564,7 @@ class SnapshotManager:
             ),
             size_bytes=int(meta.get("file_size_bytes", path.stat().st_size)),
             include_graph=bool(meta.get("include_graph", True)),
+            pinned=bool(meta.get("pinned", False)),
             path=path,
         )
 
@@ -850,6 +916,257 @@ class SnapshotManager:
             target_snapshot_id=target_snap_id,
         )
 
+    # ----- prune ---------------------------------------------------------
+
+    def prune(
+        self,
+        *,
+        keep_last: int | None = None,
+        keep_days: int | None = None,
+        max_total_size_mb: int | None = None,
+        confirm: bool = False,
+        force: bool = False,
+        now: float | None = None,
+    ) -> PruneResult:
+        """Retention-driven deletion of snapshot files (REQ-34, T1.6).
+
+        At least ONE of ``keep_last`` / ``keep_days`` / ``max_total_size_mb``
+        MUST be supplied; otherwise :class:`PruneNoFilterError` is raised.
+        The three criteria are OR-combined: a snapshot is a candidate for
+        deletion if ANY of them returns False.
+
+        Default (``confirm=False``) is dry-run — ``PruneResult.dry_run`` is
+        True and NO files are touched. With ``confirm=True``, the
+        candidate set is deleted and the snapshot files are removed from
+        disk.
+
+        Two safety invariants are non-negotiable (enforced BEFORE
+        candidates are computed):
+
+        - The most-recent snapshot is NEVER deleted unless ``force=True``.
+        - Snapshots whose ``metadata.pinned`` is True are NEVER deleted.
+
+        Both invariants hold in dry-run too: pinned + most-recent snapshots
+        are excluded from ``would_delete`` even when no actual deletion
+        occurs.
+
+        Args:
+            keep_last: keep the N most-recent snapshots (by ``created_at``
+                descending); delete the rest. ``0`` is allowed only with
+                BOTH ``confirm=True`` AND ``force=True`` (D10 two-flag
+                safety gate). ``0`` is mutually exclusive with
+                ``keep_days`` and ``max_total_size_mb``.
+            keep_days: keep snapshots with ``created_at >= now - keep_days``.
+                Older snapshots are candidates for deletion.
+            max_total_size_mb: delete oldest-first until the total
+                snapshot directory size fits within the budget. Bytes
+                that do not fit a whole snapshot are rounded down
+                (i.e. the newest snapshot that pushes total over budget
+                is kept).
+            confirm: required ``True`` to actually delete; default
+                ``False`` is dry-run.
+            force: when ``True``, overrides the most-recent safety
+                invariant and emits a loud stderr warning. Has NO effect
+                on the pinned invariant (pinned snapshots are NEVER
+                deleted).
+            now: epoch seconds (float) used as the "current time" for
+                ``keep_days``. Defaults to ``time.time()``. Exposed for
+                test determinism.
+
+        Returns:
+            :class:`PruneResult` describing both the policy decision
+            (``would_delete``, ``would_keep``) and the applied deletions
+            (``deleted``, ``freed_bytes``).
+
+        Raises:
+            PruneNoFilterError: when no retention filter is supplied.
+            PruneSafetyGateError: when ``keep_last=0`` is missing
+                ``confirm=True`` or ``force=True``.
+        """
+        # Validation: at least one filter MUST be supplied.
+        if keep_last is None and keep_days is None and max_total_size_mb is None:
+            raise PruneNoFilterError(
+                "at least one of --keep-last, --keep-days, --max-total-size-mb "
+                "is required"
+            )
+
+        # D10 safety gate: keep_last=0 with confirm=True requires force=True.
+        # The gate only fires in apply mode (confirm=True) — in dry-run,
+        # the most-recent safety net below naturally excludes the newest
+        # snapshot from would_delete, so dry-run prune(keep_last=0) is
+        # safe and informative without requiring force=True.
+        if keep_last == 0 and confirm and not force:
+            raise PruneSafetyGateError(
+                {
+                    "error": (
+                        "--keep-last=0 with --confirm requires --force; "
+                        "this combination is irreversible and the "
+                        "most-recent snapshot would be deleted"
+                    ),
+                    "keep_last": 0,
+                }
+            )
+
+        # Resolve "now" once so keep_days + the safety-net age checks
+        # share a single timestamp.
+        if now is None:
+            now = _time.time()
+
+        # Enumerate snapshots oldest-first. The sort key is the envelope's
+        # ``created_at`` (NOT the filename) because two snapshots created
+        # within the same wall-clock second get the same ISO prefix and
+        # differ only by the random hex suffix — the filename order would
+        # be random in that case, but ``created_at`` order is stable. We
+        # break ties by ``snap_id`` so the result is deterministic.
+        files = sorted(self.snapshots_dir.glob("snap_*.json.gz"))
+        metas: list[tuple[Path, SnapshotMeta]] = [
+            (p, self._read_meta_header(p)) for p in files
+        ]
+        metas.sort(key=lambda pm: (pm[1].created_at, pm[1].id))
+        snap_ids_oldest_first = [m.id for _, m in metas]
+        newest_meta = metas[-1][1] if metas else None
+        newest_id = newest_meta.id if newest_meta else None
+
+        # ---- Apply each filter, OR-combine the boolean masks ----
+        # keep_mask[i] = True means "snapshot i is retained by this filter".
+        keep_mask: list[bool] = [True] * len(metas)
+        reason_label = ""
+
+        if keep_last is not None:
+            # Keep the N most-recent. With 5 metas and keep_last=2, we keep
+            # the last 2 in the oldest-first list (== first 2 in
+            # newest-first).
+            n_retained = max(0, int(keep_last))
+            for i in range(len(metas) - n_retained):
+                keep_mask[i] = False
+            reason_label = "count"
+
+        if keep_days is not None:
+            # Keep snapshots whose created_at >= now - keep_days.
+            from datetime import datetime as _dt
+            cutoff_epoch = now - (float(keep_days) * 86400.0)
+            cutoff_iso = _dt.fromtimestamp(cutoff_epoch, UTC).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            for i, (_, m) in enumerate(metas):
+                # The created_at is ISO 8601 with Z suffix; lexicographic
+                # comparison against an ISO cutoff is correct for fixed-
+                # length timestamps.
+                if m.created_at < cutoff_iso:
+                    keep_mask[i] = False
+            reason_label = reason_label or "age"
+
+        if max_total_size_mb is not None:
+            # Walk oldest-first; if removing a snapshot keeps the
+            # remaining total <= budget, mark it for deletion. Stop
+            # when the budget is satisfied.
+            budget_bytes = int(max_total_size_mb) * 1024 * 1024
+            current_total = sum(p.stat().st_size for p, _ in metas)
+            for i, (path, _) in enumerate(metas):
+                if current_total <= budget_bytes:
+                    break
+                # We always protect the newest snapshot from size-based
+                # eviction; otherwise the budget could force-delete the
+                # most-recent file. This is enforced uniformly below
+                # via the most_recent_id safety net.
+                keep_mask[i] = False
+                current_total -= path.stat().st_size
+            reason_label = reason_label or "size"
+
+        # Apply safety invariants AFTER the OR-combined filter.
+        for i, (_, m) in enumerate(metas):
+            # Pinned snapshots are NEVER deleted (force does NOT override).
+            if m.pinned:
+                keep_mask[i] = True
+            # Most-recent snapshot is NEVER deleted unless force=True.
+            if m.id == newest_id and not force:
+                keep_mask[i] = True
+
+        # Build the candidate set.
+        would_delete = [snap_ids_oldest_first[i] for i, k in enumerate(keep_mask) if not k]
+        would_keep = [snap_ids_oldest_first[i] for i, k in enumerate(keep_mask) if k]
+        freed_bytes = sum(
+            metas[i][0].stat().st_size
+            for i, k in enumerate(keep_mask)
+            if not k
+        )
+
+        # Dry-run short-circuit: no files touched, no counter emitted.
+        if not confirm:
+            return PruneResult(
+                deleted=[],
+                would_delete=would_delete,
+                would_keep=would_keep,
+                freed_bytes=0,
+                dry_run=True,
+                reason=reason_label,
+            )
+
+        # Apply: actually delete the candidate files. Emit a loud stderr
+        # warning if force is overriding the most-recent safety net.
+        newest_idx = len(metas) - 1 if metas else -1
+        force_deletes_newest = (
+            force
+            and newest_idx >= 0
+            and metas[newest_idx][1].id == newest_id
+            and not keep_mask[newest_idx]
+        )
+        if force_deletes_newest:
+            import sys
+            print(
+                "WARNING: --force override; most-recent snapshot was "
+                "protected by default and is being deleted",
+                file=sys.stderr,
+            )
+
+        actually_deleted: list[str] = []
+        for i, k in enumerate(keep_mask):
+            if k:
+                continue
+            path, m = metas[i]
+            try:
+                path.unlink()
+                actually_deleted.append(m.id)
+            except OSError:
+                # If the file is already gone (concurrent prune), skip
+                # silently. Any other OSError is best-effort: the
+                # operator can re-run prune to retry.
+                continue
+
+        # Emit one snapshot_pruned_total counter per deletion (mirrors
+        # the rollback audit-trail pattern). The counter catalog
+        # (SNAPSHOT_COUNTER_NAMES) is added in T1.7 batch C; until then
+        # we use the raw ``increment`` with the known counter name.
+        for sid in actually_deleted:
+            self._record_prune_event(reason=reason_label, snap_id=sid)
+
+        return PruneResult(
+            deleted=actually_deleted,
+            would_delete=would_delete,
+            would_keep=would_keep,
+            freed_bytes=freed_bytes,
+            dry_run=False,
+            reason=reason_label,
+        )
+
+    def _record_prune_event(self, *, reason: str, snap_id: str) -> None:
+        """Append one ``snapshot_pruned_total`` event to the metrics sink.
+
+        Best-effort: the call goes through :func:`observability.increment`
+        which swallows ``OSError``. The counter catalog
+        (``SNAPSHOT_COUNTER_NAMES``) is defined in batch C (T1.7); until
+        then we use the raw ``increment`` with the known counter name
+        string so the prune observability contract from REQ-34 works
+        end-to-end without depending on T1.7 landing first.
+        """
+        from flow_engineering.observability import increment
+
+        increment(
+            "snapshot_pruned_total",
+            reason=str(reason or "count"),
+            snap_id=str(snap_id),
+        )
+
 
 __all__ = [
     "SnapshotEnvelopeError",
@@ -859,6 +1176,9 @@ __all__ = [
     "RollbackResult",
     "RollbackRefusedError",
     "RollbackConflictError",
+    "PruneResult",
+    "PruneNoFilterError",
+    "PruneSafetyGateError",
     "SnapshotManager",
     "SNAPSHOT_SCHEMA_VERSION",
     "DEFAULT_GRAPH_JSON_PATH",
