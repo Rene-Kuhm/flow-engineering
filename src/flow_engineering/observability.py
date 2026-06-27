@@ -33,12 +33,27 @@ REQ-26 (cross-project-federation PR#1 T1.8) adds three ``federated_*`` counters:
   the value IS the count; one event per call with ``count=<N>``)
 - ``federated_search_results_returned_total``
 
+REQ-26 (graph-snapshots change #5 batch C T1.7) adds four ``snapshot_*`` counters:
+- ``snapshot_create_total`` — incremented by ``SnapshotManager.create()`` after
+  a successful gzipped envelope write.
+- ``snapshot_rollback_total`` — incremented by ``SnapshotManager.rollback()``;
+  fires on success AND on conflict/refusal so the audit trail captures
+  attempted rollbacks.
+- ``snapshot_prune_total`` — incremented per deletion by
+  ``SnapshotManager.prune()`` in apply mode (``confirm=True``); NOT fired
+  in dry-run.
+- ``snapshot_load_failed_total`` — incremented by
+  ``decision_drift._load_graph_from_snapshot`` when the frozen graph cannot
+  be loaded (drift-pinned scan unavailability, REQ-33 D2 graceful
+  degradation).
+
 The naming follows the REQ-8 convention: ``_total`` suffix for counters,
 ``_ms`` / ``_seconds`` suffix for timing, no suffix on gauges. A change that
 renames any of these would silently break ``flow metrics`` consumers across
 the decision-code-linking → vector-semantic-search → cross-project-federation
-boundary, so the names are exposed via :data:`VECTOR_COUNTER_NAMES` and
-:data:`FEDERATED_COUNTER_NAMES` for downstream discovery.
+→ graph-snapshots boundary, so the names are exposed via
+:data:`VECTOR_COUNTER_NAMES`, :data:`FEDERATED_COUNTER_NAMES`, and
+:data:`SNAPSHOT_COUNTER_NAMES` for downstream discovery.
 
 Plus the helper ``backfill_coverage(backend)`` that returns the ratio of
 backfilled observations to total observations (rounded to 3 decimals),
@@ -101,6 +116,25 @@ build the per-call project-bucket histogram.
 
 if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
+
+
+# ---------- REQ-26 snapshot counter catalog ----------
+
+
+SNAPSHOT_COUNTER_NAMES: tuple[str, ...] = (
+    "snapshot_create_total",
+    "snapshot_rollback_total",
+    "snapshot_prune_total",
+    "snapshot_load_failed_total",
+)
+"""Canonical list of REQ-26 snapshot counter names (REQ-26 scenario 4 contract).
+
+Mirrors :data:`VECTOR_COUNTER_NAMES` (REQ-22) and
+:data:`FEDERATED_COUNTER_NAMES` (REQ-26 federated). The tuple is the single
+source of truth for ``flow metrics`` consumers and for future changes that
+add to the catalog. The order matches the snapshot lifecycle:
+create → rollback → prune → load-failed (audit trail).
+"""
 
 
 def default_metrics_path() -> Path:
@@ -411,3 +445,31 @@ def record_federated_summary(
     )
     increment("federated_search_projects_queried", count=safe_projects)
     increment("federated_search_results_returned_total", count=safe_results)
+
+
+# ---------- Snapshot event helper (REQ-26 snapshot counters, graph-snapshots T1.7) ----------
+
+
+def record_snapshot_event(counter_name: str, **labels: Any) -> None:
+    """Append a snapshot counter increment to the JSONL sink (REQ-26 T1.7).
+
+    Mirrors :func:`record_vector_summary` / :func:`record_drift_summary` /
+    :func:`record_federated_summary` shape: each call appends exactly one
+    JSONL line of the form
+    ``{"name": "<counter_name>", "fields": {<labels>}, "ts": "<ISO 8601 UTC>"}``
+    via :func:`increment`.
+
+    Args:
+        counter_name: One of :data:`SNAPSHOT_COUNTER_NAMES`. Callers MUST
+            pass a name from the catalog so ``flow metrics`` consumers can
+            rely on the contract. An unknown name is still emitted (the
+            helper is fail-open), but production code paths always pass a
+            catalog value.
+        **labels: Optional label fields merged into the JSONL ``fields``
+            object. When empty, the ``fields`` object is ``{}``.
+
+    Notes:
+        Defensive: never raises. Failures are absorbed by :func:`increment`
+        which swallows ``OSError`` on the underlying file write.
+    """
+    increment(counter_name, **labels)

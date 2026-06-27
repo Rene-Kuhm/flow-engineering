@@ -39,6 +39,14 @@ from flow_engineering.scaffold import (
     render_new_project,
     scaffold_change,
 )
+from flow_engineering.snapshot_manager import (
+    PruneNoFilterError,
+    PruneSafetyGateError,
+    RollbackConflictError,
+    RollbackRefusedError,
+    SnapshotEnvelopeError,
+    SnapshotManager,
+)
 from flow_engineering.state import StateMachine
 
 
@@ -988,6 +996,27 @@ def metrics(json_flag: bool) -> None:
 
 
 DEFAULT_GRAPH_JSON: Path = Path.home() / ".flow-engineering" / "graph.json"
+DEFAULT_SNAPSHOTS_DIR: Path = Path.home() / ".flow-engineering" / "snapshots"
+"""Production default for the snapshots directory.
+
+Mirrors the ``DEFAULT_GRAPH_JSON`` precedent — tests override via
+``FLOW_SNAPSHOTS_DIR`` so the ``flow snapshot`` subcommands land in a
+``tmp_path`` instead of polluting the user's home directory.
+"""
+
+
+def _resolve_snapshots_dir() -> Path:
+    """Return the snapshots directory the CLI uses.
+
+    Honours the ``FLOW_SNAPSHOTS_DIR`` env override (used by tests +
+    parallel deploys); falls back to :data:`DEFAULT_SNAPSHOTS_DIR`.
+    Mirrors ``decision_drift._resolve_snapshots_dir`` so the two paths
+    stay in lockstep.
+    """
+    env = os.environ.get("FLOW_SNAPSHOTS_DIR")
+    if env:
+        return Path(env)
+    return DEFAULT_SNAPSHOTS_DIR
 
 
 def _parse_since(raw: str | None) -> float | None:
@@ -1149,6 +1178,13 @@ def _write_back_findings(
               type=click.Path(path_type=Path),
               help="Path to graph.json snapshot "
                    "(default: ~/.flow-engineering/graph.json).")
+@click.option(
+    "--snapshot",
+    "snapshot_id",
+    default=None,
+    help="REQ-33: drift-pinned scan via a stored snapshot. "
+         "Reads frozen observations + graph.json from the envelope instead of live disk.",
+)
 def drift(
     change_name: str,
     as_json: bool,
@@ -1156,11 +1192,18 @@ def drift(
     write_back: bool,
     since: str | None,
     graph_json: str | None,
+    snapshot_id: str | None,
 ) -> None:
-    """Run drift detection for a change (REQ-10/11/14).
+    """Run drift detection for a change (REQ-10/11/14 + REQ-33).
 
     Exit codes: 0 = every binding STILL_VALID. 1 = any non-STILL_VALID class
     found. 2 = graph unavailable OR --since parse error. Exit 2 wins over 1.
+
+    REQ-33 surface: ``--snapshot=<snap_id>`` activates the drift-pinned
+    scan path. The snapshot's frozen observations + graph.json content
+    are loaded via ``decision_drift.scan_change(snap_id=...)``; the live
+    ``graph.json`` file is IGNORED. Without ``--snapshot`` the behaviour
+    is byte-identical to the pre-change path (D13 non-breaking).
     """
     try:
         since_ts = _parse_since(since)
@@ -1168,14 +1211,37 @@ def drift(
         click.echo(str(exc), err=True)
         sys.exit(2)
 
-    graph_path = Path(graph_json) if graph_json else DEFAULT_GRAPH_JSON
+    if snapshot_id is not None:
+        # REQ-33 drift-pinned path: graph_json_path is None (the snapshot
+        # provides the graph implicitly); backend stays None too (the
+        # snapshot's frozen observations become the implicit backend).
+        # ``decision_drift.scan_change`` raises SnapshotGraphMissing when
+        # the snapshot has no graph_json_content — surface it cleanly.
+        graph_path = None
+    else:
+        graph_path = Path(graph_json) if graph_json else DEFAULT_GRAPH_JSON
 
-    report = decision_drift.scan_change(
-        change_name,
-        graph_json_path=graph_path,
-        include_obsolete=include_obsolete,
-        since=since_ts,
-    )
+    try:
+        report = decision_drift.scan_change(
+            change_name,
+            graph_json_path=graph_path,
+            include_obsolete=include_obsolete,
+            since=since_ts,
+            snap_id=snapshot_id,
+        )
+    except decision_drift.SnapshotGraphMissing as exc:
+        click.echo(
+            json.dumps(
+                {
+                    "error": "snapshot graph_json_content missing",
+                    "snap_id": snapshot_id,
+                    "detail": str(exc),
+                },
+                ensure_ascii=False,
+            ),
+            err=True,
+        )
+        sys.exit(2)
 
     # Observability: record the summary BEFORE returning so the counters
     # always reflect what was actually computed.
@@ -1427,6 +1493,366 @@ def projects_alias(old_key: str, new_key: str) -> None:
     # Defensive fallback — unknown statuses should not reach this point.
     click.echo(f"alias status: {status}", err=True)
     sys.exit(1)
+
+
+# ---------- REQ-28..34: flow snapshot subcommand group (T1.5) ----------
+
+
+def _build_snapshot_manager() -> SnapshotManager:
+    """Construct a :class:`SnapshotManager` from the CLI defaults.
+
+    Wires the snapshots dir (env override aware) + the default save
+    backend so every ``flow snapshot`` subcommand gets a consistent
+    facade without each command re-deriving the path.
+    """
+    return SnapshotManager(
+        snapshots_dir=_resolve_snapshots_dir(),
+        backend=_default_save_backend(),
+    )
+
+
+def _serialize_snapshot_meta(meta) -> dict:
+    """Project a ``SnapshotMeta`` dataclass into the REQ-29 JSON shape.
+
+    REQ-29 scenario 1 requires exactly six keys: ``snap_id``,
+    ``created_at``, ``trigger``, ``description``, ``obs_count``,
+    ``size_bytes``. Extra fields are exposed as additional JSON keys
+    (introspection for ``flow metrics`` consumers).
+    """
+    return {
+        "snap_id": meta.id,
+        "created_at": meta.created_at,
+        "trigger": meta.trigger,
+        "description": meta.description,
+        "obs_count": meta.obs_count,
+        "size_bytes": meta.size_bytes,
+        "include_graph": meta.include_graph,
+        "binding_count": meta.binding_count,
+        "project_count": meta.project_count,
+    }
+
+
+def _snapshot_diff_to_dict(diff) -> dict:
+    """Project a ``SnapshotDiff`` dataclass into the REQ-31 JSON shape."""
+    return diff.to_dict()
+
+
+@main.group(name="snapshot")
+def snapshot_group() -> None:
+    """Manage immutable snapshots of the Engram observation graph (REQ-28..34).
+
+    Subcommands:
+    - ``create``  — write a new gzipped JSON snapshot.
+    - ``list``    — list existing snapshots (newest first).
+    - ``show``    — render a snapshot's full envelope.
+    - ``diff``    — diff two snapshots OR snapshot-vs-live.
+    - ``rollback`` — restore Engram state to a snapshot (with safety).
+    - ``prune``   — retention-driven deletion (lands in T1.6).
+
+    Exit-code conventions mirror the rest of the CLI: 0 = success, 2 =
+    invalid args, 3 = safety refusal (rollback without ``--confirm``).
+    """
+
+
+@snapshot_group.command(name="create")
+@click.option(
+    "--description",
+    "description_text",
+    default="",
+    help="Free-text note stored in the envelope's description field.",
+)
+@click.option(
+    "--no-include-graph",
+    "no_include_graph",
+    is_flag=True,
+    default=False,
+    help="Exclude graph_state.graph_json_content from the envelope. "
+         "Drift-pinned scans of such snapshots will refuse.",
+)
+@click.option(
+    "--project",
+    "project_key",
+    default=None,
+    help="Restrict to a single project at READ time only (D5). "
+         "v1 snapshots always capture the full DB.",
+)
+def snapshot_create(
+    description_text: str,
+    no_include_graph: bool,
+    project_key: str | None,
+) -> None:
+    """Write a new snapshot of the current Engram state (REQ-28).
+
+    Default ``trigger='manual'``; auto-rollback-safety snapshots are
+    written by ``flow snapshot rollback`` with ``trigger='rollback_safety'``.
+    The snapshot file is written atomically (tempfile + Path.replace)
+    so a crash mid-write cannot corrupt the directory.
+    """
+    manager = _build_snapshot_manager()
+    snap_id = manager.create(
+        description=description_text,
+        trigger="manual",
+        include_graph=not no_include_graph,
+    )
+    click.echo(snap_id)
+
+
+@snapshot_group.command(name="list")
+@click.option(
+    "--since",
+    default=None,
+    help="Filter to snapshots with created_at >= this ISO 8601 timestamp.",
+)
+@click.option(
+    "--limit",
+    "limit",
+    type=int,
+    default=None,
+    help="Maximum number of snapshots to return (default: 50).",
+)
+def snapshot_list(since: str | None, limit: int | None) -> None:
+    """List snapshots in reverse chronological order (REQ-29).
+
+    Output is a JSON array of ``SnapshotMeta`` records with the 6 keys
+    required by the spec (snap_id, created_at, trigger, description,
+    obs_count, size_bytes) plus introspection fields. Empty dir ⇒ ``[]``.
+    """
+    manager = _build_snapshot_manager()
+    entries = manager.list(since=since, limit=limit)
+    payload = [_serialize_snapshot_meta(e) for e in entries]
+    click.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@snapshot_group.command(name="show")
+@click.argument("snap_id")
+def snapshot_show(snap_id: str) -> None:
+    """Render a snapshot's full envelope as pretty-printed JSON (REQ-30).
+
+    On sha256 mismatch OR unknown ``snap_id`` the command exits non-zero
+    with a JSON error object on stderr.
+    """
+    manager = _build_snapshot_manager()
+    try:
+        envelope = manager.show(snap_id)
+    except SnapshotEnvelopeError as exc:
+        click.echo(
+            json.dumps(
+                {"error": str(exc), "snap_id": snap_id},
+                ensure_ascii=False,
+            ),
+            err=True,
+        )
+        sys.exit(2)
+    click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
+
+
+@snapshot_group.command(name="diff")
+@click.argument("snap_id_a")
+@click.argument("snap_id_b", required=False, default=None)
+def snapshot_diff(snap_id_a: str, snap_id_b: str | None) -> None:
+    """Diff two snapshots OR a snapshot against LIVE state (REQ-31).
+
+    Two calling forms:
+
+    - ``flow snapshot diff <a> <b>`` — diff two stored snapshots.
+    - ``flow snapshot diff <a>`` — diff ``<a>`` against LIVE state
+      (the snapshot-vs-live extension per REQ-31).
+
+    Output is a structured JSON object with ``added``, ``removed``,
+    ``modified``, ``unchanged_count``, ``summary`` keys.
+    """
+    manager = _build_snapshot_manager()
+    try:
+        diff = manager.diff(snap_id_a, snap_id_b)
+    except SnapshotEnvelopeError as exc:
+        click.echo(
+            json.dumps(
+                {"error": str(exc), "snap_id_a": snap_id_a, "snap_id_b": snap_id_b},
+                ensure_ascii=False,
+            ),
+            err=True,
+        )
+        sys.exit(2)
+    click.echo(
+        json.dumps(_snapshot_diff_to_dict(diff), ensure_ascii=False, indent=2)
+    )
+
+
+@snapshot_group.command(name="rollback")
+@click.argument("snap_id")
+@click.option(
+    "--confirm",
+    "confirm_flag",
+    is_flag=True,
+    default=False,
+    help="REQUIRED to write changes. Without --confirm the command refuses.",
+)
+@click.option(
+    "--force",
+    "force_flag",
+    is_flag=True,
+    default=False,
+    help="Override conflict detection (DANGEROUS).",
+)
+def snapshot_rollback(
+    snap_id: str, confirm_flag: bool, force_flag: bool
+) -> None:
+    """Restore the Engram state to match ``snap_id`` (REQ-32).
+
+    Two-phase commit (D11):
+
+    1. Auto-safety snapshot of CURRENT live state (trigger=rollback_safety).
+    2. Atomic SQLite ``BEGIN IMMEDIATE`` apply of the target snapshot.
+
+    Without ``--confirm`` the command refuses with exit code 3 and a
+    JSON error on stderr. With ``--confirm`` but conflicts present,
+    the command refuses with exit code 2 unless ``--force`` is also
+    passed (which emits a stderr warning + applies anyway).
+    """
+    manager = _build_snapshot_manager()
+    try:
+        result = manager.rollback(
+            snap_id, confirm=confirm_flag, force=force_flag
+        )
+    except RollbackRefusedError as exc:
+        click.echo(
+            json.dumps(exc.payload, ensure_ascii=False),
+            err=True,
+        )
+        sys.exit(3)
+    except RollbackConflictError as exc:
+        click.echo(
+            json.dumps(exc.payload, ensure_ascii=False),
+            err=True,
+        )
+        sys.exit(2)
+    except SnapshotEnvelopeError as exc:
+        click.echo(
+            json.dumps(
+                {"error": str(exc), "snap_id": snap_id},
+                ensure_ascii=False,
+            ),
+            err=True,
+        )
+        sys.exit(2)
+    click.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+
+@snapshot_group.command(name="prune")
+@click.option(
+    "--keep-last",
+    "keep_last",
+    type=int,
+    default=None,
+    help="Keep the N most-recent snapshots; delete the rest (count filter).",
+)
+@click.option(
+    "--keep-days",
+    "keep_days",
+    type=int,
+    default=None,
+    help="Keep snapshots newer than N days (age filter).",
+)
+@click.option(
+    "--max-total-size-mb",
+    "max_total_size_mb",
+    type=int,
+    default=None,
+    help="Delete oldest-first until total size <= N MB (size filter).",
+)
+@click.option(
+    "--confirm",
+    "confirm_flag",
+    is_flag=True,
+    default=False,
+    help="REQUIRED to actually delete. Without --confirm the command is "
+         "dry-run and prints the would-delete list.",
+)
+@click.option(
+    "--force",
+    "force_flag",
+    is_flag=True,
+    default=False,
+    help="Override the most-recent snapshot safety net (DANGEROUS).",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit the PruneResult as a JSON object on stdout.",
+)
+def snapshot_prune(
+    keep_last: int | None,
+    keep_days: int | None,
+    max_total_size_mb: int | None,
+    confirm_flag: bool,
+    force_flag: bool,
+    json_flag: bool,
+) -> None:
+    """Retention-driven deletion of snapshot files (REQ-34).
+
+    Three retention filters are OR-combined: ``--keep-last`` (count),
+    ``--keep-days`` (age), ``--max-total-size-mb`` (size). At least ONE
+    MUST be supplied; otherwise the command refuses with exit code 2.
+
+    Default (no ``--confirm``) is dry-run: ``PruneResult.dry_run`` is True
+    and NO files are touched. The candidate set is printed to stdout as
+    a ``"would delete"`` list so the operator can preview the impact.
+
+    With ``--confirm``, the candidate set is deleted and the
+    ``PruneResult.deleted`` list is the actually-applied deletions.
+
+    Two safety invariants (REQ-34 D10) are non-negotiable:
+
+    - The most-recent snapshot is NEVER deleted (unless ``--force``).
+    - Pinned snapshots are NEVER deleted.
+
+    Exit codes: 0 on success (including dry-run), 2 on no-filter /
+    safety-gate, 4 on ``PruneSafetyGateError``.
+    """
+    manager = _build_snapshot_manager()
+    try:
+        result = manager.prune(
+            keep_last=keep_last,
+            keep_days=keep_days,
+            max_total_size_mb=max_total_size_mb,
+            confirm=confirm_flag,
+            force=force_flag,
+        )
+    except PruneNoFilterError as exc:
+        click.echo(
+            json.dumps({"error": str(exc)}, ensure_ascii=False),
+            err=True,
+        )
+        sys.exit(2)
+    except PruneSafetyGateError as exc:
+        click.echo(
+            json.dumps(exc.payload, ensure_ascii=False),
+            err=True,
+        )
+        sys.exit(4)
+
+    if json_flag:
+        click.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    # Human-readable default output. Dry-run prints "would delete"; apply
+    # prints "deleted" so the operator can see what changed.
+    if result.dry_run:
+        click.echo(f"DRY-RUN: would delete {len(result.would_delete)} snapshots")
+        click.echo(f"  reason: {result.reason!r}")
+        for sid in result.would_delete:
+            click.echo(f"  - {sid}")
+        click.echo(f"would keep: {len(result.would_keep)}")
+        return
+
+    click.echo(f"deleted {len(result.deleted)} snapshots")
+    click.echo(f"  reason: {result.reason!r}")
+    for sid in result.deleted:
+        click.echo(f"  - {sid}")
+    click.echo(f"freed_bytes: {result.freed_bytes}")
+    click.echo(f"kept: {len(result.would_keep)}")
 
 
 if __name__ == "__main__":

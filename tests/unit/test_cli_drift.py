@@ -340,11 +340,13 @@ class TestIncludeObsolete:
         def _stub(
             change_name: str, *, graph_json_path: Path, backend: Any = None,
             include_obsolete: bool = False, since: float | None = None,
+            snap_id: str | None = None,
         ) -> DriftReport:
             captured["change_name"] = change_name
             captured["graph_json_path"] = graph_json_path
             captured["include_obsolete"] = include_obsolete
             captured["since"] = since
+            captured["snap_id"] = snap_id
             return DriftReport(
                 change_name=change_name, scanned_at=1000.0, graph_mtime=999.0,
                 decisions_total=0, bindings_total=0, class_counts={}, findings=[],
@@ -378,8 +380,10 @@ class TestSince:
         def _stub(
             change_name: str, *, graph_json_path: Path, backend: Any = None,
             include_obsolete: bool = False, since: float | None = None,
+            snap_id: str | None = None,
         ) -> DriftReport:
             captured["since"] = since
+            captured["snap_id"] = snap_id
             return DriftReport(
                 change_name=change_name, scanned_at=1000.0, graph_mtime=999.0,
                 decisions_total=0, bindings_total=0, class_counts={}, findings=[],
