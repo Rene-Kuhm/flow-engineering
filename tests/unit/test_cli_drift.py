@@ -582,3 +582,206 @@ class TestHelpText:
         assert result.exit_code == 0, result.output
         # Exit codes are part of the contract — they MUST appear in --help.
         assert "0" in result.output and "1" in result.output and "2" in result.output
+
+
+# ---------- REQ-59 S2: _write_back_findings stderr WARN (D8) ----------
+
+
+class TestWriteBackSkipWarn:
+    """REQ-59 S2: ``_write_back_findings`` MUST emit a single stderr WARN
+    line when ``skipped_total >= FLOW_DRIFT_SKIP_WARN_THRESHOLD``.
+
+    Per design D8: once per batch (NOT per skipped row). Default threshold
+    is 3; tunable via env var; ``-1`` disables; ``0`` emits every batch
+    with skipped_total > 0; parse errors fall back to 3.
+    """
+
+    def test_write_back_emits_stderr_warn_on_non_int_decision_id(
+        self,
+        seeded_backend,
+        metrics_path,
+        graph_path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A batch with 5 skipped rows and the default threshold (3)
+        MUST emit exactly ONE stderr WARN line containing the skipped count.
+        """
+        from flow_engineering import cli as cli_mod
+
+        # 5 findings, all with non-int decision_ids → 5 skipped, 0 written.
+        # The legacy v0.7.x Finding dataclass accepts any str; ``int()``
+        # fails on the synthetic ``"non-int-N"`` ids, exercising the skip path.
+        findings = [
+            _build_finding(
+                obs_id=f"non-int-{i}",
+                ref_id=f"ref_{i}",
+                drift_class=DriftClass.STALE_ID,
+            )
+            for i in range(5)
+        ]
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=5,
+            bindings_total=5,
+            class_counts={DriftClass.STALE_ID: 5},
+            findings=findings,
+        )
+
+        # Patch scan_change to return the report; no env var override so
+        # the default threshold (3) is in effect.
+        monkeypatch.delenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", raising=False)
+        _patch_scan(monkeypatch, report=report)
+
+        # Patch the EngramClient — update_observation_metadata MUST NOT be
+        # invoked for non-int decision_ids, so this should never trigger.
+        update_calls: list[int] = []
+
+        class _FakeClient:
+            def __init__(self, change: str, backend: Any) -> None:
+                pass
+
+            def update_observation_metadata(
+                self, observation_id: int, metadata: dict[str, Any]
+            ) -> None:
+                update_calls.append(observation_id)
+
+        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
+
+        result = runner.invoke(
+            main,
+            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
+        )
+        assert result.exit_code == 1, result.output
+        # No rows were written (all skipped).
+        assert update_calls == []
+
+        # Exactly one WARN line on stderr, with the skipped count.
+        # The CliRunner captures stderr separately (mix_stderr=False default),
+        # so check both CliRunner output and capsys (defense in depth).
+        stderr_text = (result.stderr or "") + capsys.readouterr().err
+        warn_lines = [
+            ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln
+        ]
+        assert len(warn_lines) == 1, (
+            f"expected exactly 1 stderr WARN; got {len(warn_lines)}: "
+            f"stderr={stderr_text!r}"
+        )
+        assert "5" in warn_lines[0], (
+            f"WARN line must include skipped count 5; got {warn_lines[0]!r}"
+        )
+
+    def test_write_back_no_warn_when_all_decision_ids_valid(
+        self,
+        seeded_backend,
+        metrics_path,
+        graph_path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A batch with 0 skipped rows MUST NOT emit any stderr WARN line."""
+        from flow_engineering import cli as cli_mod
+
+        findings = [
+            _build_finding(
+                obs_id=i,
+                ref_id=f"ref_{i}",
+                drift_class=DriftClass.STALE_ID,
+            )
+            for i in range(5)
+        ]
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=5,
+            bindings_total=5,
+            class_counts={DriftClass.STALE_ID: 5},
+            findings=findings,
+        )
+        monkeypatch.delenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", raising=False)
+        _patch_scan(monkeypatch, report=report)
+
+        update_calls: list[int] = []
+
+        class _FakeClient:
+            def __init__(self, change: str, backend: Any) -> None:
+                pass
+
+            def update_observation_metadata(
+                self, observation_id: int, metadata: dict[str, Any]
+            ) -> None:
+                update_calls.append(observation_id)
+
+        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
+
+        result = runner.invoke(
+            main,
+            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
+        )
+
+        stderr_text = (result.stderr or "") + capsys.readouterr().err
+        warn_lines = [
+            ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln
+        ]
+        assert warn_lines == [], (
+            f"expected no WARN lines on a clean batch; got {warn_lines!r}"
+        )
+        # All 5 rows were written.
+        assert len(update_calls) == 5, update_calls
+
+    def test_write_back_warn_includes_skipped_count(
+        self,
+        seeded_backend,
+        metrics_path,
+        graph_path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A batch with 4 skipped rows MUST emit one WARN with ``4`` in the message."""
+        from flow_engineering import cli as cli_mod
+
+        findings = [
+            _build_finding(
+                obs_id=f"non-int-{i}",
+                ref_id=f"ref_{i}",
+                drift_class=DriftClass.STALE_ID,
+            )
+            for i in range(4)
+        ]
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at=1000.0,
+            graph_mtime=999.0,
+            decisions_total=4,
+            bindings_total=4,
+            class_counts={DriftClass.STALE_ID: 4},
+            findings=findings,
+        )
+        monkeypatch.delenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", raising=False)
+        _patch_scan(monkeypatch, report=report)
+
+        class _FakeClient:
+            def __init__(self, change: str, backend: Any) -> None:
+                pass
+
+            def update_observation_metadata(
+                self, observation_id: int, metadata: dict[str, Any]
+            ) -> None:
+                pass
+
+        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
+
+        result = runner.invoke(
+            main,
+            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
+        )
+
+        stderr_text = (result.stderr or "") + capsys.readouterr().err
+        warn_lines = [
+            ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln
+        ]
+        assert len(warn_lines) == 1
+        assert "4" in warn_lines[0] 
