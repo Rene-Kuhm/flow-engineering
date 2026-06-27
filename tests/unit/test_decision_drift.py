@@ -23,6 +23,7 @@ from flow_engineering.decision_drift import (
     DriftReport,
     Finding,
     classify_binding,
+    classify_binding_legacy,
     load_graph,
     scan_change,
 )
@@ -70,7 +71,7 @@ def test_classify_still_valid_basic() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is DriftClass.STILL_VALID
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STILL_VALID
 
 
 def test_classify_still_valid_source_and_confidence_dont_affect_class() -> None:
@@ -79,7 +80,7 @@ def test_classify_still_valid_source_and_confidence_dont_affect_class() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is DriftClass.STILL_VALID
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STILL_VALID
 
 
 # --- LABEL_DRIFT -----------------------------------------------------------
@@ -91,7 +92,7 @@ def test_classify_label_drift_when_label_differs() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTManager")
     )
-    assert classify_binding(binding, nodes, id_map) is DriftClass.LABEL_DRIFT
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.LABEL_DRIFT
 
 
 def test_classify_label_drift_case_only_still_flags() -> None:
@@ -100,7 +101,7 @@ def test_classify_label_drift_case_only_still_flags() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JwtTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is DriftClass.LABEL_DRIFT
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.LABEL_DRIFT
 
 
 # --- STALE_LOCATION --------------------------------------------------------
@@ -112,7 +113,7 @@ def test_classify_stale_location_when_file_moved() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/new.py", 42, "JWTTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is DriftClass.STALE_LOCATION
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_LOCATION
 
 
 def test_classify_stale_location_when_line_shifted_same_file() -> None:
@@ -121,7 +122,7 @@ def test_classify_stale_location_when_line_shifted_same_file() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/foo.py", 15, "JWTTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is DriftClass.STALE_LOCATION
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_LOCATION
 
 
 # --- STALE_ID --------------------------------------------------------------
@@ -131,14 +132,14 @@ def test_classify_stale_id_when_id_absent_from_id_map() -> None:
     binding = _ref(id="deleted_class_hash")
     nodes = _nodes(("other_node", "Other"))
     id_map = _id_map(("other_node", "src/other.py", 1, "Other"))
-    assert classify_binding(binding, nodes, id_map) is DriftClass.STALE_ID
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_ID
 
 
 def test_classify_stale_id_when_id_renamed_with_no_alias() -> None:
     binding = _ref(id="old_class_hash")
     nodes = _nodes(("new_class_hash", "NewClass"))
     id_map = _id_map(("new_class_hash", "src/foo.py", 1, "NewClass"))
-    assert classify_binding(binding, nodes, id_map) is DriftClass.STALE_ID
+    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_ID
 
 
 # --- UNABLE_TO_VERIFY (terminal) -------------------------------------------
@@ -146,12 +147,12 @@ def test_classify_stale_id_when_id_renamed_with_no_alias() -> None:
 
 def test_classify_unable_to_verify_when_current_nodes_is_none() -> None:
     binding = _ref()
-    assert classify_binding(binding, None, {}) is DriftClass.UNABLE_TO_VERIFY
+    assert classify_binding(binding, None) is DriftClass.UNABLE_TO_VERIFY
 
 
 def test_classify_unable_to_verify_when_current_nodes_is_empty() -> None:
     binding = _ref()
-    assert classify_binding(binding, {}, {}) is DriftClass.UNABLE_TO_VERIFY
+    assert classify_binding(binding, {}) is DriftClass.UNABLE_TO_VERIFY
 
 
 # --- Deferral: OBSOLETE + CONTRADICTED are NOT classify_binding's job -----
@@ -169,7 +170,7 @@ def test_classify_binding_never_returns_obsolete_for_resolvable_id() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is not DriftClass.OBSOLETE
+    assert classify_binding_legacy(binding, nodes, id_map) is not DriftClass.OBSOLETE
 
 
 def test_classify_binding_never_returns_contradicted() -> None:
@@ -184,7 +185,7 @@ def test_classify_binding_never_returns_contradicted() -> None:
     id_map = _id_map(
         ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
     )
-    assert classify_binding(binding, nodes, id_map) is not DriftClass.CONTRADICTED
+    assert classify_binding_legacy(binding, nodes, id_map) is not DriftClass.CONTRADICTED
 
 
 # --- Dataclass shape (smoke) ----------------------------------------------
@@ -357,7 +358,12 @@ def test_scan_change_snapshot(tmp_path: Path) -> None:
     report = scan_change("test", graph_json_path=graph_path, backend=backend)
 
     assert report.graph_unavailable is False
-    assert report.graph_mtime == graph_path.stat().st_mtime
+    # v0.8.0 (REQ-56 W8): graph_mtime is ISO 8601 str, not float epoch.
+    from datetime import datetime, timezone
+    expected_iso = datetime.fromtimestamp(
+        graph_path.stat().st_mtime, tz=timezone.utc
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert report.graph_mtime == expected_iso
 
 
 def test_scan_change_basic_aggregation(tmp_path: Path) -> None:
