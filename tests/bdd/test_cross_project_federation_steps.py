@@ -426,6 +426,22 @@ def every_result_has_project(federated_world, expected: str):
         )
 
 
+@then(parsers.parse('every cli result has project "{expected}"'))
+def every_cli_result_has_project_simple(cli_world: dict[str, Any], expected: str) -> None:
+    """REQ-27: every CLI ``--federated --json`` row carries ``project == expected``.
+
+    Distinct step text from REQ-25's ``every result has project "{a}" or "{b}"``
+    so pytest-bdd routes the single-arg pattern here and the two-arg pattern
+    to the existing REQ-25 step.
+    """
+    payload = cli_world["payload"]
+    assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
+    for r in payload.get("results", []):
+        assert r.get("project") == expected, (
+            f"Expected project == {expected!r}, got {r.get('project')!r} in row {r!r}"
+        )
+
+
 @then("only the 2026-06-15 observation is returned")
 def only_newer_observation_returned(federated_world):
     results = federated_world["results"]
@@ -595,6 +611,22 @@ def then_detected_is_none(req24_world: dict[str, Any]) -> None:
 def then_exit_code_zero(cli_world: dict[str, Any]) -> None:
     assert cli_world["exit_code"] == 0, (
         f"Expected exit 0, got {cli_world['exit_code']}; output={cli_world['output']!r}"
+    )
+
+
+@then("the alias exit code is 0")
+def then_alias_exit_code_zero(alias_world: dict[str, Any]) -> None:
+    assert alias_world["exit_code"] == 0, (
+        f"Expected alias exit 0, got {alias_world['exit_code']}; "
+        f"output={alias_world['output']!r}"
+    )
+
+
+@then("the alias exit code is non-zero")
+def then_alias_exit_code_nonzero(alias_world: dict[str, Any]) -> None:
+    assert alias_world["exit_code"] not in (0, None), (
+        f"Expected alias non-zero exit, got {alias_world['exit_code']}; "
+        f"output={alias_world['output']!r}"
     )
 
 
@@ -1009,4 +1041,154 @@ def then_catalog_names_are(
     expected = [a, b, c]
     assert sorted(names) == sorted(expected), (
         f"Expected catalog names {expected}, got {names!r}"
+    )
+
+
+# ---------- REQ-27 scenario bindings ----------
+
+
+@scenario(
+    "../bdd/req27_project_aliases.feature",
+    "Query for flow-image-generator-v2 returns flow-image-generator-main rows when alias exists",
+)
+def test_req27_alias_transparent_rewrite(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req27_project_aliases.feature",
+    "flow projects alias flow-image-generator-v2 flow-image-generator-main writes the file",
+)
+def test_req27_alias_write_creates_record(alias_world):
+    pass
+
+
+@scenario(
+    "../bdd/req27_project_aliases.feature",
+    "flow projects alias with a different new_key for an existing old_key errors",
+)
+def test_req27_alias_conflict_errors(alias_world):
+    pass
+
+
+@scenario(
+    "../bdd/req27_project_aliases.feature",
+    "Re-invoking flow projects alias with the same args is a no-op",
+)
+def test_req27_alias_idempotent_noop(alias_world):
+    pass
+
+
+@scenario(
+    "../bdd/req27_project_aliases.feature",
+    "Alias file with malformed JSON fails fast on startup with clear error",
+)
+def test_req27_alias_malformed_fails_fast(alias_world):
+    pass
+
+
+# ---------- REQ-27 world + given/when/then steps ----------
+
+
+@pytest.fixture
+def alias_world(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-27 scenarios.
+
+    Points ``project_aliases.DEFAULT_ALIASES_PATH`` at a tmp JSONL file so
+    tests do not pollute ``~/.config``. The path is exposed via
+    ``alias_world["path"]`` for assertions.
+    """
+    from flow_engineering import project_aliases as _aliases
+
+    path = tmp_path / "project-aliases.json"
+    monkeypatch.setattr(_aliases, "DEFAULT_ALIASES_PATH", path)
+    return {
+        "path": path,
+        "exit_code": None,
+        "output": None,
+        "stdout": None,
+        "stderr": None,
+    }
+
+
+@given("a fresh project-aliases config does not exist")
+def given_fresh_config_absent(alias_world: dict[str, Any]) -> None:
+    """Ensure the alias config file does NOT exist (parent dir is fine)."""
+    path = alias_world["path"]
+    if path.exists():
+        path.unlink()
+    assert not path.exists()
+
+
+@given("a project-aliases config exists with malformed JSON")
+def given_malformed_config(alias_world: dict[str, Any]) -> None:
+    path = alias_world["path"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{ this is not valid json", encoding="utf-8")
+
+
+@when(parsers.parse('I append the alias "{old_key} -> {new_key}"'))
+def when_run_alias_cli(
+    alias_world: dict[str, Any], old_key: str, new_key: str
+) -> None:
+    from flow_engineering.cli import main
+
+    runner_local = CliRunner()
+    result = runner_local.invoke(
+        main, ["projects", "alias", old_key, new_key]
+    )
+    alias_world["exit_code"] = result.exit_code
+    alias_world["output"] = result.output or ""
+    # In Click 8 the default is ``mix_stderr=True`` so stderr shows up in
+    # ``result.output``. We still pull ``result.stdout`` for assertions on
+    # the alias confirmation message.
+    alias_world["stdout"] = (result.stdout or "") if result.stdout is not None else ""
+    alias_world["stderr"] = (
+        result.stderr if result.stderr is not None else alias_world["output"]
+    )
+
+
+@then("the project-aliases config contains 1 record")
+def then_aliases_config_has_one(alias_world: dict[str, Any]) -> None:
+    path = alias_world["path"]
+    assert path.exists(), f"Expected config file at {path}; got nothing"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert len(payload["aliases"]) == 1, (
+        f"Expected 1 alias record, got {payload!r}"
+    )
+
+
+@then(parsers.parse('the project-aliases config record maps "{old_key}" to "{new_key}"'))
+def then_aliases_record_maps(
+    alias_world: dict[str, Any], old_key: str, new_key: str
+) -> None:
+    path = alias_world["path"]
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    records = payload.get("aliases", [])
+    matches = [r for r in records if r.get("old") == old_key and r.get("new") == new_key]
+    assert matches, (
+        f"Expected alias record {old_key} -> {new_key}; got records={records!r}"
+    )
+
+
+@then(parsers.parse('stdout contains "{needle}"'))
+def then_stdout_contains(alias_world: dict[str, Any], needle: str) -> None:
+    """Generic stdout-contains assertion (used by REQ-27 alias CLI checks)."""
+    stdout = alias_world.get("stdout") or ""
+    assert needle in stdout, (
+        f"Expected {needle!r} in stdout; got {stdout!r}"
+    )
+
+
+@then("the output mentions the project-aliases file path")
+def then_output_mentions_aliases_path(alias_world: dict[str, Any]) -> None:
+    """Malformed JSON ⇒ error message includes the file path AND JSON error."""
+    path = alias_world["path"]
+    path_str = str(path)
+    combined = (alias_world["stdout"] or "") + (alias_world["stderr"] or "")
+    # Either the path or just the filename must appear.
+    assert (path_str in combined) or (path.name in combined), (
+        f"Expected project-aliases file path in output; got: {combined!r}"
     )
