@@ -211,3 +211,78 @@ class TestSummaryInvalidFlags:
         result = runner.invoke(main, ["metrics", "summary", "--window", "garbage"])
 
         assert result.exit_code == 2
+
+
+# ---------- T1.5: --window custom + --since/--until (REQ-36 bonus surface) ----------
+
+
+class TestSummaryWindowAndSinceUntil:
+    """T1.5 wiring: --window accepts custom <int><h|d>; --since/--until ISO 8601.
+
+    These tests cover the REQ-36 bonus surface per the prompt: the
+    ``--window`` flag accepts preset OR custom format, ``--since`` /
+    ``--until`` accept ISO 8601 absolute timestamps. Invalid values exit
+    with code 2 (D9 usage error). The window-filter implementation lives
+    in :func:`observability.filter_by_window` (T1.4).
+    """
+
+    def test_metrics_summary_with_window_filter_filters_correctly(
+        self, metrics_path: Path,
+    ) -> None:
+        """30d window keeps events spanning 3 weeks (rolling semantics)."""
+        now = datetime.now(UTC)
+        # 25 days ago: inside 30d window
+        _write_jsonl(metrics_path, [
+            _event("binding_suggest_invoked_total", {"count": 7},
+                   _iso(now - timedelta(days=25))),
+            # 40 days ago: outside 30d window
+            _event("drift_invoked_total", {"count": 3},
+                   _iso(now - timedelta(days=40))),
+        ])
+
+        result = runner.invoke(main, ["metrics", "summary", "--window", "30d"])
+
+        assert result.exit_code == 0, result.output
+        # The 25d-old binding event survives; the 40d-old drift event is excluded.
+        assert "binding_suggest_invoked_total" in result.output
+        assert "drift_invoked_total" not in result.output
+        assert "7" in result.output
+
+    def test_metrics_summary_with_invalid_window_exits_2(
+        self, metrics_path: Path,
+    ) -> None:
+        """Invalid custom window value (e.g. ``5x``) exits with code 2 (D9)."""
+        result = runner.invoke(main, ["metrics", "summary", "--window", "5x"])
+
+        assert result.exit_code == 2
+
+    def test_metrics_summary_with_since_until_iso_filters(
+        self, metrics_path: Path,
+    ) -> None:
+        """--since/--until ISO 8601 absolute timestamps filter events correctly."""
+        _write_jsonl(metrics_path, [
+            _event("binding_suggest_invoked_total", {"count": 1},
+                   "2026-06-26T10:00:00Z"),
+            _event("binding_suggest_invoked_total", {"count": 1},
+                   "2026-06-26T15:00:00Z"),
+            _event("binding_suggest_invoked_total", {"count": 1},
+                   "2026-06-26T19:00:00Z"),
+        ])
+
+        result = runner.invoke(
+            main,
+            [
+                "metrics", "summary",
+                "--since", "2026-06-26T15:00:00Z",
+                "--until", "2026-06-26T19:00:00Z",
+                "--format", "json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        # The 10:00 event is excluded; the 15:00 + 19:00 events are kept
+        # (inclusive on both boundaries) → count=2 for binding_suggest_invoked_total.
+        assert payload == {
+            "binding": {"binding_suggest_invoked_total": 2},
+        }

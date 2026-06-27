@@ -1002,7 +1002,10 @@ def metrics(ctx: click.Context, json_flag: bool) -> None:
 
 
 # Window choices for `flow metrics summary --window` (REQ-35/REQ-36).
-SUMMARY_WINDOW_CHOICES: list[str] = ["1h", "24h", "7d"]
+# The CLI accepts both presets (1h/24h/7d/30d) and custom `<int><h|d>` format;
+# the union is validated at runtime by :func:`observability.parse_window`
+# rather than via ``click.Choice`` (which can only model a fixed enum).
+SUMMARY_WINDOW_CHOICES: list[str] = list(observability.WINDOW_PATTERNS.keys())
 
 # Domain choices for `flow metrics summary --domain` (REQ-37).
 SUMMARY_DOMAIN_CHOICES: list[str] = ["binding", "drift", "vector", "snapshot"]
@@ -1016,42 +1019,74 @@ SUMMARY_DOMAIN_CHOICES: list[str] = ["binding", "drift", "vector", "snapshot"]
 )
 @click.option(
     "--window", "window", default=None,
-    type=click.Choice(SUMMARY_WINDOW_CHOICES, case_sensitive=False),
-    help="Rolling time-window filter (REQ-35/REQ-36): 1h|24h|7d.",
+    help=(
+        "Rolling time-window filter (REQ-35/REQ-36): preset "
+        "(1h|24h|7d|30d) or custom '<int><h|d>' (e.g. 12h, 3d). "
+        "Rolling relative to now (NOT calendar-aligned)."
+    ),
 )
 @click.option(
     "--domain", "domain", default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help="Prefix-based domain slice (REQ-37): binding|drift|vector|snapshot.",
 )
-def metrics_summary(fmt: str, window: str | None, domain: str | None) -> None:
-    """Render the per-domain text dashboard (REQ-35 / change #6 PR#1 T1.2).
+@click.option(
+    "--since", "since_iso", default=None, metavar="ISO8601",
+    help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
+)
+@click.option(
+    "--until", "until_iso", default=None, metavar="ISO8601",
+    help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
+)
+def metrics_summary(
+    fmt: str,
+    window: str | None,
+    domain: str | None,
+    since_iso: str | None,
+    until_iso: str | None,
+) -> None:
+    """Render the per-domain text dashboard (REQ-35 / change #6 PR#1 T1.2 + T1.5).
 
     Reads metrics.jsonl via the new :func:`observability.read_all_metrics`
-    helpers, applies any active ``--window`` / ``--domain`` filter, and
-    renders the result via :func:`observability.summarize`.
+    helpers, applies any active ``--window`` / ``--domain`` / ``--since` /
+    ``--until`` filter, and renders the result via :func:`observability.summarize`.
 
     Default-empty contract (D8): empty / missing / no-match → exit 0 with
-    ``"No metrics recorded yet."`` on stdout.
+    ``"No metrics recorded yet."`` on stdout. Invalid ``--window`` /
+    ``--since`` / ``--until`` values emit a stderr error and exit 2 (D9).
     """
     fmt_lower = fmt.lower()
+
+    since_epoch: float | None = None
+    if since_iso is not None:
+        try:
+            since_epoch = _parse_since(since_iso)
+        except ValueError as exc:
+            click.echo(f"invalid --since value: {exc}", err=True)
+            sys.exit(2)
+
+    until_epoch: float | None = None
+    if until_iso is not None:
+        try:
+            until_epoch = _parse_since(until_iso)
+        except ValueError as exc:
+            click.echo(f"invalid --until value: {exc}", err=True)
+            sys.exit(2)
+
     try:
         events = observability.read_all_metrics()
         if domain is not None:
             events = observability.read_events_by_domain(domain)
         if window is not None:
-            delta_map = {
-                "1h": timedelta(hours=1),
-                "24h": timedelta(hours=24),
-                "7d": timedelta(days=7),
-            }
-            delta = delta_map[window.lower()]
-            rolling_since = (datetime.now(UTC) - delta).timestamp()
-            events = [e for e in events if e.timestamp >= rolling_since]
+            events = observability.filter_by_window(events, window)
+        if since_epoch is not None:
+            events = [e for e in events if e.timestamp >= since_epoch]
+        if until_epoch is not None:
+            events = [e for e in events if e.timestamp <= until_epoch]
     except ValueError as exc:
         # read_events_by_domain raises on unknown domain; click's Choice
         # already covers the validation path, but defensive in case the
-        # list is widened at runtime.
+        # list is widened at runtime. Also catches parse_window errors.
         click.echo(str(exc), err=True)
         sys.exit(2)
 

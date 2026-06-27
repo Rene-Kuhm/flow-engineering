@@ -17,7 +17,7 @@ Test isolation:
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +80,25 @@ def test_req35_summary_empty_sink(metrics_world: dict[str, Any]) -> None:
     pass
 
 
+# ---------- Scenario bindings: REQ-36 ----------
+
+
+@scenario(
+    "../bdd/req36_metrics_window.feature",
+    "--window 1h filters to last 1 hour",
+)
+def test_req36_window_1h(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req36_metrics_window.feature",
+    "--since ISO8601 filters to events after timestamp",
+)
+def test_req36_since_iso8601(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
 # ---------- Given steps ----------
 
 
@@ -119,6 +138,59 @@ def given_metrics_file_missing(metrics_world: dict[str, Any]) -> None:
         metrics_world["metrics_path"].unlink()
 
 
+@given(
+    parsers.parse(
+        "5 metric events are written spanning 3 days "
+        "(oldest 3d ago, newest 30m ago)"
+    )
+)
+def given_5_events_spanning_3_days_window(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Seed 5 events with deterministic offsets relative to ``now``.
+
+    Layout: events at -3d, -2d, -1d, -90m, -30m. With a 1h rolling window
+    only the -30m event survives (the -90m event is 1.5h old, just outside).
+    The counter names are all distinct so the dashboard renders one line each.
+    """
+    now = datetime.now(UTC)
+    offsets = [
+        (timedelta(days=3), "binding_event_oldest_3d"),
+        (timedelta(days=2), "binding_event_2d"),
+        (timedelta(days=1), "binding_event_1d"),
+        (timedelta(minutes=90), "binding_event_90m"),
+        (timedelta(minutes=30), "binding_event_30m"),
+    ]
+    events: list[dict] = []
+    for offset, name in offsets:
+        events.append({
+            "name": name,
+            "fields": {"count": 1},
+            "ts": _iso(now - offset),
+        })
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@given("5 metric events spanning 3 days")
+def given_5_events_spanning_3_days_for_since(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Seed 5 events spanning 3 days around the 2026-06-26T00:00:00Z boundary.
+
+    Exactly 2 events have ``ts >= 2026-06-26T00:00:00Z`` (the 2026-06-26T01:00
+    and 2026-06-27T00:00 events); the other 3 are before the boundary. This
+    is the setup for the ``--since 2026-06-26T00:00:00Z`` filter scenario.
+    """
+    events: list[dict] = [
+        {"name": "counter_a", "fields": {"count": 1}, "ts": "2026-06-25T23:00:00Z"},
+        {"name": "counter_b", "fields": {"count": 1}, "ts": "2026-06-25T23:30:00Z"},
+        {"name": "counter_c", "fields": {"count": 1}, "ts": "2026-06-25T23:59:00Z"},
+        {"name": "counter_d", "fields": {"count": 1}, "ts": "2026-06-26T01:00:00Z"},
+        {"name": "counter_e", "fields": {"count": 1}, "ts": "2026-06-27T00:00:00Z"},
+    ]
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
 # ---------- When steps ----------
 
 
@@ -126,6 +198,34 @@ def given_metrics_file_missing(metrics_world: dict[str, Any]) -> None:
 def when_run_metrics_summary_text(metrics_world: dict[str, Any]) -> None:
     """Invoke ``flow metrics summary --format text`` via CliRunner."""
     metrics_world["command"] = ["metrics", "summary", "--format", "text"]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@when(parsers.parse("I run `flow metrics summary --window 1h --format text`"))
+def when_run_metrics_summary_window_1h_text(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Invoke ``flow metrics summary --window 1h --format text`` via CliRunner."""
+    metrics_world["command"] = [
+        "metrics", "summary", "--window", "1h", "--format", "text",
+    ]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@when(
+    parsers.parse(
+        "I run `flow metrics summary --since 2026-06-26T00:00:00Z --format json`"
+    )
+)
+def when_run_metrics_summary_since_iso_json(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Invoke ``flow metrics summary --since <iso> --format json``."""
+    metrics_world["command"] = [
+        "metrics", "summary",
+        "--since", "2026-06-26T00:00:00Z",
+        "--format", "json",
+    ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
 
@@ -170,4 +270,54 @@ def then_exit_code_zero(metrics_world: dict[str, Any]) -> None:
     result = metrics_world["result"]
     assert result.exit_code == 0, (
         f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+
+
+@then(parsers.parse("stdout contains only the most-recent event's counter"))
+def then_stdout_contains_only_most_recent_counter(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the 1h window scenario: only ``binding_event_30m`` survives."""
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    assert "binding_event_30m" in result.output, (
+        f"expected most-recent event counter in stdout; got {result.output!r}"
+    )
+    # All older events MUST be excluded.
+    for excluded in (
+        "binding_event_oldest_3d",
+        "binding_event_2d",
+        "binding_event_1d",
+        "binding_event_90m",
+    ):
+        assert excluded not in result.output, (
+            f"unexpected older counter {excluded!r} in stdout: {result.output!r}"
+        )
+
+
+@then(
+    parsers.parse(
+        "stdout JSON contains exactly the 2 events after that timestamp"
+    )
+)
+def then_stdout_json_contains_exactly_2_events(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the --since scenario: only ``counter_d`` and ``counter_e`` survive."""
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    payload = json.loads(result.output)
+    # Flatten the nested {domain: {counter: count}} shape and assert exactly
+    # the 2 expected counter names are present (each with count=1).
+    flat = {
+        counter: count
+        for domain_map in payload.values()
+        for counter, count in domain_map.items()
+    }
+    assert flat == {"counter_d": 1, "counter_e": 1}, (
+        f"unexpected payload: {flat!r}"
     )
