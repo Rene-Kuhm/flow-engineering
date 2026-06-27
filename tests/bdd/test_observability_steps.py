@@ -146,6 +146,25 @@ def test_req38_export_window_filter(metrics_world: dict[str, Any]) -> None:
     pass
 
 
+# ---------- Scenario bindings: REQ-39 (aggregate subcommand) ----------
+
+
+@scenario(
+    "../bdd/req39_metrics_aggregate.feature",
+    "--percentile p95 computes p95 across counter increments in window",
+)
+def test_req39_aggregate_p95_window(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req39_metrics_aggregate.feature",
+    "--percentile with insufficient data emits \"not enough data points\" warning",
+)
+def test_req39_aggregate_insufficient_data(metrics_world: dict[str, Any]) -> None:
+    pass
+
+
 # ---------- Given steps ----------
 
 
@@ -802,3 +821,122 @@ def then_file_metrics_prom_valid(metrics_world: dict[str, Any]) -> None:
         assert f"# TYPE {metric_name}" in content, (
             f"missing TYPE comment for metric {metric_name!r}: {content!r}"
         )
+
+
+# ---------- REQ-39 (aggregate subcommand) Given / When / Then steps ----------
+
+
+@given(
+    parsers.parse(
+        "100 metric events of drift_invoked_total over 1 hour"
+    )
+)
+def given_100_drift_events_over_1h(metrics_world: dict[str, Any]) -> None:
+    """Seed 100 drift_invoked_total events with monotonic value 1..100.
+
+    Layout: all 100 events timestamped at ``now`` (so they fall within the
+    default 1h rolling window). Counter values progress from 1.0 to 100.0
+    so the p95 floor(sorted-index) lookup yields 95.0 (idx = (100-1)*95/100
+    = 94, samples[94] = 95.0).
+    """
+    now = datetime.now(UTC)
+    events: list[dict] = [
+        {
+            "name": "drift_invoked_total",
+            "fields": {"value": float(i)},
+            "ts": _iso(now),
+        }
+        for i in range(1, 101)
+    ]
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@given("only 1 metric event exists")
+def given_only_1_metric_event(metrics_world: dict[str, Any]) -> None:
+    """Seed exactly one drift_invoked_total event (insufficient for percentiles)."""
+    now = datetime.now(UTC)
+    events: list[dict] = [
+        {
+            "name": "drift_invoked_total",
+            "fields": {"value": 42.0},
+            "ts": _iso(now),
+        }
+    ]
+    _write_jsonl(metrics_world["metrics_path"], events)
+
+
+@when(
+    parsers.parse(
+        "I run `flow metrics aggregate --percentile p95 --format text`"
+    )
+)
+def when_run_metrics_aggregate_p95_text(
+    metrics_world: dict[str, Any],
+) -> None:
+    """Invoke ``flow metrics aggregate --percentile p95 --format text``."""
+    metrics_world["command"] = [
+        "metrics", "aggregate",
+        "--percentile", "p95", "--format", "text",
+    ]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@when(parsers.parse("I run `flow metrics aggregate --percentile p99`"))
+def when_run_metrics_aggregate_p99(metrics_world: dict[str, Any]) -> None:
+    """Invoke ``flow metrics aggregate --percentile p99`` (insufficient-data scenario)."""
+    metrics_world["command"] = [
+        "metrics", "aggregate", "--percentile", "p99",
+    ]
+    metrics_world["result"] = runner.invoke(main, metrics_world["command"])
+
+
+@then(
+    parsers.parse(
+        'stdout contains "drift_invoked_total" with a p95 value'
+    )
+)
+def then_stdout_contains_counter_with_p95(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the p95 scenario: stdout renders the counter + the p95 column value.
+
+    The aligned table always emits the p50/p95/p99 column labels in the
+    header (per format_percentile_report contract). The drift row carries
+    the value 95.0 (the expected floor(sorted-index) p95 of 1..100).
+    """
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0; got {result.exit_code}. output={result.output!r}"
+    )
+    assert "drift_invoked_total" in result.output, (
+        f"expected 'drift_invoked_total' in stdout; got {result.output!r}"
+    )
+    # The header row MUST carry the p95 column label.
+    assert "p95" in result.output, (
+        f"expected 'p95' column label in stdout; got {result.output!r}"
+    )
+    # The p95 value 95.0 MUST appear in the data row.
+    assert "95" in result.output, (
+        f"expected p95 value 95 in stdout; got {result.output!r}"
+    )
+
+
+@then(parsers.parse('stdout contains "not enough data points"'))
+def then_stdout_contains_not_enough_data_points(
+    metrics_world: dict[str, Any],
+) -> None:
+    """For the insufficient-data scenario: stdout announces the warning.
+
+    The aggregate subcommand emits ``"<counter> <pN>: insufficient data"``
+    on the data row when the reservoir has fewer than 2 samples (per
+    task brief contract + aggregate_percentile implementation).
+    """
+    result = metrics_world["result"]
+    assert result.exit_code == 0, (
+        f"expected exit 0 (graceful warning); got {result.exit_code}. "
+        f"output={result.output!r}"
+    )
+    assert "not enough data points" in result.output, (
+        f"expected 'not enough data points' warning in stdout; "
+        f"got {result.output!r}"
+    )
