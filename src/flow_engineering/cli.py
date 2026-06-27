@@ -1610,7 +1610,14 @@ def snapshot_create(
     default=None,
     help="Maximum number of snapshots to return (default: 50).",
 )
-def snapshot_list(since: str | None, limit: int | None) -> None:
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit the snapshot list as a JSON array (REQ-29 spec mandate; default output is also JSON for scriptability).",
+)
+def snapshot_list(since: str | None, limit: int | None, json_flag: bool) -> None:
     """List snapshots in reverse chronological order (REQ-29).
 
     Output is a JSON array of ``SnapshotMeta`` records with the 6 keys
@@ -1649,7 +1656,16 @@ def snapshot_show(snap_id: str) -> None:
 @snapshot_group.command(name="diff")
 @click.argument("snap_id_a")
 @click.argument("snap_id_b", required=False, default=None)
-def snapshot_diff(snap_id_a: str, snap_id_b: str | None) -> None:
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit the diff as a structured JSON object (REQ-31 spec mandate; default output is also JSON).",
+)
+def snapshot_diff(
+    snap_id_a: str, snap_id_b: str | None, json_flag: bool
+) -> None:
     """Diff two snapshots OR a snapshot against LIVE state (REQ-31).
 
     Two calling forms:

@@ -272,6 +272,43 @@ class TestSnapshotListCli:
         assert first_id in ids, f"first snapshot {first_id!r} should be included; got {ids}"
         assert len(payload) == 2
 
+    def test_snapshot_list_json_output(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """REQ-29 spec mandate: ``--json`` flag is accepted on ``flow snapshot list``.
+
+        W22 from the sdd-verify report — the flag is missing from the
+        Click subcommand but the spec REQ-29 explicitly enumerates
+        ``[--since=<iso>] [--limit=N] [--json]``. Without the flag the
+        command fails with "no such option: --json".
+        """
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
+
+        res1 = runner.invoke(main, ["snapshot", "create", "--description", "a"])
+        assert res1.exit_code == 0, res1.output
+        time.sleep(1.05)
+        res2 = runner.invoke(main, ["snapshot", "create", "--description", "b"])
+        assert res2.exit_code == 0, res2.output
+
+        # The --json flag MUST be accepted (exit 0, no 'no such option' error).
+        result = runner.invoke(main, ["snapshot", "list", "--json"])
+        assert result.exit_code == 0, (
+            f"--json flag must be accepted on snapshot list; "
+            f"exit={result.exit_code} output={result.output!r} stderr={result.stderr!r}"
+        )
+        # Output is a JSON array of snapshot entries.
+        payload = json.loads(result.stdout)
+        assert isinstance(payload, list)
+        assert len(payload) == 2
+        # Each entry has the 6 required keys from REQ-29 spec.
+        for entry in payload:
+            for key in (
+                "snap_id", "created_at", "trigger", "description",
+                "obs_count", "size_bytes",
+            ):
+                assert key in entry, f"missing {key!r} in {entry!r}"
+
 
 # ---------- REQ-30: flow snapshot show ----------
 
@@ -375,6 +412,53 @@ class TestSnapshotDiffCli:
         assert sorted(payload["added"]) == [4, 5]
         assert payload["removed"] == []
         assert payload["modified"] == []
+
+    def test_snapshot_diff_json_output(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """REQ-31 spec mandate: ``--json`` flag is accepted on ``flow snapshot diff``.
+
+        W22 from the sdd-verify report — same as list, the flag is missing
+        from the Click subcommand but spec REQ-31 / design D9 enumerate
+        ``[--json]`` for the diff output. Verifies the 2-arg form when
+        invoked with ``--json`` produces a parseable structured JSON
+        object with the 5 REQ-31 keys (added, removed, modified,
+        unchanged_count, summary).
+        """
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=3)
+
+        # Create A.
+        res_a = runner.invoke(main, ["snapshot", "create", "--description", "a"])
+        assert res_a.exit_code == 0, res_a.output
+        a_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
+
+        # Add 2 observations to live.
+        _seed_obs(backend, n=2)
+        time.sleep(1.05)
+
+        # Create B.
+        res_b = runner.invoke(main, ["snapshot", "create", "--description", "b"])
+        assert res_b.exit_code == 0, res_b.output
+        b_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[-1])
+
+        # --json MUST be accepted (no 'no such option' error).
+        result = runner.invoke(
+            main, ["snapshot", "diff", a_id, b_id, "--json"]
+        )
+        assert result.exit_code == 0, (
+            f"--json flag must be accepted on snapshot diff; "
+            f"exit={result.exit_code} output={result.output!r} stderr={result.stderr!r}"
+        )
+        # Output is a structured JSON object with REQ-31 keys.
+        payload = json.loads(result.stdout)
+        for key in ("added", "removed", "modified", "unchanged_count", "summary"):
+            assert key in payload, f"missing {key!r} in diff payload {payload!r}"
+        assert sorted(payload["added"]) == [4, 5]
+        assert payload["removed"] == []
+        assert payload["modified"] == []
+        assert payload["unchanged_count"] == 3
+        assert "+2" in payload["summary"]
 
 
 # ---------- REQ-32: flow snapshot rollback ----------
