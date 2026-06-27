@@ -26,7 +26,6 @@ import pytest
 
 from flow_engineering import observability
 
-
 # ---------- happy path ----------
 
 
@@ -137,9 +136,8 @@ class TestAtomicWriteRollsBackOnFailure:
         with patch(
             "flow_engineering.observability.os.replace",
             side_effect=PermissionError("simulated replace failure"),
-        ):
-            with pytest.raises(PermissionError, match="simulated replace failure"):
-                observability.atomic_write_text(target, "x")
+        ), pytest.raises(PermissionError, match="simulated replace failure"):
+            observability.atomic_write_text(target, "x")
 
         # The target file MUST NOT exist (the rename never completed).
         assert not target.exists()

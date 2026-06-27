@@ -65,14 +65,14 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import tempfile
 import time as _time
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 DEFAULT_METRICS_DIR: Path = Path.home() / ".flow-engineering"
 DEFAULT_METRICS_FILE: str = "metrics.jsonl"

@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,6 @@ from flow_engineering.orchestrator import (
     verify_change,
 )
 from flow_engineering.project_detector import apply_tag as _apply_tag
-from flow_engineering.project_detector import detect as _detect_project
 from flow_engineering.scaffold import (
     load_change_yaml,
     render_new_project,
@@ -318,9 +317,9 @@ def _vectors_extra_available() -> bool:
     helper to flip the gate without touching the heavy dependencies.
     """
     try:
+        import sentence_transformers  # noqa: F401
         import sqlite_vec  # noqa: F401
         import torch  # noqa: F401
-        import sentence_transformers  # noqa: F401
     except ImportError:
         return False
     return True
