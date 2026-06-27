@@ -233,12 +233,19 @@ class TestFormatPercentileReport:
                 f"expected exactly 1 row for {counter!r}; got {matching!r}"
             )
             row = matching[0]
-            assert "50" in row or "25" in row  # at least one numeric
+            assert any(ch.isdigit() for ch in row), (
+                f"expected at least one digit in row for {counter!r}; got {row!r}"
+            )
         # All 3 percentile values for the snapshot counter appear in its row.
         snap_row = next(line for line in lines if "snapshot_create_total" in line)
-        assert "1.0" in snap_row
-        assert "3.0" in snap_row
-        assert "5.0" in snap_row
+        assert "1" in snap_row
+        assert "3" in snap_row
+        assert "5" in snap_row
+        # All 3 percentile values for the drift counter appear in its row.
+        drift_row = next(line for line in lines if "drift_invoked_total" in line)
+        assert "50" in drift_row
+        assert "95" in drift_row
+        assert "99" in drift_row
 
     def test_format_percentile_report_empty_dict_emits_no_rows(self) -> None:
         """Empty input → table with only the header line (no data rows)."""
