@@ -69,9 +69,11 @@ class TestAppendCreatesFile:
         # Exactly one JSONL line ending in newline.
         lines = content.splitlines()
         assert len(lines) == 1
-        # Round-trip: parseable JSON with the required schema keys.
+        # Round-trip: parseable JSON with the spec wire schema keys
+        # (note: ``class`` is the JSON key, ``event_class`` is the Python
+        # field name per archived spec REQ-15).
         parsed = json.loads(lines[0])
-        assert parsed == asdict(event)
+        assert parsed == event.to_json_dict()
 
     def test_drift_event_log_creates_parent_dirs(
         self, tmp_path: Path
@@ -105,7 +107,7 @@ class TestAppendMultipleEvents:
         lines = content.splitlines()
         assert len(lines) == 3
         for ev, raw in zip(events, lines):
-            assert json.loads(raw) == asdict(ev)
+            assert json.loads(raw) == ev.to_json_dict()
 
     def test_drift_event_log_read_all_returns_events_in_order(
         self, log_path: Path

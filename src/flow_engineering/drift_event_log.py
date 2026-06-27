@@ -2,9 +2,11 @@
 
 Each finding emitted by ``daemon.handle_apply_progress_event`` is appended as
 one JSONL line to ``~/.flow-engineering/drift_events.jsonl``. Per the
-decision-reality-drift REQ-15 spec, the JSONL line contains the keys:
-``change``, ``decision_id``, ``binding_id``, ``event_class``,
-``detected_at``.
+decision-reality-drift REQ-15 spec, the JSONL wire format contains the
+keys: ``change``, ``decision_id``, ``binding_id``, ``class``,
+``detected_at`` (note: the Python dataclass uses ``event_class`` but
+the JSON wire key is ``class`` per the archived spec — Python reserved
+word is avoided at the type level only).
 
 Per design D11, the writer assumes a single-process Python watchdog
 loop and uses a ``threading.Lock`` to guard in-process concurrent
@@ -18,8 +20,9 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 DEFAULT_DRIFT_EVENT_LOG_PATH: Path = (
     Path.home() / ".flow-engineering" / "drift_events.jsonl"
@@ -44,6 +47,16 @@ class DriftEvent:
     binding_id: str
     event_class: str
     detected_at: float
+
+    def to_json_dict(self) -> dict[str, Any]:
+        """Return the JSON wire dict with the spec schema (``class`` key)."""
+        return {
+            "change": self.change,
+            "decision_id": self.decision_id,
+            "binding_id": self.binding_id,
+            "class": self.event_class,
+            "detected_at": self.detected_at,
+        }
 
 
 class DriftEventLog:
@@ -70,7 +83,7 @@ class DriftEventLog:
         process. ``flush`` ensures bytes reach the OS buffer before the
         lock is released so a subsequent crash does not lose the line.
         """
-        line = json.dumps(asdict(event), ensure_ascii=False) + "\n"
+        line = json.dumps(event.to_json_dict(), ensure_ascii=False) + "\n"
         with self._lock:
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(line)
@@ -91,7 +104,13 @@ class DriftEventLog:
             if not raw:
                 continue
             try:
-                events.append(DriftEvent(**json.loads(raw)))
+                data = json.loads(raw)
+                # Wire format uses ``class`` (matches the archived spec);
+                # the Python dataclass field is ``event_class`` to avoid
+                # the reserved word. Remap on read.
+                if "class" in data and "event_class" not in data:
+                    data["event_class"] = data.pop("class")
+                events.append(DriftEvent(**data))
             except (json.JSONDecodeError, TypeError, ValueError):
                 continue
         return events
