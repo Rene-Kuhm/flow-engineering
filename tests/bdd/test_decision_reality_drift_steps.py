@@ -769,3 +769,306 @@ def no_drift_counter_increments(drift_daemon_world) -> None:
         f"expected no drift counter events; got "
         f"{[e.get('name') for e in drift_events]}"
     )
+
+
+# ============================================================
+# REQ-33: drift-pinned scan via --snapshot=<snap_id> (2 scenarios)
+# ============================================================
+
+
+@pytest.fixture
+def drift_pinned_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-33 drift-pinned scenarios.
+
+    Distinct from ``drift_world`` (REQ-9): the snapshot's graph_json
+    is the canonical graph, while a separate live ``graph_path`` shows
+    a diverged state. The fixture wires both so the ``--snapshot`` and
+    no-flag invocations can be compared side-by-side.
+    """
+    metrics_path = tmp_path / "metrics.jsonl"
+    monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
+    snaps_dir = tmp_path / "snaps"
+    monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snaps_dir))
+
+    graph_path = tmp_path / "graph.json"  # live graph (drifted)
+    return {
+        "metrics_path": metrics_path,
+        "snaps_dir": snaps_dir,
+        "graph_path": graph_path,
+        "change": "vector-semantic-search",
+        "snap_id": None,
+        "report": None,
+        "result": None,
+    }
+
+
+@scenario(
+    "../bdd/req33_drift_pinned.feature",
+    "Snapshot from 2026-06-01 with 0 drift findings; running flow drift --snapshot=<that_id> returns 0 findings even if live state has drift",
+)
+def test_drift_pinned_returns_frozen_state(drift_pinned_world):
+    pass
+
+
+@scenario(
+    "../bdd/req33_drift_pinned.feature",
+    "flow drift <change> without --snapshot is byte-identical to current behavior",
+)
+def test_drift_pinned_no_flag_byte_identical(drift_pinned_world):
+    pass
+
+
+# ---------- Given steps (REQ-33) ----------
+
+
+def _seed_snapshot_with_binding_and_graph(
+    snaps_dir: Path,
+    *,
+    binding_id: str,
+    binding_file: str,
+    binding_line: int,
+    frozen_graph_file: str,
+    frozen_graph_line: int,
+    description: str,
+) -> str:
+    """Create a snapshot envelope with one binding + a custom frozen graph_json.
+
+    Mirrors the unit-test helper: seeds an InMemoryBackend with one
+    observation carrying a single CodeRef, builds a snapshot, then
+    rewrites the envelope to inject a known ``graph_state.graph_json``
+    and recompute the sha256 stamp.
+    """
+    import gzip as _gzip
+    import hashlib as _hashlib
+
+    from flow_engineering.binding import CodeRef, format_code_refs_block
+    from flow_engineering.engram_io import InMemoryBackend
+    from flow_engineering.snapshot_manager import SnapshotManager
+
+    backend = InMemoryBackend()
+    cref = CodeRef(
+        project="insyd",
+        id=binding_id,
+        label=binding_id.upper(),
+        file=binding_file,
+        line=binding_line,
+        confidence=0.9,
+        source="manual",
+    )
+    content = (
+        "## Decision\n\nDrift-pinned binding.\n"
+        + format_code_refs_block([cref], source="manual")
+    )
+    backend.mem_save(
+        title="vec/phase_0",
+        content=content,
+        topic_key=f"sdd/vector-semantic-search/spec",
+    )
+
+    snaps_dir.mkdir(parents=True, exist_ok=True)
+    snap_id = SnapshotManager(
+        snapshots_dir=snaps_dir, backend=backend,
+    ).create(description=description)
+
+    # Inject the frozen graph_json + recompute sha256.
+    path = snaps_dir / f"{snap_id}.json.gz"
+    with _gzip.open(path, "rt", encoding="utf-8") as fh:
+        envelope = json.loads(fh.read())
+    envelope["graph_state"]["graph_json"] = {
+        "nodes": [
+            {
+                "id": binding_id,
+                "label": binding_id.upper(),
+                "file": frozen_graph_file,
+                "line": frozen_graph_line,
+            },
+        ],
+    }
+    meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+    envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+    envelope_for_hash["metadata"] = meta_for_hash
+    canonical = json.dumps(
+        envelope_for_hash, ensure_ascii=False,
+        sort_keys=True, separators=(",", ":"),
+    )
+    envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    with _gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write(json.dumps(envelope, ensure_ascii=False))
+    return snap_id
+
+
+@given(
+    parsers.parse(
+        'a snapshot {snap_alias} exists with 1 binding at file "{file}" line {line:d}'
+    )
+)
+def given_snapshot_with_frozen_binding(
+    drift_pinned_world: dict[str, Any],
+    snap_alias: str,
+    file: str,
+    line: int,
+) -> None:
+    """Seed a snapshot with one binding whose file:line match the frozen graph."""
+    drift_pinned_world["snap_id"] = _seed_snapshot_with_binding_and_graph(
+        drift_pinned_world["snaps_dir"],
+        binding_id="vec_store",
+        binding_file=file,
+        binding_line=line,
+        frozen_graph_file=file,
+        frozen_graph_line=line,
+        description=snap_alias,
+    )
+    drift_pinned_world["snap_alias"] = snap_alias
+
+
+@given(
+    parsers.parse(
+        'the snapshot\'s frozen graph shows the binding id "{bid}" at file "{file}" line {line:d}'
+    )
+)
+def given_frozen_graph_shows(
+    drift_pinned_world: dict[str, Any],
+    bid: str,
+    file: str,
+    line: int,
+) -> None:
+    """Already enforced in the previous step (frozen graph matches binding)."""
+    # No-op: the frozen graph is built into the snapshot by the
+    # previous Given step. This step exists for scenario clarity.
+
+
+@given(
+    parsers.parse(
+        'today the live graph shows the same id at file "{file}" line {line:d}'
+    )
+)
+def given_live_graph_diverged(
+    drift_pinned_world: dict[str, Any],
+    file: str,
+    line: int,
+) -> None:
+    """Write the LIVE graph.json with the binding's id at a DIFFERENT line.
+
+    This simulates "today (2026-06-26) the same binding has drifted".
+    A non-snapshot scan against this file should classify the binding
+    as ``STALE_LOCATION``; a snapshot-pinned scan should return
+    ``STILL_VALID`` because the FROZEN graph still shows the original
+    line.
+    """
+    drift_pinned_world["graph_path"].write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "vec_store",
+                        "label": "VEC_STORE",
+                        "file": file,
+                        "line": line,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+# ---------- When steps (REQ-33) ----------
+
+
+@when(
+    parsers.parse(
+        'I run flow drift with snapshot {snap_alias} on change "{change}"'
+    )
+)
+def when_drift_with_snapshot(
+    drift_pinned_world: dict[str, Any], snap_alias: str, change: str
+) -> None:
+    """Invoke the library directly: ``scan_change(snap_id=...)``."""
+    from flow_engineering import decision_drift
+
+    snap_id = drift_pinned_world["snap_id"]
+    drift_pinned_world["change"] = change
+    report = decision_drift.scan_change(
+        change_name=change,
+        graph_json_path=None,
+        backend=None,
+        snap_id=snap_id,
+    )
+    drift_pinned_world["report"] = report
+    drift_pinned_world["result"] = type("R", (), {"report": report})()
+
+
+@when(
+    parsers.parse(
+        'I run flow drift without --snapshot on change "{change}"'
+    )
+)
+def when_drift_without_snapshot(
+    drift_pinned_world: dict[str, Any], change: str
+) -> None:
+    """Invoke the library directly: ``scan_change(...)`` (no snap_id).
+
+    The live graph.json (which has the drifted line) drives the scan,
+    so the binding classifies as ``STALE_LOCATION``. The InMemoryBackend
+    is seeded with the SAME observation the snapshot captured, so the
+    scan has something to iterate over (D13 non-breaking: live path
+    uses live backend, not snapshot's frozen one).
+    """
+    from flow_engineering.binding import CodeRef, format_code_refs_block
+    from flow_engineering import decision_drift
+    from flow_engineering.engram_io import InMemoryBackend
+
+    backend = InMemoryBackend()
+    cref = CodeRef(
+        project="insyd",
+        id="vec_store",
+        label="VEC_STORE",
+        file="src/vec.py",
+        line=42,
+        confidence=0.9,
+        source="manual",
+    )
+    content = (
+        "## Decision\n\nDrift-pinned binding.\n"
+        + format_code_refs_block([cref], source="manual")
+    )
+    backend.mem_save(
+        title="vec/phase_0",
+        content=content,
+        topic_key=f"sdd/{change}/spec",
+    )
+
+    drift_pinned_world["change"] = change
+    report = decision_drift.scan_change(
+        change_name=change,
+        graph_json_path=drift_pinned_world["graph_path"],
+        backend=backend,
+    )
+    drift_pinned_world["report"] = report
+    drift_pinned_world["result"] = type("R", (), {"report": report})()
+
+
+# ---------- Then steps (REQ-33) ----------
+
+
+@then(parsers.parse("the report contains {n:d} finding with class {klass}"))
+def then_report_contains_one_finding_with_class(
+    drift_pinned_world: dict[str, Any], n: int, klass: str
+) -> None:
+    """Assert exactly ``n`` findings have class ``klass``.
+
+    The drift pinned scenario asserts 1 finding of class STILL_VALID
+    (frozen state); the no-snapshot scenario asserts 1 finding of class
+    STALE_LOCATION (live state has drifted).
+    """
+    report = drift_pinned_world["report"]
+    findings = report.findings
+    matches = [f for f in findings if f.drift_class.value == klass]
+    assert len(matches) == n, (
+        f"expected {n} finding(s) with class {klass}; got {len(matches)}; "
+        f"all findings: {[(f.drift_class.value, f.binding.id) for f in findings]}"
+    )
