@@ -86,6 +86,16 @@ The system SHALL provide a new CLI subcommand `flow snapshot list` that reads `~
 - AND the ordering within the filtered set is still reverse chronological (T5 first, T3 last)
 - AND combining `--since=<T3_iso> --limit=2` returns the 2 most recent (T5, T4) — limit applies AFTER since-filter
 
+> **Drift note (post-drift-hardening, 2026-06-27)**: `SnapshotMeta.size_bytes` is the
+> canonical field name returned by `flow snapshot list` and `flow snapshot show`.
+> The on-disk envelope still uses `metadata.file_size_bytes` (per the envelope
+> schema at line 23); the dataclass field uses the shorter name `size_bytes`.
+> Per W25 carry-forward resolution; impl at `snapshot_manager.py:101-121` is
+> unchanged. The `SnapshotMeta.pinned: bool` retention-pin field is also
+> documented in the dataclass (per S18); it is NOT returned by `flow snapshot list`
+> (kept as envelope-only metadata) but IS honored by `flow snapshot prune` to
+> skip pinned snapshots.
+
 ---
 
 ### REQ-30: `flow snapshot show <snap_id>` — print full snapshot content
@@ -218,7 +228,7 @@ Different snapshots SHALL produce different drift reports against the same chang
 
 ### REQ-34: `flow snapshot prune [--keep-last=N] [--keep-days=N] [--max-total-size-mb=N] [--confirm] [--force]` — retention policy
 
-The system SHALL provide a new CLI subcommand `flow snapshot prune` for retention-driven deletion of snapshot files. At least ONE filter flag MUST be supplied: `--keep-last=N` (keep the N most recent by `created_at`, delete the rest), `--keep-days=N` (keep snapshots with `created_at >= now - N days`, delete the rest), or `--max-total-size-mb=N` (delete oldest-first until the total snapshot directory size fits within N megabytes). Default behavior (no flags) SHALL be **dry-run**: exit `0`, print JSON `{"would_delete": [snap_ids], "would_keep": [snap_ids], "freed_bytes_estimate": N}` to stdout, delete NOTHING.
+The system SHALL provide a new CLI subcommand `flow snapshot prune` for retention-driven deletion of snapshot files. At least ONE filter flag MUST be supplied: `--keep-last=N` (keep the N most recent by `created_at`, delete the rest), `--keep-days=N` (keep snapshots with `created_at >= now - N days`, delete the rest), or `--max-total-size-mb=N` (delete oldest-first until the total snapshot directory size fits within N megabytes). Default behavior (no flags) SHALL be **dry-run**: exit `0`, print JSON `{"would_delete": [snap_ids], "would_keep": [snap_ids], "freed_bytes": N}` to stdout, delete NOTHING.
 
 The `--confirm` flag is REQUIRED to actually delete; without `--confirm`, the command is always dry-run. The combination `--keep-last=0` SHALL additionally require the `--force` flag (D10 two-flag safety gate to prevent the "I meant 1, not 0" foot-gun) — `--keep-last=0` without `--force` SHALL exit non-zero with an error explaining the gate. The `--keep-last=0` flag MUST NOT be combined with `--keep-days` or `--max-total-size-mb` (mutually exclusive; refuses if both present). After a `--confirm`'d deletion, `snapshot_prune_total{reason=<age|count|size>}` increments by `len(deleted_ids)` per call.
 
@@ -227,7 +237,7 @@ The `--confirm` flag is REQUIRED to actually delete; without `--confirm`, the co
 - GIVEN 5 snapshot files exist in `~/.flow-engineering/snapshots/`, created in order: `snap_1`, `snap_2`, `snap_3`, `snap_4`, `snap_5`
 - WHEN `flow snapshot prune --keep-last=3` runs (no `--confirm`)
 - THEN the process exits `0`
-- AND stdout is a JSON object `{"would_delete": ["snap_1", "snap_2"], "would_keep": ["snap_3", "snap_4", "snap_5"], "freed_bytes_estimate": <sum of snap_1 + snap_2 sizes>}` (order in arrays is insertion order, oldest first)
+- AND stdout is a JSON object `{"would_delete": ["snap_1", "snap_2"], "would_keep": ["snap_3", "snap_4", "snap_5"], "freed_bytes": <sum of snap_1 + snap_2 sizes>}` (order in arrays is insertion order, oldest first)
 - AND all 5 snapshot files still exist on disk (dry-run; no deletion)
 - AND `snapshot_prune_total` is NOT incremented (dry-run does not emit the counter)
 
@@ -241,6 +251,14 @@ The `--confirm` flag is REQUIRED to actually delete; without `--confirm`, the co
 - AND the 2 newest files (`snap_4`, `snap_5`) remain on disk
 - AND `snapshot_prune_total{reason="count"}` reads `K + 3` from the metrics file (incremented by `len(deleted) = 3`)
 - AND `--keep-last=0` requires BOTH `--confirm` AND `--force` (unit-tested separately at `tests/unit/test_snapshot_manager.py` — refuses non-zero when either is missing)
+
+> **Drift note (post-drift-hardening, 2026-06-27)**: `PruneResult.freed_bytes` is
+> the canonical field name (per W26 carry-forward resolution). The original
+> spec used `freed_bytes_estimate`; the impl at `snapshot_manager.py:235`
+> uses `freed_bytes`. The BDD scenarios for REQ-34 don't assert the exact
+> field name (only the cumulative byte total), so this is pure spec
+> reconciliation with no functional change. `pinned: bool` snapshots are
+> also excluded from the dry-run `would_delete` list (per S18).
 
 ---
 
