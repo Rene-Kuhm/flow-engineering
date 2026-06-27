@@ -1643,10 +1643,16 @@ def _write_back_findings(
     ``update_observation_metadata`` call is wrapped in its own ``except``
     clause that logs to observability and continues. Returns the count of
     successful writes (used by tests to assert no partial abort).
+
+    Per REQ-59 S2 / design D8: when ``skipped_total >= FLOW_DRIFT_SKIP_WARN_THRESHOLD``
+    (default 3; ``0`` = every batch with skipped > 0; ``-1`` = never),
+    emit ONE ``WARN: drift write-back skipped <N> non-int decision_ids``
+    line on ``sys.stderr`` at the END of the batch (NOT per skipped row).
     """
     backend = _default_save_backend()
     client = EngramClient(change_name, backend)
     success = 0
+    skipped_total = 0
     for finding in report.findings:
         try:
             observation_id = int(finding.decision_id)
@@ -1657,6 +1663,7 @@ def _write_back_findings(
                 "drift_write_back_skipped_total",
                 reason="non_int_decision_id",
             )
+            skipped_total += 1
             continue
         try:
             client.update_observation_metadata(
@@ -1671,7 +1678,34 @@ def _write_back_findings(
             # Per-row error isolation — record and keep going.
             observability.increment("drift_write_back_failed_total")
             continue
+
+    # REQ-59 S2: once-per-batch stderr WARN when skipped_total >= threshold.
+    threshold = _get_skip_warn_threshold()
+    if threshold >= 0 and skipped_total >= threshold:
+        print(
+            f"WARN: drift write-back skipped {skipped_total} "
+            f"non-int decision_ids",
+            file=sys.stderr,
+        )
     return success
+
+
+def _get_skip_warn_threshold() -> int:
+    """Parse ``FLOW_DRIFT_SKIP_WARN_THRESHOLD`` env var; default 3.
+
+    Per design D8:
+    - Default 3 (3 or more skipped rows triggers one batch WARN).
+    - ``0`` = WARN every batch with skipped_total > 0.
+    - ``-1`` = WARN never.
+    - Parse error (non-integer) falls back to default 3.
+    """
+    raw = os.environ.get("FLOW_DRIFT_SKIP_WARN_THRESHOLD")
+    if raw is None:
+        return 3
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 3
 
 
 @main.command()
