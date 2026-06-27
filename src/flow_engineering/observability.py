@@ -896,3 +896,134 @@ def filter_by_window(
         now = _time.time()
     cutoff = now - parse_window(window)
     return [e for e in events if e.timestamp >= cutoff]
+
+
+# ---------- Change #6 PR#1 batch D T1.8: default-empty + exit-code contract ----------
+
+
+#: Exit code: success (no error, including default-empty per D8).
+EXIT_OK: int = 0
+#: Exit code: usage error (invalid --window, --domain, --format, --percentile).
+EXIT_INVALID_VALUE: int = 2
+#: Exit code: data error (invalid --since ISO 8601, malformed JSONL line set).
+EXIT_MALFORMED_METRICS: int = 3
+#: Exit code: I/O error (--out path not writable, permission denied, disk full).
+EXIT_WRITE_FAILURE: int = 4
+"""Exit-code contract per design D9 (REQ-35..37 / REQ-38 / REQ-39).
+
+Constants are exposed at module scope so the CLI subcommands and any
+downstream consumer (CI scripts, shell pipelines) can reference the same
+numeric values without redefining them. The contract is:
+- 0 → success (including default-empty per D8: missing/empty/all-malformed
+  is NOT a hard error; the missing/empty cases still exit 0).
+- 2 → usage error (invalid flag values; Click ``click.Choice`` rejects
+  at parse time and emits the standard usage error).
+- 3 → data error (invalid --since ISO 8601; or — via T1.8 — metrics file
+  exists but every line failed to parse).
+- 4 → I/O error (write failures on --out; perm denied, disk full).
+"""
+
+
+@dataclass(frozen=True)
+class MetricsSummaryResult:
+    """Result of a metrics read+summary operation (D8 default-empty contract).
+
+    Carries the summary dict plus diagnostics about what was read so the
+    CLI can map the failure mode to a user-facing message and exit code
+    per design D9 (REQ-35..37 error handling).
+
+    Attributes:
+        summary: ``{domain: {counter_name: count}}``; may be empty when
+            no events survived filtering.
+        events_read: Total events parsed from the JSONL sink (malformed
+            lines are silently skipped, per the REQ-8 best-effort contract).
+        source_path: The path the metrics were read from.
+        empty_reason: ``None`` when events were found; one of:
+            - ``"missing_file"`` — metrics.jsonl does not exist.
+            - ``"empty_file"`` — exists but has zero bytes.
+            - ``"all_malformed"`` — exists but every line failed to parse.
+        window: Window filter applied (``None`` when no --window).
+        domain: Domain filter applied (``None`` when no --domain).
+    """
+
+    summary: dict[str, dict[str, int]]
+    events_read: int
+    source_path: Path
+    empty_reason: str | None
+    window: str | None = None
+    domain: str | None = None
+
+
+def read_and_summarize(
+    *,
+    window: str | None = None,
+    domain: str | None = None,
+    path: Path | None = None,
+) -> MetricsSummaryResult:
+    """Read metrics + apply filters + summarize in one call (D8 default-empty).
+
+    The default-empty contract: when no events are read from the JSONL
+    sink, ``summary`` is ``{}`` and ``empty_reason`` explains why
+    (``missing_file`` / ``empty_file`` / ``all_malformed``). The CLI maps
+    these to user-facing messages and exit codes per design D9.
+
+    Filter ordering: ``--window`` (rolling, in-memory) is applied first
+    because it is the cheapest filter; ``--domain`` (prefix-based) is
+    applied second against the window-filtered set.
+
+    Args:
+        window: Optional ``--window`` value (``"1h"`` / ``"24h"`` / ``"7d"``
+            / custom ``"<int><h|d>"``); parsed via :func:`parse_window`.
+        domain: Optional ``--domain`` value (``"binding"`` / ``"drift"`` /
+            etc.); raises ``ValueError`` when the domain is unknown (the
+            CLI catches and emits exit-code-2 per D9).
+        path: Optional metrics JSONL path; defaults to the resolved sink
+            path (env override wins over default).
+
+    Returns:
+        A :class:`MetricsSummaryResult` carrying the per-domain summary,
+        diagnostics, and applied filters.
+    """
+    target = path if path is not None else _resolve_path()
+
+    events = read_all_metrics(target)
+    events_read = len(events)
+
+    if events_read == 0:
+        if not target.exists():
+            empty_reason = "missing_file"
+        elif target.stat().st_size == 0:
+            empty_reason = "empty_file"
+        else:
+            empty_reason = "all_malformed"
+        return MetricsSummaryResult(
+            summary={},
+            events_read=0,
+            source_path=target,
+            empty_reason=empty_reason,
+            window=window,
+            domain=domain,
+        )
+
+    if window is not None:
+        events = filter_by_window(events, window)
+    if domain is not None:
+        prefixes = _prefixes_for_domain(domain)
+        if not prefixes:
+            # Mirror the read_events_by_domain contract: unknown domain
+            # raises ValueError so the CLI emits exit-code-2 (D9).
+            raise ValueError(
+                f"unknown domain: {domain!r}; "
+                f"valid domains: {sorted({d for d in DOMAIN_BY_PREFIX.values()})}"
+            )
+        events = [e for e in events if any(e.counter_name.startswith(p) for p in prefixes)]
+
+    summary = summarize(events)
+    return MetricsSummaryResult(
+        summary=summary,
+        events_read=events_read,
+        source_path=target,
+        empty_reason=None,
+        window=window,
+        domain=domain,
+    )
