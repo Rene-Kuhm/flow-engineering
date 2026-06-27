@@ -306,6 +306,11 @@ class InMemoryBackend(EngramBackend):
         restricts to membership in the list. Results are sorted by id
         descending (newest first) then truncated to ``limit``.
 
+        REQ-26 integration: every successful invocation emits the 3 federated
+        counters via :func:`observability.record_federated_summary` with
+        ``trigger="programmatic"``. The observability helper is fail-open
+        so a broken metrics sink can never break retrieval.
+
         Substring match against title + content mirrors ``mem_search`` so
         unit tests do not require SQLite FTS5.
         """
@@ -328,6 +333,18 @@ class InMemoryBackend(EngramBackend):
             results.append(obs)
             if len(results) >= limit:
                 break
+        try:
+            from flow_engineering import observability as _obs
+
+            _obs.record_federated_summary(
+                invoked=1,
+                projects_queried=len(projects) if projects is not None else 0,
+                results_returned=len(results),
+                trigger="programmatic",
+            )
+        except Exception:
+            # Observability MUST be fail-open.
+            pass
         return results
 
 

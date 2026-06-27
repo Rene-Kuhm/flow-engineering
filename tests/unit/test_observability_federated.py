@@ -94,10 +94,7 @@ class TestFederatedCounterNaming:
         # D4: ``federated_search_projects_queried`` is a histogram (count per
         # call). The value IS the count, so ``_total`` would be redundant.
         assert "federated_search_projects_queried" in observability.FEDERATED_COUNTER_NAMES
-        assert not "federated_search_projects_queried_total".endswith(
-            "federated_search_projects_queried_total"
-        )
-        # And the actual name must NOT have a ``_total`` suffix.
+        # The actual histogram name must NOT have a ``_total`` suffix.
         assert not "federated_search_projects_queried".endswith("_total")
 
 
