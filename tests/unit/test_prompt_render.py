@@ -171,3 +171,109 @@ class TestRenderPromptHandlesMultilineTemplates:
         assert "Line one with x." in result
         assert "Line two with y." in result
         assert "Line three." in result
+
+
+class TestRenderPromptFallsBackToPythonFormatForLegacyTemplates:
+    """REQ-46 W5 — the 4 migrated PROMPT_NAMES entries use Python ``.format()``
+    syntax (``{test_command}``). Jinja2 treats ``{}`` as literal text, so
+    ``render_prompt("strict_tdd", test_command="pytest")`` would otherwise
+    return the template unchanged. ``render_prompt`` MUST detect that no
+    Jinja2 substitution happened AND the template contains format-style
+    placeholders, then fall back to ``str.format(**kwargs)`` so the spec's
+    single ``render_prompt(name, **kwargs)`` API works for all entries.
+    """
+
+    def test_strict_tdd_substitutes_python_format_kwargs(self) -> None:
+        """The migrated ``strict_tdd`` template uses ``{test_command}``."""
+        result = render_prompt("strict_tdd", test_command="pytest")
+        assert result == (
+            "STRICT TDD MODE IS ACTIVE. Test runner: pytest. "
+            "You MUST follow strict-tdd.md. Do NOT fall back to Standard Mode."
+        )
+
+    def test_auto_suggest_header_renders_no_kwargs(self) -> None:
+        """Templates with no placeholders return the template unchanged."""
+        result = render_prompt("auto_suggest_header")
+        assert result == "Auto-suggested code bindings:"
+
+    def test_auto_suggest_footer_renders_no_kwargs(self) -> None:
+        """Templates with no placeholders return the template unchanged."""
+        result = render_prompt("auto_suggest_footer")
+        assert result == "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
+
+    def test_auto_suggest_empty_renders_no_kwargs(self) -> None:
+        """Templates with no placeholders return the template unchanged."""
+        result = render_prompt("auto_suggest_empty")
+        assert result == "No auto-suggested bindings available."
+
+
+class TestPromptRenderErrorException:
+    """REQ-46 W6 — ``render_prompt`` MUST raise ``PromptRenderError`` as the
+    base class for all render-related failures (unknown id, missing variable,
+    template parse error). The CLI maps this to exit code 5 per design D9.
+    """
+
+    def test_prompt_render_error_class_exists(self) -> None:
+        """The exception class is exported from ``prompt_registry``."""
+        from flow_engineering.prompt_registry import PromptRenderError
+
+        assert issubclass(PromptRenderError, Exception)
+
+    def test_prompt_render_error_stores_payload(self) -> None:
+        """The exception carries a ``payload`` dict for CLI diagnostics."""
+        from flow_engineering.prompt_registry import PromptRenderError
+
+        exc = PromptRenderError(
+            {"prompt": "strict_tdd", "reason": "missing_var", "error": "boom"}
+        )
+        assert exc.payload == {
+            "prompt": "strict_tdd",
+            "reason": "missing_var",
+            "error": "boom",
+        }
+        assert "boom" in str(exc)
+
+    def test_prompt_not_found_error_inherits_prompt_render_error(self) -> None:
+        """``PromptNotFoundError`` subclasses ``PromptRenderError`` so the CLI
+        can map both to exit code 5."""
+        from flow_engineering.prompt_registry import (
+            PromptNotFoundError,
+            PromptRenderError,
+        )
+
+        assert issubclass(PromptNotFoundError, PromptRenderError)
+
+    def test_render_prompt_unknown_id_raises_prompt_not_found_error(self) -> None:
+        """Unknown prompt IDs raise ``PromptNotFoundError`` (subclass of
+        ``PromptRenderError``) wrapping the original ``KeyError`` message."""
+        from flow_engineering.prompt_registry import (
+            PromptNotFoundError,
+            PromptRenderError,
+        )
+
+        with pytest.raises(PromptNotFoundError) as excinfo:
+            render_prompt("definitely_not_in_catalog")
+        assert isinstance(excinfo.value, PromptRenderError)
+        assert "definitely_not_in_catalog" in str(excinfo.value)
+
+    def test_render_prompt_missing_kwargs_raises_prompt_render_error(
+        self, jinja_prompts: None
+    ) -> None:
+        """Missing Jinja2 kwargs raise ``PromptRenderError`` (wrapping the
+        underlying ``UndefinedError``)."""
+        from flow_engineering.prompt_registry import PromptRenderError
+
+        with pytest.raises(PromptRenderError) as excinfo:
+            render_prompt("jinja_missing")
+        assert "user_name" in str(excinfo.value)
+
+    def test_render_prompt_missing_python_format_var_raises_prompt_render_error(
+        self,
+    ) -> None:
+        """Missing ``.format()`` kwargs on a legacy template raise
+        ``PromptRenderError`` (wrapping the underlying ``KeyError``)."""
+        from flow_engineering.prompt_registry import PromptRenderError
+
+        with pytest.raises(PromptRenderError) as excinfo:
+            render_prompt("strict_tdd")  # test_command missing
+        assert "test_command" in str(excinfo.value)
