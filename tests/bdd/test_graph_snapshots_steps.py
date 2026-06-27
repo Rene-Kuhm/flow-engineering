@@ -39,6 +39,9 @@ from pytest_bdd import given, parsers, scenario, then, when
 from flow_engineering.engram_io import InMemoryBackend
 from flow_engineering.snapshot_manager import (
     SNAPSHOT_SCHEMA_VERSION,
+    RollbackConflictError,
+    RollbackRefusedError,
+    RollbackResult,
     SnapshotManager,
 )
 
@@ -84,6 +87,10 @@ def snapshot_world(tmp_path) -> dict[str, Any]:
         "created_at_by_id": {},
         "diff": None,
         "envelope": None,
+        "rollback_result": None,
+        "rollback_exception": None,
+        "safety_snap_id": None,
+        "original_obs_content": {},
     }
 
 
@@ -492,3 +499,279 @@ def then_diff_summary_starts_with(snapshot_world: dict[str, Any], prefix: str) -
     assert summary.startswith(prefix), (
         f"Expected summary to start with {prefix!r}, got {summary!r}"
     )
+
+
+# ============================================================
+# REQ-32: rollback with auto-safety snapshot (3 scenarios)
+# ============================================================
+
+
+@scenario(
+    "../bdd/req32_snapshot_rollback.feature",
+    "flow snapshot rollback <snap_id> without --confirm refuses with non-zero exit",
+)
+def test_req32_rollback_refused_without_confirm(snapshot_world):
+    pass
+
+
+@scenario(
+    "../bdd/req32_snapshot_rollback.feature",
+    "flow snapshot rollback <snap_id> --confirm creates safety snapshot first, restores state, exits 0",
+)
+def test_req32_rollback_with_confirm_succeeds(snapshot_world):
+    pass
+
+
+@scenario(
+    "../bdd/req32_snapshot_rollback.feature",
+    "flow snapshot rollback <old_snap_id> --confirm with new observations added since refuses with JSON error listing new IDs",
+)
+def test_req32_rollback_conflict_refused(snapshot_world):
+    pass
+
+
+# ---------- Given steps (REQ-32) ----------
+
+
+@given(parsers.parse("a snapshot {snap_id} exists with {n:d} observations"))
+def given_snapshot_with_n_obs(
+    snapshot_world: dict[str, Any], snap_id: str, n: int
+) -> None:
+    """Create a snapshot named ``snap_id`` capturing ``n`` observations.
+
+    The InMemoryBackend's auto-incremented IDs are deterministic, so the
+    snapshot's observations will be [1..n]. The ``snap_id`` here is a
+    scenario-level alias (e.g. ``snap_A``, ``snap_old``); the underlying
+    SnapshotManager still generates the real id (``snap_<ISO>-<hex>``),
+    but we record the mapping in ``world["snap_aliases"]`` so the When
+    steps can look it up.
+    """
+    snapshot_world["snapshots_dir"].mkdir(parents=True, exist_ok=True)
+    mgr = _get_manager(snapshot_world)
+    _seed_obs(snapshot_world["backend"], count=n)
+    real_id = mgr.create(description=snap_id)
+    snapshot_world.setdefault("snap_aliases", {})[snap_id] = real_id
+    snapshot_world["snap_ids"].append(real_id)
+    snapshot_world["last_snap_id"] = real_id
+    # Capture original content for restoration assertions.
+    for i in range(1, n + 1):
+        obs = snapshot_world["backend"].mem_get_observation(i)
+        snapshot_world["original_obs_content"][i] = obs["content"]
+
+
+@given(parsers.parse("observation {obs_id:d} was modified after {snap_alias} was created"))
+def given_obs_was_modified(
+    snapshot_world: dict[str, Any], obs_id: int, snap_alias: str
+) -> None:
+    """Mark observation ``obs_id`` as modified AFTER the snapshot."""
+    snapshot_world["backend"].update_observation(
+        obs_id, content=f"MODIFIED-AFTER-{snap_alias}",
+    )
+
+
+@given(parsers.parse("{n:d} observations were added since {snap_alias}"))
+def given_obs_added_since(
+    snapshot_world: dict[str, Any], n: int, snap_alias: str
+) -> None:
+    """Add ``n`` observations to live state AFTER the snapshot."""
+    _seed_obs(snapshot_world["backend"], count=n)
+
+
+# ---------- When steps (REQ-32) ----------
+
+
+@when(parsers.parse("I rollback to {snap_alias} without --confirm"))
+def when_rollback_no_confirm(
+    snapshot_world: dict[str, Any], snap_alias: str
+) -> None:
+    """Attempt rollback WITHOUT ``--confirm`` — expect refusal."""
+    real_id = snapshot_world["snap_aliases"][snap_alias]
+    mgr = _get_manager(snapshot_world)
+    snapshot_world["files_before"] = sorted(
+        snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+    )
+    snapshot_world["backend_before"] = {
+        int(o["id"]): dict(o)
+        for o in snapshot_world["backend"].iter_observations()
+    }
+    try:
+        mgr.rollback(real_id, confirm=False)
+        snapshot_world["rollback_exception"] = None
+    except RollbackRefusedError as exc:
+        snapshot_world["rollback_exception"] = exc
+
+
+@when(parsers.parse("I rollback to {snap_alias} with --confirm"))
+def when_rollback_with_confirm(
+    snapshot_world: dict[str, Any], snap_alias: str
+) -> None:
+    """Attempt rollback WITH ``--confirm`` — may succeed or conflict."""
+    real_id = snapshot_world["snap_aliases"][snap_alias]
+    mgr = _get_manager(snapshot_world)
+    snapshot_world["files_before"] = sorted(
+        snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
+    )
+    snapshot_world["backend_before"] = {
+        int(o["id"]): dict(o)
+        for o in snapshot_world["backend"].iter_observations()
+    }
+    try:
+        result = mgr.rollback(real_id, confirm=True)
+        snapshot_world["rollback_result"] = result
+        snapshot_world["rollback_exception"] = None
+        if isinstance(result, RollbackResult):
+            snapshot_world["safety_snap_id"] = result.safety_snapshot_id
+    except RollbackConflictError as exc:
+        snapshot_world["rollback_exception"] = exc
+
+
+# ---------- Then steps (REQ-32) ----------
+
+
+@then("the rollback fails with refusal")
+def then_rollback_refused(snapshot_world: dict[str, Any]) -> None:
+    exc = snapshot_world["rollback_exception"]
+    assert exc is not None, "expected RollbackRefusedError; got success"
+    assert isinstance(exc, RollbackRefusedError), (
+        f"expected RollbackRefusedError, got {type(exc).__name__}: {exc}"
+    )
+    payload = exc.payload
+    assert payload["error"] == (
+        "--confirm required to write; use --dry-run to preview"
+    )
+    assert "snap_id" in payload
+
+
+@then("the live state is unchanged")
+def then_live_state_unchanged(snapshot_world: dict[str, Any]) -> None:
+    """Verify live backend observations match what was there BEFORE the rollback."""
+    before = snapshot_world.get("backend_before", {})
+    current = {
+        int(o["id"]): dict(o)
+        for o in snapshot_world["backend"].iter_observations()
+    }
+    assert current.keys() == before.keys(), (
+        f"live state ID set changed: before={sorted(before)} after={sorted(current)}"
+    )
+    for oid, before_obs in before.items():
+        cur_obs = current[oid]
+        assert cur_obs["content"] == before_obs["content"], (
+            f"obs {oid} content changed: "
+            f"before={before_obs['content']!r} after={cur_obs['content']!r}"
+        )
+
+
+@then("no safety snapshot was created")
+def then_no_safety_snapshot(snapshot_world: dict[str, Any]) -> None:
+    """File count in snapshots_dir is unchanged from BEFORE the rollback attempt."""
+    files_after = sorted(snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
+    files_before = snapshot_world.get("files_before", [])
+    assert len(files_after) == len(files_before), (
+        f"snapshot count changed from {len(files_before)} to {len(files_after)}; "
+        f"safety snapshot was created even though --confirm was absent"
+    )
+
+
+@then(parsers.parse("the rollback succeeds with safety_snapshot_id and target_snapshot_id {snap_alias}"))
+def then_rollback_succeeds(
+    snapshot_world: dict[str, Any], snap_alias: str
+) -> None:
+    result = snapshot_world["rollback_result"]
+    assert result is not None, (
+        f"expected RollbackResult; got exception={snapshot_world['rollback_exception']}"
+    )
+    expected_target = snapshot_world["snap_aliases"][snap_alias]
+    assert result.target_snapshot_id == expected_target
+    assert isinstance(result.safety_snapshot_id, str)
+    assert result.safety_snapshot_id.startswith("snap_")
+
+
+@then(parsers.parse('the safety snapshot was created with trigger "{trigger}"'))
+def then_safety_trigger(
+    snapshot_world: dict[str, Any], trigger: str
+) -> None:
+    safety_id = snapshot_world["safety_snap_id"]
+    assert safety_id is not None
+    safety_path = snapshot_world["snapshots_dir"] / f"{safety_id}.json.gz"
+    envelope = _read_envelope_safe(safety_path)
+    assert envelope["trigger"] == trigger, (
+        f"expected trigger {trigger!r}, got {envelope.get('trigger')!r}"
+    )
+
+
+@then(parsers.parse('the safety snapshot description starts with "{prefix}"'))
+def then_safety_description_prefix(
+    snapshot_world: dict[str, Any], prefix: str
+) -> None:
+    safety_id = snapshot_world["safety_snap_id"]
+    safety_path = snapshot_world["snapshots_dir"] / f"{safety_id}.json.gz"
+    envelope = _read_envelope_safe(safety_path)
+    assert envelope["description"].startswith(prefix), (
+        f"expected description to start with {prefix!r}; "
+        f"got {envelope.get('description')!r}"
+    )
+
+
+@then(parsers.parse("observation {obs_id:d} content is restored to the original"))
+def then_obs_content_restored(
+    snapshot_world: dict[str, Any], obs_id: int
+) -> None:
+    expected = snapshot_world["original_obs_content"].get(obs_id)
+    assert expected is not None, (
+        f"no original content captured for obs {obs_id}"
+    )
+    current = snapshot_world["backend"].mem_get_observation(obs_id)
+    assert current["content"] == expected, (
+        f"obs {obs_id} content not restored: expected {expected!r}; "
+        f"got {current['content']!r}"
+    )
+
+
+@then(parsers.parse("the rollback fails with conflict listing the {n:d} new observation IDs"))
+def then_rollback_conflict(
+    snapshot_world: dict[str, Any], n: int
+) -> None:
+    exc = snapshot_world["rollback_exception"]
+    assert exc is not None and isinstance(exc, RollbackConflictError), (
+        f"expected RollbackConflictError; got {exc!r}"
+    )
+    payload = exc.payload
+    conflict_ids = {c["id"] for c in payload["conflicts"]}
+    assert len(conflict_ids) == n, (
+        f"expected {n} conflicts; got {len(conflict_ids)}: {conflict_ids}"
+    )
+    assert all(c["change"] == "added" for c in payload["conflicts"]), (
+        f"expected all changes to be 'added'; got "
+        f"{[c['change'] for c in payload['conflicts']]}"
+    )
+
+
+@then("the safety snapshot was still created")
+def then_safety_still_created(snapshot_world: dict[str, Any]) -> None:
+    """Even on conflict, the safety snapshot must exist (D11 ordering)."""
+    files_after = sorted(snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
+    files_before = snapshot_world.get("files_before", [])
+    assert len(files_after) == len(files_before) + 1, (
+        f"safety snapshot must be created even on conflict; "
+        f"file count: before={len(files_before)} after={len(files_after)}"
+    )
+    # Find the safety snapshot by its trigger field — hex suffix sorts
+    # arbitrarily so the file-list ordering is unreliable.
+    found_safety = False
+    for path in files_after:
+        envelope = _read_envelope_safe(path)
+        if envelope.get("trigger") == "rollback_safety":
+            found_safety = True
+            break
+    assert found_safety, (
+        "expected a snapshot file with trigger='rollback_safety'; "
+        f"triggers found: "
+        f"{[_read_envelope_safe(p).get('trigger') for p in files_after]}"
+    )
+
+
+def _read_envelope_safe(path: Path) -> dict[str, Any]:
+    """Read + gunzip + json.loads the snapshot envelope at ``path``."""
+    import gzip as _gzip
+    with _gzip.open(path, "rt", encoding="utf-8") as fh:
+        return json.loads(fh.read())
