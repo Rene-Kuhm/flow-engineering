@@ -69,8 +69,12 @@ class DriftEventLog:
         events = log.read_all()
     """
 
-    def __init__(self, path: Path = DEFAULT_DRIFT_EVENT_LOG_PATH) -> None:
-        self.path = path
+    def __init__(self, path: Path | None = None) -> None:
+        # Resolve the default lazily so tests can monkeypatch
+        # ``DEFAULT_DRIFT_EVENT_LOG_PATH`` at the module level and have
+        # ``DriftEventLog()`` pick up the patched value at construction
+        # time (function default values are bound at def-time).
+        self.path: Path = path if path is not None else DEFAULT_DRIFT_EVENT_LOG_PATH
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 
