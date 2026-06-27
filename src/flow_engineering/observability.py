@@ -67,6 +67,7 @@ import json
 import os
 import sys
 import tempfile
+import time as _time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -751,3 +752,101 @@ def atomic_write_text(path: Path, content: str) -> int:
             pass
         raise
     return len(content.encode("utf-8"))
+
+
+# ---------- Change #6 PR#1 batch B T1.4: window filter (REQ-36) ----------
+
+
+WINDOW_PATTERNS: dict[str, int] = {
+    "1h": 3600,
+    "24h": 86400,
+    "7d": 604800,
+    "30d": 2592000,
+}
+"""Preset rolling-window durations in seconds (REQ-36 / D4).
+
+The values are the canonical presets the CLI accepts via ``--window`` and
+``flow metrics --window=<preset>``. The set is a strict superset of
+``SUMMARY_WINDOW_CHOICES`` (1h/24h/7d) plus the 30d operational window used
+for monthly rollup dashboards.
+
+The CLI's ``--window`` flag uses ``click.Choice`` to validate at parse time;
+this constant is the source of truth that the CLI choice list reads from.
+"""
+
+
+def parse_window(window: str) -> int:
+    """Parse a window string to a duration in seconds (REQ-36 / D4).
+
+    Accepts:
+    - Presets (case-insensitive): ``"1h"`` (3600), ``"24h"`` (86400),
+      ``"7d"`` (604800), ``"30d"`` (2592000).
+    - Custom format: ``<int><h|d>`` — e.g. ``"12h"`` = 12 * 3600, ``"3d"`` =
+      3 * 86400. Only hours (``h``) and days (``d``) units are supported.
+
+    Raises ``ValueError`` on invalid format (CLI catches and exits 2 per D9).
+    """
+    if not isinstance(window, str) or not window:
+        raise ValueError(
+            f"window must be a non-empty string; got {window!r}"
+        )
+    normalized = window.strip().lower()
+    if not normalized:
+        raise ValueError("window must be a non-empty string")
+    if normalized in WINDOW_PATTERNS:
+        return WINDOW_PATTERNS[normalized]
+    # Custom format: <int><h|d>
+    if len(normalized) < 2:
+        raise ValueError(
+            f"window must be one of {sorted(WINDOW_PATTERNS)} "
+            f"or '<int><h|d>'; got {window!r}"
+        )
+    unit = normalized[-1]
+    body = normalized[:-1]
+    if unit not in ("h", "d"):
+        raise ValueError(
+            f"window unit must be 'h' or 'd'; got {window!r}"
+        )
+    try:
+        n = int(body)
+    except ValueError as exc:
+        raise ValueError(
+            f"window prefix must be an integer; got {window!r}: {exc}"
+        ) from exc
+    if n <= 0:
+        raise ValueError(
+            f"window duration must be positive; got {window!r}"
+        )
+    if unit == "h":
+        return n * 3600
+    return n * 86400
+
+
+def filter_by_window(
+    events: list[MetricEvent],
+    window: str,
+    *,
+    now: float | None = None,
+) -> list[MetricEvent]:
+    """Filter events to those with ``timestamp >= now - window`` (REQ-36 / D4).
+
+    D4 rolling semantics: the window is a rolling duration relative to
+    ``now`` (``now - parse_window(window)``). NOT calendar-aligned — ``1h``
+    means "last 60 minutes", not "since the top of the hour".
+
+    Args:
+        events: The events to filter.
+        window: A window string parseable by :func:`parse_window`.
+        now: Epoch seconds to use as the reference point. Defaults to
+            ``time.time()``; exposed as a keyword-only argument so unit
+            tests can pin the cutoff deterministically.
+
+    Returns:
+        A new list containing only the events whose timestamp is in
+        ``[now - window, now]``. Inclusive on the lower boundary
+        (an event at exactly ``now - window`` is KEPT).
+    """
+    if now is None:
+        now = _time.time()
+    cutoff = now - parse_window(window)
+    return [e for e in events if e.timestamp >= cutoff]
