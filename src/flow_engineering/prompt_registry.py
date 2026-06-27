@@ -15,6 +15,10 @@ Public surface:
 - :data:`PROMPT_NAMES` -- the catalog (tuple of :class:`PromptDef`).
 - :func:`get_prompt` -- lookup by name.
 - :func:`list_prompts` -- enumerate, optionally filtered by domain.
+- :func:`get_prompt_template` -- shorthand for ``get_prompt(name).template``.
+- :func:`get_prompt_metadata` -- shorthand for ``get_prompt(name).metadata``.
+- :func:`register_prompt` -- append a NEW prompt (idempotency check).
+- :func:`unregister_prompt` -- inverse of register, primarily for tests.
 """
 
 from __future__ import annotations
@@ -170,10 +174,72 @@ def list_prompts(domain: PromptDomain | None = None) -> list[PromptDef]:
     return sorted((p for p in PROMPT_NAMES if p.domain == domain), key=lambda p: p.name)
 
 
+def get_prompt_template(name: str) -> str:
+    """Return the template string for a known prompt.
+
+    Shorthand for ``get_prompt(name).template``. Raises :class:`KeyError`
+    when ``name`` is not in the catalog.
+    """
+    return get_prompt(name).template
+
+
+def get_prompt_metadata(name: str) -> dict[str, Any]:
+    """Return the metadata dict for a known prompt.
+
+    Shorthand for ``get_prompt(name).metadata``. Raises :class:`KeyError`
+    when ``name`` is not in the catalog. The returned dict is the same
+    reference held by the entry; callers MUST NOT mutate it (use
+    :func:`register_prompt` to add new entries instead).
+    """
+    return get_prompt(name).metadata
+
+
+def register_prompt(prompt: PromptDef) -> None:
+    """Append a NEW prompt to the catalog.
+
+    The function is intended for plugin / migration paths that build the
+    catalog dynamically (e.g., a future ``prompt_load_from_disk`` helper
+    or a one-off batch-import script). Production code paths should add
+    new entries to :data:`PROMPT_NAMES` directly.
+
+    Args:
+        prompt: The :class:`PromptDef` to append.
+
+    Raises:
+        ValueError: When a prompt with the same name is already registered.
+    """
+    global PROMPT_NAMES
+    if any(p.name == prompt.name for p in PROMPT_NAMES):
+        raise ValueError(
+            f"prompt {prompt.name!r} already registered; "
+            "use unregister_prompt first to replace"
+        )
+    PROMPT_NAMES = PROMPT_NAMES + (prompt,)
+
+
+def unregister_prompt(name: str) -> None:
+    """Remove a prompt from the catalog.
+
+    Inverse of :func:`register_prompt`. Primarily used by tests that need
+    to clean up after dynamic registrations. Silently no-ops when ``name``
+    is not in the catalog (defensive; mirrors the fail-open convention
+    used elsewhere in the project).
+
+    Args:
+        name: The identifier to remove.
+    """
+    global PROMPT_NAMES
+    PROMPT_NAMES = tuple(p for p in PROMPT_NAMES if p.name != name)
+
+
 __all__ = [
     "PROMPT_NAMES",
     "PromptDef",
     "PromptDomain",
     "get_prompt",
+    "get_prompt_metadata",
+    "get_prompt_template",
     "list_prompts",
+    "register_prompt",
+    "unregister_prompt",
 ]
