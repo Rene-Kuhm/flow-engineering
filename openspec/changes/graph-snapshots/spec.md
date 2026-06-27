@@ -48,7 +48,7 @@ The `--description <text>` flag SHALL store user-supplied text in `envelope.desc
 - AND a file matching `snap_<ISO>-<6hex>.json.gz` exists in `~/.flow-engineering/snapshots/`
 - AND the parsed envelope `schema == 1` and `metadata.sha256` matches `hashlib.sha256(canonical_json_dumps(envelope)).hexdigest()` computed over the envelope WITHOUT the `sha256` field itself
 - AND `graph_state.observations` contains all 5 observations (full DB, not filtered)
-- AND the counter `snapshot_created_total{trigger="manual"}` increments by `1`
+- AND the counter `snapshot_create_total{trigger="manual"}` increments by `1`
 
 #### Scenario: `flow snapshot create --description "pre-deploy-v0.6"` stores the description in metadata
 
@@ -58,7 +58,7 @@ The `--description <text>` flag SHALL store user-supplied text in `envelope.desc
 - THEN the new snapshot file exists
 - AND `envelope.description == "pre-deploy-v0.6"` (verbatim, no trimming)
 - AND the prior snapshot file is UNCHANGED (atomic write does not touch siblings)
-- AND `snapshot_created_total{trigger="manual"}` increments by `1` again
+- AND `snapshot_create_total{trigger="manual"}` increments by `1` again
 
 ---
 
@@ -110,7 +110,7 @@ The system SHALL provide a new CLI subcommand `flow snapshot diff` with TWO call
 - **2-arg form**: `flow snapshot diff <snap_id_a> <snap_id_b>` compares two stored snapshots and shows changes from `a` to `b`.
 - **1-arg form (extended)**: `flow snapshot diff <snap_id>` compares one stored snapshot against the CURRENT live Engram state and shows changes from `<snap_id>` to live.
 
-The output MUST be a structured JSON object with keys: `added` (list of observation IDs present in `b` but not in `a`), `removed` (list of observation IDs present in `a` but not in `b`), `modified` (list of `{id, field, before, after}` objects — one per observation whose `content` differs between `a` and `b`), `unchanged_count` (integer — observations whose `content` is byte-identical between `a` and `b`), and `summary` (human-readable string of the form `"+<added> -<removed> ~<modified> (unchanged: <unchanged_count>)"`). For `code_refs` blocks within `modified` entries, the `field` SHALL be the parsed binding field name (e.g., `code_refs.bound_id.file`, `code_refs.bound_id.label`) — block-level diff, NOT raw content diff. Either or both `<snap_id_a>` / `<snap_id_b>` being unknown SHALL exit non-zero with the same `SnapshotEnvelopeError` shape as REQ-30. The diff counter `snapshot_diff_invoked_total` SHALL increment by `1` per successful invocation.
+The output MUST be a structured JSON object with keys: `added` (list of observation IDs present in `b` but not in `a`), `removed` (list of observation IDs present in `a` but not in `b`), `modified` (list of `{id, field, before, after}` objects — one per observation whose `content` differs between `a` and `b`), `unchanged_count` (integer — observations whose `content` is byte-identical between `a` and `b`), and `summary` (human-readable string of the form `"+<added> -<removed> ~<modified> (unchanged: <unchanged_count>)"`). For `code_refs` blocks within `modified` entries, the `field` SHALL be the parsed binding field name (e.g., `code_refs.bound_id.file`, `code_refs.bound_id.label`) — block-level diff, NOT raw content diff. Either or both `<snap_id_a>` / `<snap_id_b>` being unknown SHALL exit non-zero with the same `SnapshotEnvelopeError` shape as REQ-30.
 
 #### Scenario: After creating snapshot A with 3 obs and B with 5 obs (2 added between), `flow snapshot diff A B` shows 2 added observations
 
@@ -119,7 +119,6 @@ The output MUST be a structured JSON object with keys: `added` (list of observat
 - AND snapshot `snap_B` was then created capturing all 5 observations
 - WHEN `flow snapshot diff snap_A snap_B` runs
 - THEN stdout is a JSON object with `added == [4, 5]` (order-independent), `removed == []`, `modified == []`, `unchanged_count == 3`, `summary == "+2 -0 ~0 (unchanged: 3)"`
-- AND `snapshot_diff_invoked_total` increments by `1`
 - AND the process exits `0`
 
 #### Scenario: With no second argument, `flow snapshot diff <snap_id>` shows changes from snap_id to current state
@@ -188,7 +187,7 @@ The system SHALL add a new `--snapshot=<snap_id>` flag to the existing `flow dri
 
 1. Loading the snapshot envelope from `~/.flow-engineering/snapshots/<snap_id>.json.gz`.
 2. Calling `decision_drift.scan_change(change_name, *, graph_json_path=None, backend=<InMemoryBackend built from snapshot.graph_state.observations>, include_obsolete=False, since=None, *, snap_id=<snap_id>)` — the new kwarg-only `snap_id` parameter.
-3. Inside `scan_change`, `snap_id` set SHALL cause `load_graph(snap_id=<snap_id>)` to read the frozen `graph_state.graph_json` from the envelope (NOT from disk) and return `(nodes, id_map, snap_mtime)` built from the frozen content.
+3. Inside `scan_change`, `snap_id` set SHALL cause `load_graph(snap_id=<snap_id>)` to read the frozen `graph_state.graph_json` from the envelope (NOT from disk) and return `(nodes, id_map, snap_mtime)` built from the frozen content. When the envelope's `metadata.include_graph == False` (the snapshot was created with `--no-include-graph`), `scan_change` SHALL raise `SnapshotGraphMissing` AND emit the counter `snapshot_load_failed_total{reason="graph_missing"}` before raising — the counter is the audit trail of drift-pinned scan attempts that could not be resolved because the snapshot opted out of `graph_json` inclusion.
 
 The two seam extensions SHALL be kwarg-only with `None` default:
 - `decision_drift.load_graph(graph_json_path: Path | None = None, *, snap_id: str | None = None) -> tuple[dict | None, dict | None, float | None]` — when `snap_id` is set, `graph_json_path` MUST be `None` (mutual-exclusion assertion raises `ValueError` otherwise); when `snap_id=None`, behavior is byte-identical to the pre-change `load_graph(graph_json_path)`.
@@ -221,7 +220,7 @@ Different snapshots SHALL produce different drift reports against the same chang
 
 The system SHALL provide a new CLI subcommand `flow snapshot prune` for retention-driven deletion of snapshot files. At least ONE filter flag MUST be supplied: `--keep-last=N` (keep the N most recent by `created_at`, delete the rest), `--keep-days=N` (keep snapshots with `created_at >= now - N days`, delete the rest), or `--max-total-size-mb=N` (delete oldest-first until the total snapshot directory size fits within N megabytes). Default behavior (no flags) SHALL be **dry-run**: exit `0`, print JSON `{"would_delete": [snap_ids], "would_keep": [snap_ids], "freed_bytes_estimate": N}` to stdout, delete NOTHING.
 
-The `--confirm` flag is REQUIRED to actually delete; without `--confirm`, the command is always dry-run. The combination `--keep-last=0` SHALL additionally require the `--force` flag (D10 two-flag safety gate to prevent the "I meant 1, not 0" foot-gun) — `--keep-last=0` without `--force` SHALL exit non-zero with an error explaining the gate. The `--keep-last=0` flag MUST NOT be combined with `--keep-days` or `--max-total-size-mb` (mutually exclusive; refuses if both present). After a `--confirm`'d deletion, `snapshot_pruned_total{reason=<age|count|size>}` increments by `len(deleted_ids)` per call.
+The `--confirm` flag is REQUIRED to actually delete; without `--confirm`, the command is always dry-run. The combination `--keep-last=0` SHALL additionally require the `--force` flag (D10 two-flag safety gate to prevent the "I meant 1, not 0" foot-gun) — `--keep-last=0` without `--force` SHALL exit non-zero with an error explaining the gate. The `--keep-last=0` flag MUST NOT be combined with `--keep-days` or `--max-total-size-mb` (mutually exclusive; refuses if both present). After a `--confirm`'d deletion, `snapshot_prune_total{reason=<age|count|size>}` increments by `len(deleted_ids)` per call.
 
 #### Scenario: With 5 snapshots, `flow snapshot prune --keep-last=3` (no `--confirm`) shows `would_delete` + `would_keep` JSON and deletes no files
 
@@ -230,18 +229,41 @@ The `--confirm` flag is REQUIRED to actually delete; without `--confirm`, the co
 - THEN the process exits `0`
 - AND stdout is a JSON object `{"would_delete": ["snap_1", "snap_2"], "would_keep": ["snap_3", "snap_4", "snap_5"], "freed_bytes_estimate": <sum of snap_1 + snap_2 sizes>}` (order in arrays is insertion order, oldest first)
 - AND all 5 snapshot files still exist on disk (dry-run; no deletion)
-- AND `snapshot_pruned_total` is NOT incremented (dry-run does not emit the counter)
+- AND `snapshot_prune_total` is NOT incremented (dry-run does not emit the counter)
 
 #### Scenario: `flow snapshot prune --keep-last=2 --confirm` actually deletes 3 oldest snapshots
 
 - GIVEN the same 5-snapshot setup as the previous scenario
-- AND `snapshot_pruned_total{reason="count"}` reads `K` from the metrics file (baseline)
+- AND `snapshot_prune_total{reason="count"}` reads `K` from the metrics file (baseline)
 - WHEN `flow snapshot prune --keep-last=2 --confirm` runs
 - THEN the process exits `0`
 - AND the 3 oldest files (`snap_1`, `snap_2`, `snap_3`) are removed from disk
 - AND the 2 newest files (`snap_4`, `snap_5`) remain on disk
-- AND `snapshot_pruned_total{reason="count"}` reads `K + 3` from the metrics file (incremented by `len(deleted) = 3`)
+- AND `snapshot_prune_total{reason="count"}` reads `K + 3` from the metrics file (incremented by `len(deleted) = 3`)
 - AND `--keep-last=0` requires BOTH `--confirm` AND `--force` (unit-tested separately at `tests/unit/test_snapshot_manager.py` — refuses non-zero when either is missing)
+
+---
+
+## Reconciliation note (W20 — pre-archive)
+
+The counter names emitted by the implementation (`SNAPSHOT_COUNTER_NAMES` in
+`src/flow_engineering/observability.py:124`) DIVERGED from the original
+delta-spec catalog during the apply phase. This note records the reconciliation
+in line with the W2 reconciliation pattern from the
+`decision-code-linking` archive:
+
+| Original spec name | Implementation name (canonical) | REQ | Status |
+|---|---|---|---|
+| `snapshot_created_total` | `snapshot_create_total` | REQ-28 | reconciled — trailing 'd' dropped |
+| `snapshot_diff_invoked_total` | (not emitted) | REQ-31 | removed — `SnapshotManager.diff()` does not increment a per-invocation counter |
+| `snapshot_rollback_total` | `snapshot_rollback_total` | REQ-32 | already aligned (no change) |
+| `snapshot_pruned_total` | `snapshot_prune_total` | REQ-34 | reconciled — trailing 'd' dropped |
+| (none) | `snapshot_load_failed_total{reason="graph_missing"}` | REQ-33 | added — emitted at the `SnapshotGraphMissing` raise site in `decision_drift.scan_change()` (drift-pinned scan audit trail) |
+
+The implementation's names are now the source of truth. The 4-name catalog
+(`snapshot_create_total`, `snapshot_rollback_total`, `snapshot_prune_total`,
+`snapshot_load_failed_total`) matches `SNAPSHOT_COUNTER_NAMES` and the
+CHANGELOG v0.6.0 entry.
 
 ---
 
