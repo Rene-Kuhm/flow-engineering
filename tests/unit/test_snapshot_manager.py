@@ -239,10 +239,12 @@ class TestSnapshotIdFormat:
         snap_id = manager.create()
 
         # ``snap_YYYY-MM-DDTHH-MM-SS-XXXXXX`` (ISO with dashes instead of colons).
-        parts = snap_id.split("-")
-        # 5 date parts + 1 hex part = 6 parts.
+        assert snap_id.startswith("snap_"), snap_id
+        # Strip the ``snap_`` prefix and split the rest on ``-``.
+        body = snap_id[len("snap_"):]
+        parts = body.split("-")
+        # 5 date parts (year, month, day+hour, minute, second) + 1 hex part = 6.
         assert len(parts) == 6, f"Expected 6 dash-separated parts, got {snap_id!r}"
-        assert parts[0] == "snap"
         # Hex suffix: 6 lowercase hex chars.
         assert len(parts[5]) == 6
         assert all(c in "0123456789abcdef" for c in parts[5]), (
@@ -372,3 +374,173 @@ class TestSnapshotMetaShape:
         assert entry.description == "x"
         assert entry.obs_count == 3
         assert entry.size_bytes > 0
+
+
+# ---------- REQ-30: show round-trips envelope + sha256 verification ----------
+
+
+class TestShow:
+    """``SnapshotManager.show(snap_id)`` parses + verifies the envelope."""
+
+    def test_show_round_trips_envelope(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=InMemoryBackend())
+        _seed_backend(manager.backend, n=3)
+        snap_id = manager.create(description="rt")
+
+        envelope = manager.show(snap_id)
+
+        assert envelope["schema"] == 1
+        assert envelope["id"] == snap_id
+        assert envelope["description"] == "rt"
+        # All 6 top-level keys from D2 are present.
+        for key in (
+            "schema", "id", "created_at", "trigger", "description",
+            "graph_state", "metadata",
+        ):
+            assert key in envelope, f"Missing top-level key {key}"
+
+    def test_show_raises_on_unknown_snap_id(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import (
+            SnapshotEnvelopeError,
+            SnapshotManager,
+        )
+
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=InMemoryBackend())
+        with pytest.raises(SnapshotEnvelopeError):
+            manager.show("snap_does_not_exist")
+
+    def test_show_raises_on_tampered_sha256(self, tmp_path: Path) -> None:
+        """Flipping one byte in the .gz file MUST raise SnapshotEnvelopeError."""
+        from flow_engineering.snapshot_manager import (
+            SnapshotEnvelopeError,
+            SnapshotManager,
+        )
+
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=InMemoryBackend())
+        _seed_backend(manager.backend)
+        snap_id = manager.create(description="tamper-test")
+        path = tmp_path / f"{snap_id}.json.gz"
+
+        # Corrupt one byte in the gzip payload. We append a byte past the
+        # original size so the file becomes invalid. A byte flip mid-file
+        # would also work; we use append-then-truncate to avoid breaking
+        # the gzip CRC on every iteration.
+        original = path.read_bytes()
+        tampered = bytes(b ^ 0xFF for b in original)
+        path.write_bytes(tampered)
+
+        with pytest.raises(SnapshotEnvelopeError):
+            manager.show(snap_id)
+
+
+# ---------- REQ-31: diff between two snapshots ----------
+
+
+class TestDiffTwoArg:
+    """``diff(snap_a, snap_b)`` returns added/removed/modified/unchanged."""
+
+    def test_diff_two_arg_returns_added_removed_modified(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_a = manager.create(description="a")
+
+        # Add 2 more observations and create snap_b.
+        backend.mem_save(title="b1", content="drift detection", topic_key="sdd/x/spec")
+        backend.mem_save(title="b2", content="drift detection", topic_key="sdd/x/spec")
+        snap_b = manager.create(description="b")
+
+        diff = manager.diff(snap_a, snap_b)
+        assert sorted(diff.added) == [4, 5]
+        assert diff.removed == []
+        assert diff.modified == []
+        assert diff.unchanged_count == 3
+        assert "+2 -0 ~0" in diff.summary
+
+    def test_diff_two_arg_modified_field(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        backend.mem_save(title="o1", content="v1", topic_key="sdd/x/spec")
+        snap_a = manager.create() if False else None
+        # Build a fresh manager so we don't reuse the snap_a above.
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_a = manager.create(description="a")
+
+        # Mutate observation 1.
+        backend.update_observation(1, content="v2 updated")
+        snap_b = manager.create(description="b")
+
+        diff = manager.diff(snap_a, snap_b)
+        assert diff.added == []
+        assert diff.removed == []
+        assert len(diff.modified) == 1
+        mod = diff.modified[0]
+        assert mod["id"] == 1
+        assert mod["field"] == "content"
+        assert mod["after"] == "v2 updated"
+        assert diff.unchanged_count == 0
+        assert "+0 -0 ~1" in diff.summary
+
+    def test_diff_to_dict_round_trip(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=2)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_a = manager.create(description="a")
+        backend.mem_save(title="x", content="x", topic_key="sdd/x/spec")
+        snap_b = manager.create(description="b")
+
+        diff = manager.diff(snap_a, snap_b)
+        as_dict = diff.to_dict()
+        assert as_dict["added"] == [3]
+        assert as_dict["removed"] == []
+        assert as_dict["modified"] == []
+        assert as_dict["unchanged_count"] == 2
+        assert isinstance(as_dict["summary"], str)
+
+
+# ---------- REQ-31: diff 1-arg form (snapshot vs live) ----------
+
+
+class TestDiffOneArgVsLive:
+    """``diff(snap_id)`` compares snapshot against LIVE state."""
+
+    def test_diff_one_arg_vs_live_adds(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        _seed_backend(backend, n=3)
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_a = manager.create(description="a")
+
+        # Add 2 obs AFTER snapshot.
+        backend.mem_save(title="x", content="x", topic_key="sdd/x/spec")
+        backend.mem_save(title="y", content="y", topic_key="sdd/x/spec")
+
+        diff = manager.diff(snap_a)
+        assert sorted(diff.added) == [4, 5]
+        assert diff.removed == []
+        assert diff.modified == []
+        assert diff.unchanged_count == 3
+
+    def test_diff_one_arg_vs_live_modifies(self, tmp_path: Path) -> None:
+        from flow_engineering.snapshot_manager import SnapshotManager
+
+        backend = InMemoryBackend()
+        backend.mem_save(title="o1", content="v1", topic_key="sdd/x/spec")
+        manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
+        snap_a = manager.create(description="a")
+        backend.update_observation(1, content="v2 updated")
+
+        diff = manager.diff(snap_a)
+        assert diff.added == []
+        assert len(diff.modified) == 1
+        assert diff.modified[0]["id"] == 1
+        assert diff.modified[0]["field"] == "content"
+        assert diff.modified[0]["after"] == "v2 updated"
