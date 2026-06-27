@@ -1014,6 +1014,57 @@ def aggregate(
     return float(samples[idx])
 
 
+# ---------- Change #6 PR#2 T2.3: aggregate_many (W5 carry-forward) ----------
+
+
+#: Accepted percentile values for ``aggregate`` / ``aggregate_many``.
+#: Mirrors the spec REQ-39 ``--percentile`` ``click.Choice`` set.
+_VALID_PERCENTILES: frozenset[int] = frozenset({50, 95, 99})
+
+
+def aggregate_many(
+    values: Iterable[float],
+    percentiles: Iterable[int],
+) -> dict[int, float]:
+    """Compute multiple percentiles over ``values`` (W5 / D7 / REQ-39).
+
+    Reconciles the W5 carry-forward from PR#1 archive-report (line 78):
+    the design D7 contract specifies ``dict[int, float]`` for batch G
+    multi-percentile use, but PR#1's :func:`aggregate` returns a single
+    float (PR#1 tests stay green by keeping that contract). This new
+    helper lets batch G consume multiple percentiles in a single pass
+    without breaking the PR#1 contract.
+
+    Args:
+        values: Numeric samples to compute percentiles over.
+        percentiles: Iterable of percentile values (each must be in
+            :data:`_VALID_PERCENTILES`; otherwise ``ValueError``).
+
+    Returns:
+        A dict mapping each percentile to its computed value. Empty
+        ``values`` → dict with all-zero values (defensive; matches
+        :func:`aggregate` "empty → 0.0" semantics).
+
+    Raises:
+        ValueError: When any percentile is not in ``{50, 95, 99}``.
+    """
+    pct_list = list(percentiles)
+    for pct in pct_list:
+        if pct not in _VALID_PERCENTILES:
+            raise ValueError(
+                f"invalid percentile {pct}; valid: {sorted(_VALID_PERCENTILES)}"
+            )
+    samples = list(values)
+    if not samples:
+        return {pct: 0.0 for pct in pct_list}
+    samples.sort()
+    results: dict[int, float] = {}
+    for pct in pct_list:
+        idx = int((len(samples) - 1) * pct / 100)
+        results[pct] = float(samples[idx])
+    return results
+
+
 def atomic_write_text(path: Path, content: str) -> int:
     """Write ``content`` to ``path`` atomically (D10 / REQ-38).
 
