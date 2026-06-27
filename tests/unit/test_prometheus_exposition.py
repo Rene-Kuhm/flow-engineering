@@ -291,9 +291,11 @@ class TestPrometheusExpositionEmptyAndAggregation:
 
         # Cumulative value = 2 + 3 + 5 = 10.
         assert "flow_snapshot_prune_total 10.0" in text
-        # Only ONE metric line for this counter (not three).
-        assert text.count("flow_snapshot_prune_total") == 3  # HELP + TYPE + line
+        # Only ONE cumulative metric line for this counter (not three).
         assert text.count("flow_snapshot_prune_total 10.0") == 1
+        # Exactly one HELP + one TYPE comment for this counter.
+        assert text.count("# HELP flow_snapshot_prune_total") == 1
+        assert text.count("# TYPE flow_snapshot_prune_total") == 1
 
     def test_prometheus_exposition_groups_by_label_tuple(self) -> None:
         """Events with same name + DIFFERENT labels → separate lines."""
