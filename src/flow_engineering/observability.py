@@ -1242,6 +1242,19 @@ def format_percentile_report(result: dict[str, float]) -> str:
     lines = [header]
     for counter in sorted(grouped):
         row_parts = [counter.ljust(counter_width)]
+        # Detect the "insufficient data" case: every percentile present
+        # for this counter is exactly 0.0. The helper's < 2 samples
+        # contract is the only source of 0.0 values (positive counters
+        # yield strictly-positive percentiles), so this is a reliable
+        # signal even when only a subset of percentiles was requested.
+        values_present = [
+            v for v in grouped[counter].values()
+        ]
+        all_zero = bool(values_present) and all(v == 0.0 for v in values_present)
+        if all_zero:
+            row_parts.append("not enough data points")
+            lines.append("  ".join(row_parts))
+            continue
         for pct in (50, 95, 99):
             value = grouped[counter].get(pct)
             if value is None:
