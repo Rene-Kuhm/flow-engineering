@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import tempfile
 import time as _time
 from collections import defaultdict
@@ -1063,6 +1064,192 @@ def aggregate_many(
         idx = int((len(samples) - 1) * pct / 100)
         results[pct] = float(samples[idx])
     return results
+
+
+# ---------- Change #6 PR#2 T2.4: ReservoirSampler + aggregate_percentile (REQ-39) ----------
+
+
+class ReservoirSampler:
+    """Vitter's Algorithm R for reservoir sampling (REQ-39 / D7).
+
+    Maintains a fixed-size random sample from a stream of unknown size.
+    Each item added to the stream has equal probability of being in the
+    reservoir at any time (``capacity / seen``). Used by
+    :func:`aggregate_percentile` to bound memory when computing
+    percentiles over arbitrarily-large event streams.
+
+    Args:
+        capacity: Maximum number of samples to retain (default ``1000``).
+            Memory ceiling is O(capacity); stream size can be unbounded.
+        seed: Optional seed for the internal ``random.Random`` instance.
+            Two samplers that receive the same input stream with the same
+            seed produce the SAME reservoir contents (deterministic).
+            Without a seed, behavior depends on the global RNG state.
+    """
+
+    __slots__ = ("capacity", "_samples", "_seen", "_rng")
+
+    def __init__(self, capacity: int = 1000, seed: int | None = None) -> None:
+        if capacity <= 0:
+            raise ValueError(f"capacity must be positive; got {capacity}")
+        self.capacity = capacity
+        self._samples: list[float] = []
+        self._seen = 0
+        self._rng = random.Random(seed)
+
+    def add(self, value: float) -> None:
+        """Add ``value`` to the stream.
+
+        Algorithm R (Vitter 1985): while the reservoir is below capacity,
+        every new value is appended. Once full, each new value ``v`` is
+        added to the reservoir with probability ``capacity / seen``, where
+        ``seen`` is the count INCLUDING the current ``v``. To do this
+        without division per-call, we pick ``j = randint(0, seen)`` and
+        REPLACE ``samples[j]`` when ``j < capacity``.
+        """
+        if len(self._samples) < self.capacity:
+            self._samples.append(value)
+        else:
+            j = self._rng.randint(0, self._seen)
+            if j < self.capacity:
+                self._samples[j] = value
+        self._seen += 1
+
+    def values(self) -> list[float]:
+        """Return a copy of the current reservoir contents."""
+        return list(self._samples)
+
+    def __len__(self) -> int:
+        """Return the total number of values SEEN (NOT the reservoir size).
+
+        Useful for assertions like ``assert len(sampler) == 1000`` when
+        1000 values were added (regardless of how many are retained).
+        """
+        return self._seen
+
+
+def aggregate_percentile(
+    events: Iterable[MetricEvent],
+    *,
+    percentiles: tuple[int, ...] = (50, 95, 99),
+    reservoir_size: int = 1000,
+    seed: int | None = None,
+) -> dict[str, float]:
+    """Compute percentiles over counter values using reservoir sampling (REQ-39 / D7).
+
+    For each unique ``counter_name`` in ``events``, builds a
+    :class:`ReservoirSampler` (memory-bounded at ``reservoir_size``),
+    feeds it the values from ``event.labels["value"]`` (falling back to
+    ``event.labels["count"]``), then computes each requested percentile
+    via :func:`aggregate` (floor(sorted-index) lookup — the same
+    deterministic algorithm as the PR#1 ``aggregate`` helper).
+
+    The output dict maps ``"{counter_name}_p{N}"`` to the computed
+    percentile value. E.g.::
+
+        {"flow_drift_invoked_total_p95": 3.0}
+
+    Args:
+        events: The events to aggregate (typically from
+            :func:`read_all_metrics` / :func:`read_events_by_domain`).
+        percentiles: Tuple of integer percentile values (each must be in
+            :data:`_VALID_PERCENTILES`; otherwise ``ValueError``).
+        reservoir_size: Sample-size ceiling per counter (default ``1000``).
+        seed: Optional seed forwarded to :class:`ReservoirSampler` for
+            deterministic output (test-friendly).
+
+    Returns:
+        Dict mapping ``"{counter_name}_p{N}"`` to the computed value.
+        Empty input → empty dict. Counters with fewer than 2 samples
+        yield ``0.0`` for every requested percentile (defensive default
+        per task brief contract).
+    """
+    for pct in percentiles:
+        if pct not in _VALID_PERCENTILES:
+            raise ValueError(
+                f"invalid percentile {pct}; valid: {sorted(_VALID_PERCENTILES)}"
+            )
+
+    samplers: dict[str, ReservoirSampler] = {}
+    for event in events:
+        if event.counter_name not in samplers:
+            samplers[event.counter_name] = ReservoirSampler(
+                capacity=reservoir_size, seed=seed,
+            )
+        labels = event.labels or {}
+        raw_value = labels.get("value", labels.get("count", 1))
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        samplers[event.counter_name].add(value)
+
+    result: dict[str, float] = {}
+    for counter_name, sampler in samplers.items():
+        samples = sampler.values()
+        for pct in percentiles:
+            key = f"{counter_name}_p{pct}"
+            if len(samples) < 2:
+                result[key] = 0.0
+            else:
+                result[key] = aggregate(samples, pct)  # type: ignore[arg-type]
+    return result
+
+
+def format_percentile_report(result: dict[str, float]) -> str:
+    """Render ``aggregate_percentile`` output as an aligned text table (REQ-39 / D7).
+
+    The output shape::
+
+        Counter                       p50    p95    p99
+        drift_invoked_total           50.0   95.0   99.0
+        snapshot_create_total          1.0    3.0    5.0
+        vector_search_latency_ms      25.0   75.0   95.0
+
+    The counter column is auto-sized to the longest counter name; the
+    percentile values are right-aligned. When ``result`` is empty, the
+    function returns a single-line table (header only, no rows).
+
+    Args:
+        result: Dict of the form ``{counter_name_p{N}: value, ...}``
+            as produced by :func:`aggregate_percentile`.
+
+    Returns:
+        Multi-line string with header + one row per counter. Lines are
+        separated by ``"\\n"``; the table ends with a trailing newline
+        so ``click.echo(table)`` renders cleanly.
+    """
+    if not result:
+        return "Counter\n"
+
+    grouped: dict[str, dict[int, float]] = defaultdict(dict)
+    for key, value in result.items():
+        for pct in (50, 95, 99):
+            suffix = f"_p{pct}"
+            if key.endswith(suffix):
+                counter = key[: -len(suffix)]
+                grouped[counter][pct] = value
+                break
+
+    counter_width = max(len(name) for name in grouped)
+    counter_width = max(counter_width, len("Counter"))
+
+    header_parts = ["Counter".ljust(counter_width)]
+    for pct in (50, 95, 99):
+        header_parts.append(f"p{pct}".rjust(6))
+    header = "  ".join(header_parts)
+
+    lines = [header]
+    for counter in sorted(grouped):
+        row_parts = [counter.ljust(counter_width)]
+        for pct in (50, 95, 99):
+            value = grouped[counter].get(pct)
+            if value is None:
+                row_parts.append("".rjust(6))
+            else:
+                row_parts.append(f"{value:g}".rjust(6))
+        lines.append("  ".join(row_parts))
+    return "\n".join(lines) + "\n"
 
 
 def atomic_write_text(path: Path, content: str) -> int:
