@@ -15,11 +15,13 @@ escapes the handler.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from flow_engineering import decision_drift, observability
+from flow_engineering.drift_event_log import DriftEvent, DriftEventLog
 from flow_engineering.state import ChangeStatus, StateMachine
 from flow_engineering.watcher import ExplorationFileHandler
 
@@ -29,6 +31,32 @@ if TYPE_CHECKING:
 
 
 DEFAULT_DRIFT_GRAPH_PATH: Path = Path.home() / ".flow-engineering" / "graph.json"
+
+
+def _append_drift_events(
+    report: "DriftReport", *, path: Path | None = None
+) -> None:
+    """Append one JSONL line per NON-STILL_VALID finding to the drift event log (REQ-55 W5).
+
+    STILL_VALID findings are intentionally skipped — the still-valid silence
+    rule (W6 / D4) treats them as "no event of interest", so they do not
+    pollute the audit trail. Per design D11, this is best-effort and never
+    raises into the caller (``DriftEventLog.append`` swallows OSError).
+    """
+    log = DriftEventLog(path=path) if path is not None else DriftEventLog()
+    detected_at = time.time()
+    for finding in report.findings:
+        if finding.drift_class is decision_drift.DriftClass.STILL_VALID:
+            continue
+        log.append(
+            DriftEvent(
+                change=report.change_name,
+                decision_id=str(finding.decision_id),
+                binding_id=finding.binding.id,
+                event_class=finding.drift_class.value,
+                detected_at=detected_at,
+            )
+        )
 
 
 def handle_apply_progress_event(
@@ -71,6 +99,12 @@ def handle_apply_progress_event(
         backend=backend,
     )
     observability.record_drift_summary(report)
+
+    # REQ-55 W5: append one JSONL line per NON-STILL_VALID finding to the
+    # drift event log. Best-effort (DriftEventLog swallows OSError). Called
+    # AFTER record_drift_summary so the counter emission precedes the
+    # audit-trail write.
+    _append_drift_events(report)
 
     if report.graph_unavailable:
         on_summary(
