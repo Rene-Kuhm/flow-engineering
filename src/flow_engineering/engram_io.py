@@ -130,6 +130,7 @@ class EngramBackend(ABC):
         since: str | None = None,
         type_filter: list[str] | None = None,
         scope: str = "project",
+        trigger: str = "programmatic",
     ) -> list[dict[str, Any]]:
         """Federated multi-project search (v1.2 — NON-BREAKING default).
 
@@ -142,6 +143,12 @@ class EngramBackend(ABC):
         ``YYYY-MM-DD HH:MM:SS`` TEXT format. ``type_filter`` is exact-match
         (case-sensitive). Each returned row MUST preserve the ``project``
         field for caller attribution.
+
+        ``trigger`` is a kwarg-only observability tag (REQ-26) carried
+        through to the ``federated_search_invoked_total`` counter. The
+        library default is ``"programmatic"``; the CLI layer passes
+        ``trigger="cli"`` so dashboards can separate user invocations from
+        background work.
 
         Subclasses that do not override this method get a call-time
         ``NotImplementedError``; instantiation is unaffected. The
@@ -294,6 +301,7 @@ class InMemoryBackend(EngramBackend):
         since: str | None = None,
         type_filter: list[str] | None = None,
         scope: str = "project",
+        trigger: str = "programmatic",
     ) -> list[dict[str, Any]]:
         """Federated multi-project search over the in-memory dict (REQ-23).
 
@@ -307,9 +315,10 @@ class InMemoryBackend(EngramBackend):
         descending (newest first) then truncated to ``limit``.
 
         REQ-26 integration: every successful invocation emits the 3 federated
-        counters via :func:`observability.record_federated_summary` with
-        ``trigger="programmatic"``. The observability helper is fail-open
-        so a broken metrics sink can never break retrieval.
+        counters via :func:`observability.record_federated_summary` with the
+        requested ``trigger`` tag (``"programmatic"`` by default; ``"cli"``
+        when invoked from the CLI layer). The observability helper is
+        fail-open so a broken metrics sink can never break retrieval.
 
         Substring match against title + content mirrors ``mem_search`` so
         unit tests do not require SQLite FTS5.
@@ -340,7 +349,7 @@ class InMemoryBackend(EngramBackend):
                 invoked=1,
                 projects_queried=len(projects) if projects is not None else 0,
                 results_returned=len(results),
-                trigger="programmatic",
+                trigger=trigger,
             )
         except Exception:
             # Observability MUST be fail-open.

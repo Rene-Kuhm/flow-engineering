@@ -1,6 +1,6 @@
-"""BDD step definitions for cross-project-federation REQ-23, REQ-24, REQ-25.
+"""BDD step definitions for cross-project-federation REQ-23, REQ-24, REQ-25, REQ-26.
 
-Covers three feature files:
+Covers the feature files:
 
 - ``req23_federated_search.feature`` (5 scenarios) — REQ-23 acceptance gate
   for the federated multi-project search API on ``EngramBackend`` v1.2.
@@ -8,6 +8,9 @@ Covers three feature files:
   for ``project_detector.detect`` + ``flow projects backfill`` safety gate.
 - ``req25_cli_federated.feature`` (5 scenarios) — REQ-25 acceptance gate
   for the four opt-in federated flags on the ``flow search`` CLI.
+- ``req26_federated_observability.feature`` (4 scenarios) — REQ-26 acceptance
+  gate for the 3 ``federated_*`` counters wired into
+  ``InMemoryBackend.mem_search_federated``.
 
 Test isolation:
 - REQ-23: each scenario gets a fresh ``InMemoryBackend`` (no SQLite).
@@ -17,6 +20,9 @@ Test isolation:
 - REQ-25: every scenario invokes the CLI through ``CliRunner`` with a
   monkeypatched backend (mirrors the unit-test pattern from
   ``tests/unit/test_cli_federated.py``).
+- REQ-26: scenarios 1-3 read the JSONL metrics file via
+  ``observability.read_all`` after invoking the CLI; scenario 4 inspects
+  the catalog constant directly.
 """
 from __future__ import annotations
 
@@ -810,4 +816,161 @@ def then_search_returns_n(cli_world: dict[str, Any], n: int) -> None:
     results = payload.get("results", [])
     assert len(results) == n, (
         f"Expected {n} results, got {len(results)}: {[r.get('title') for r in results]!r}"
+    )
+
+
+# ---------- REQ-26 scenario bindings ----------
+
+
+@scenario(
+    "../bdd/req26_federated_observability.feature",
+    "federated_search_invoked_total increments per federated call",
+)
+def test_req26_invoked_increments(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req26_federated_observability.feature",
+    "federated_search_projects_queried records the per-call count bucket",
+)
+def test_req26_projects_queried_bucket(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req26_federated_observability.feature",
+    "federated_search_results_returned_total increments by sum of result counts",
+)
+def test_req26_results_returned_sum(cli_world):
+    pass
+
+
+@scenario(
+    "../bdd/req26_federated_observability.feature",
+    "All 3 federated counters appear in the FEDERATED_COUNTER_NAMES catalog",
+)
+def test_req26_catalog_has_three(catalog_world):
+    pass
+
+
+# ---------- REQ-26 world + given/when/then steps ----------
+
+
+@pytest.fixture
+def catalog_world() -> dict[str, Any]:
+    """Per-scenario scratch state for REQ-26 catalog-inspection scenario."""
+    return {}
+
+
+@pytest.fixture
+def metrics_path(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, cli_world: dict[str, Any]
+) -> Path:
+    """Point ``FLOW_METRICS_PATH`` at a tmp JSONL file so tests do not pollute ~/.flow."""
+    path = tmp_path / "metrics.jsonl"
+    monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
+    cli_world["metrics_path"] = path
+    return path
+
+
+@given("the metrics path points at a tmp file")
+def given_metrics_path(
+    cli_world: dict[str, Any], tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "metrics.jsonl"
+    monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
+    cli_world["metrics_path"] = path
+
+
+@given("the observability module exposes FEDERATED_COUNTER_NAMES")
+def given_catalog_exposed(catalog_world: dict[str, Any]) -> None:
+    from flow_engineering import observability
+
+    catalog_world["observability"] = observability
+
+
+def _read_metrics_events(metrics_path: Path) -> list[dict[str, Any]]:
+    """Parse the JSONL metrics file into a list of event dicts (defensive)."""
+    if not metrics_path.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for line in metrics_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+@then(parsers.parse("the metrics file contains a federated_search_invoked_total event with trigger={trigger}"))
+def then_invoked_event_with_trigger(cli_world: dict[str, Any], trigger: str) -> None:
+    events = _read_metrics_events(cli_world["metrics_path"])
+    matches = [
+        e for e in events
+        if e.get("name") == "federated_search_invoked_total"
+        and e.get("fields", {}).get("trigger") == trigger
+    ]
+    assert matches, (
+        f"Expected federated_search_invoked_total event with trigger={trigger!r}; "
+        f"got events={events!r}"
+    )
+
+
+@then(parsers.parse("the federated_search_invoked_total count is {n:d}"))
+def then_invoked_count_is(cli_world: dict[str, Any], n: int) -> None:
+    events = _read_metrics_events(cli_world["metrics_path"])
+    total = sum(
+        int(e.get("fields", {}).get("count", 0))
+        for e in events
+        if e.get("name") == "federated_search_invoked_total"
+    )
+    assert total == n, f"Expected invoked total {n}, got {total}; events={events!r}"
+
+
+@then(parsers.parse("the metrics file contains a federated_search_projects_queried event with count={n:d}"))
+def then_projects_queried_event_count(cli_world: dict[str, Any], n: int) -> None:
+    events = _read_metrics_events(cli_world["metrics_path"])
+    matches = [
+        e for e in events
+        if e.get("name") == "federated_search_projects_queried"
+        and int(e.get("fields", {}).get("count", 0)) == n
+    ]
+    assert matches, (
+        f"Expected federated_search_projects_queried event with count={n}; "
+        f"got events={events!r}"
+    )
+
+
+@then(parsers.parse("the federated_search_results_returned_total count is {n:d}"))
+def then_results_returned_total_is(cli_world: dict[str, Any], n: int) -> None:
+    events = _read_metrics_events(cli_world["metrics_path"])
+    total = sum(
+        int(e.get("fields", {}).get("count", 0))
+        for e in events
+        if e.get("name") == "federated_search_results_returned_total"
+    )
+    assert total == n, f"Expected results_returned total {n}, got {total}; events={events!r}"
+
+
+@then("the catalog contains exactly 3 entries")
+def then_catalog_length_is_three(catalog_world: dict[str, Any]) -> None:
+    observability = catalog_world["observability"]
+    names = observability.FEDERATED_COUNTER_NAMES
+    assert isinstance(names, list)
+    assert len(names) == 3, f"Expected 3 catalog names, got {len(names)}: {names!r}"
+
+
+@then(parsers.parse('the catalog names are "{a}", "{b}", "{c}"'))
+def then_catalog_names_are(
+    catalog_world: dict[str, Any], a: str, b: str, c: str
+) -> None:
+    observability = catalog_world["observability"]
+    names = observability.FEDERATED_COUNTER_NAMES
+    expected = [a, b, c]
+    assert sorted(names) == sorted(expected), (
+        f"Expected catalog names {expected}, got {names!r}"
     )

@@ -646,13 +646,16 @@ def search(
     if federated_flag:
         # REQ-25: federated multi-project search. Projects + type are
         # CSV-parsed; None means "no filter". --since is the raw ISO
-        # string (validated above).
+        # string (validated above). ``trigger="cli"`` tags the
+        # observability event so dashboards can separate user invocations
+        # from programmatic ones (REQ-26 contract).
         raw = backend.mem_search_federated(
             query,
             projects=_parse_csv(projects),
             limit=k,
             since=since,
             type_filter=_parse_csv(type_csv),
+            trigger="cli",
         )
     elif semantic_flag or hybrid_flag:
         # Gate check order matters: extra first (so the install hint wins
