@@ -357,10 +357,11 @@ class SnapshotManager:
 
         # T1.5 brief: populate ``graph_state.graph_json_content`` from the
         # current ``graph.json`` correlator file (REQ-33 D2 default-on).
-        # When the file is missing (test fixtures, fresh installs), the
-        # field is omitted; ``scan_change(snap_id=...)`` will then raise
-        # ``SnapshotGraphMissing`` for drift-pinned scans.
-        graph_json_content = _read_graph_json_content()
+        # When the file is missing OR ``include_graph=False``, the field
+        # is omitted; ``scan_change(snap_id=...)`` will then raise
+        # ``SnapshotGraphMissing`` for drift-pinned scans (D2 graceful
+        # degradation).
+        graph_json_content = _read_graph_json_content() if include_graph else None
 
         graph_state: dict[str, Any] = {
             "observations": observations,

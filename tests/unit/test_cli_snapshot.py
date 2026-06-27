@@ -42,6 +42,14 @@ from flow_engineering.cli import main
 from flow_engineering.engram_io import InMemoryBackend
 
 runner = CliRunner()
+"""Standard CliRunner; use ``result.stdout`` for pure stdout, ``result.stderr`` for warnings.
+
+Click 8.4 separates the streams: ``result.stdout`` is the program
+stdout (pure JSON for our emit-on-stdout commands); ``result.stderr``
+is the warning stream (e.g. the ``--force override`` warning emitted
+by rollback). ``result.output`` is the legacy combined view; tests
+that need to parse JSON from stdout use ``result.stdout``.
+"""
 
 
 # ---------- Fixtures ----------
@@ -106,6 +114,18 @@ def _seed_obs(backend: InMemoryBackend, *, n: int, topic_key: str = "sdd/test/sp
 def _read_envelope_from_cli_output(output: str) -> dict:
     """Helper: parse the pretty-printed JSON the ``flow snapshot show`` command emits."""
     return json.loads(output)
+
+
+def _snap_id_from_path(path: Path) -> str:
+    """Extract the ``snap_id`` from a snapshot file path.
+
+    ``Path("foo/snap_X.json.gz").stem`` returns ``"snap_X.json"`` — only
+    one suffix is stripped. We need both ``.json`` and ``.gz`` removed.
+    """
+    name = path.name
+    if name.endswith(".json.gz"):
+        return name[: -len(".json.gz")]
+    return path.stem
 
 
 # ---------- REQ-28: flow snapshot create ----------
@@ -185,7 +205,7 @@ class TestSnapshotListCli:
         result = runner.invoke(main, ["snapshot", "list"])
 
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         assert payload == []
 
     def test_snapshot_list_cli_three_snapshots(
@@ -204,14 +224,14 @@ class TestSnapshotListCli:
             # The stdout contains the snap_id (or the file name).
             # Extract from the output OR from the dir.
             files = sorted(snapshots_dir.glob("snap_*.json.gz"))
-            snap_ids.append(files[-1].stem)
+            snap_ids.append(_snap_id_from_path(files[-1]))
             # Avoid same-second collision on the next create.
             if i < 2:
                 time.sleep(1.05)
 
         result = runner.invoke(main, ["snapshot", "list"])
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         assert len(payload) == 3
         # Newest first.
         assert [entry["snap_id"] for entry in payload] == list(reversed(snap_ids))
@@ -230,7 +250,7 @@ class TestSnapshotListCli:
         res1 = runner.invoke(main, ["snapshot", "create", "--description", "old"])
         assert res1.exit_code == 0, res1.output
         first_files = sorted(snapshots_dir.glob("snap_*.json.gz"))
-        first_id = first_files[0].stem
+        first_id = _snap_id_from_path(first_files[0])
         # Read the first envelope's created_at to use as a since cutoff.
         import gzip as _gzip
         with _gzip.open(first_files[0], "rt", encoding="utf-8") as fh:
@@ -247,7 +267,7 @@ class TestSnapshotListCli:
             main, ["snapshot", "list", "--since", since_iso]
         )
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         ids = {entry["snap_id"] for entry in payload}
         assert first_id in ids, f"first snapshot {first_id!r} should be included; got {ids}"
         assert len(payload) == 2
@@ -270,7 +290,7 @@ class TestSnapshotShowCli:
         )
         assert res.exit_code == 0, res.output
         files = sorted(snapshots_dir.glob("snap_*.json.gz"))
-        snap_id = files[0].stem
+        snap_id = _snap_id_from_path(files[0])
 
         result = runner.invoke(main, ["snapshot", "show", snap_id])
         assert result.exit_code == 0, result.output
@@ -312,7 +332,7 @@ class TestSnapshotDiffCli:
         # Create A.
         res_a = runner.invoke(main, ["snapshot", "create", "--description", "a"])
         assert res_a.exit_code == 0, res_a.output
-        a_id = sorted(snapshots_dir.glob("snap_*.json.gz"))[0].stem
+        a_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # Add 2 observations to live.
         _seed_obs(backend, n=2)
@@ -322,12 +342,12 @@ class TestSnapshotDiffCli:
         res_b = runner.invoke(main, ["snapshot", "create", "--description", "b"])
         assert res_b.exit_code == 0, res_b.output
         files = sorted(snapshots_dir.glob("snap_*.json.gz"))
-        b_id = files[-1].stem  # newest
+        b_id = _snap_id_from_path(files[-1])  # newest
 
         # Diff A -> B.
         result = runner.invoke(main, ["snapshot", "diff", a_id, b_id])
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         assert sorted(payload["added"]) == [4, 5]
         assert payload["removed"] == []
         assert payload["modified"] == []
@@ -343,7 +363,7 @@ class TestSnapshotDiffCli:
         # Create A.
         res_a = runner.invoke(main, ["snapshot", "create", "--description", "a"])
         assert res_a.exit_code == 0, res_a.output
-        a_id = sorted(snapshots_dir.glob("snap_*.json.gz"))[0].stem
+        a_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # Add 2 observations AFTER the snapshot.
         _seed_obs(backend, n=2)
@@ -351,7 +371,7 @@ class TestSnapshotDiffCli:
         # Diff A -> LIVE (1-arg form).
         result = runner.invoke(main, ["snapshot", "diff", a_id])
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         assert sorted(payload["added"]) == [4, 5]
         assert payload["removed"] == []
         assert payload["modified"] == []
@@ -371,7 +391,7 @@ class TestSnapshotRollbackCli:
 
         res = runner.invoke(main, ["snapshot", "create", "--description", "t"])
         assert res.exit_code == 0, res.output
-        snap_id = sorted(snapshots_dir.glob("snap_*.json.gz"))[0].stem
+        snap_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # NO --confirm.
         result = runner.invoke(main, ["snapshot", "rollback", snap_id])
@@ -390,7 +410,7 @@ class TestSnapshotRollbackCli:
 
         res = runner.invoke(main, ["snapshot", "create", "--description", "t"])
         assert res.exit_code == 0, res.output
-        snap_id = sorted(snapshots_dir.glob("snap_*.json.gz"))[0].stem
+        snap_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # WITH --confirm.
         result = runner.invoke(
@@ -400,7 +420,7 @@ class TestSnapshotRollbackCli:
             f"rollback --confirm failed: {result.output!r} stderr={result.stderr!r}"
         )
         # JSON success on stdout.
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         assert "safety_snapshot_id" in payload
         assert payload["target_snapshot_id"] == snap_id
         assert "applied" in payload
@@ -417,7 +437,7 @@ class TestSnapshotRollbackCli:
 
         res = runner.invoke(main, ["snapshot", "create", "--description", "t"])
         assert res.exit_code == 0, res.output
-        snap_id = sorted(snapshots_dir.glob("snap_*.json.gz"))[0].stem
+        snap_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # Add 3 new observations AFTER the snapshot → conflicts.
         _seed_obs(backend, n=3)
@@ -443,7 +463,7 @@ class TestSnapshotRollbackCli:
 
         res = runner.invoke(main, ["snapshot", "create", "--description", "t"])
         assert res.exit_code == 0, res.output
-        snap_id = sorted(snapshots_dir.glob("snap_*.json.gz"))[0].stem
+        snap_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # Add a new observation → conflict.
         _seed_obs(backend, n=1)
@@ -453,7 +473,7 @@ class TestSnapshotRollbackCli:
             main, ["snapshot", "rollback", snap_id, "--confirm", "--force"]
         )
         assert result.exit_code == 0, f"rollback --force failed: {result.stderr}"
-        payload = json.loads(result.output)
+        payload = json.loads(result.stdout)
         assert payload["forced"] is True
         # Stderr warning emitted.
         assert "--force override" in (result.stderr or ""), (
