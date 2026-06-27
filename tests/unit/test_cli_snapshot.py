@@ -481,19 +481,216 @@ class TestSnapshotRollbackCli:
         )
 
 
-# ---------- REQ-34 (stub): flow snapshot prune ----------
+# ---------- REQ-34 (CLI): flow snapshot prune ----------
 
 
-class TestSnapshotPruneCliStub:
-    """T1.5 only wires the prune CLI as a stub (full method lands in T1.6)."""
+class TestPruneCommand:
+    """``flow snapshot prune`` Click subcommand coverage (REQ-34, T1.6).
 
-    def test_snapshot_prune_cli_emits_stub_message(
+    Six focused tests covering the full CLI surface:
+
+    1. Dry-run default (no ``--confirm``) — no deletes, "would delete" listed.
+    2. ``--keep-last`` flag wiring.
+    3. ``--keep-days`` flag wiring.
+    4. ``--max-total-size-mb`` flag wiring.
+    5. ``--json`` flag — JSON object on stdout.
+    6. ``--force`` flag — stderr warning emitted; most-recent deleted.
+    """
+
+    def test_prune_cli_dry_run_default(
         self, seeded_backend, snapshots_dir, metrics_path
     ) -> None:
-        result = runner.invoke(main, ["snapshot", "prune"])
+        """No ``--confirm`` ⇒ no deletes; stdout prints the would-delete list."""
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
 
+        # Create 4 snapshots with 1.05s spacing so created_at differs.
+        for i in range(4):
+            res = runner.invoke(
+                main, ["snapshot", "create", "--description", f"snap-{i}"]
+            )
+            assert res.exit_code == 0, res.output
+            if i < 3:
+                time.sleep(1.05)
+
+        # Dry-run: NO --confirm.
+        result = runner.invoke(main, ["snapshot", "prune", "--keep-last", "1"])
+        assert result.exit_code == 0, (
+            f"dry-run prune failed: {result.output!r} stderr={result.stderr!r}"
+        )
+        assert "DRY-RUN" in result.stdout or "would delete" in result.stdout.lower()
+        # All 4 files must still exist on disk.
+        files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
+        assert len(files) == 4, f"dry-run MUST NOT delete; got {files!r}"
+
+    def test_prune_cli_with_keep_last(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """``--keep-last 2 --confirm`` keeps the 2 newest, deletes the rest."""
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
+
+        for i in range(5):
+            res = runner.invoke(
+                main, ["snapshot", "create", "--description", f"snap-{i}"]
+            )
+            assert res.exit_code == 0, res.output
+            if i < 4:
+                time.sleep(1.05)
+
+        result = runner.invoke(
+            main, ["snapshot", "prune", "--keep-last", "2", "--confirm"]
+        )
+        assert result.exit_code == 0, (
+            f"prune --confirm failed: stderr={result.stderr!r}"
+        )
+        # 5 - 2 = 3 files removed.
+        files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
+        assert len(files) == 2, (
+            f"expected 2 files remaining after keep_last=2; got {len(files)}: {files!r}"
+        )
+
+    def test_prune_cli_with_keep_days(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """``--keep-days N`` keeps snapshots newer than N days."""
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
+
+        # Create a snapshot, then backdate its envelope to 2020-01-01.
+        res = runner.invoke(main, ["snapshot", "create", "--description", "old"])
+        assert res.exit_code == 0, res.output
+        old_path = sorted(snapshots_dir.glob("snap_*.json.gz"))[0]
+        import gzip as _gzip
+        import hashlib as _hashlib
+        with _gzip.open(old_path, "rt", encoding="utf-8") as fh:
+            envelope = json.loads(fh.read())
+        envelope["created_at"] = "2020-01-01T00:00:00Z"
+        meta_for_hash = {
+            k: v for k, v in envelope["metadata"].items() if k != "sha256"
+        }
+        envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+        envelope_for_hash["metadata"] = meta_for_hash
+        envelope["metadata"]["sha256"] = _hashlib.sha256(
+            json.dumps(envelope_for_hash, sort_keys=True, separators=(",", ":"))
+            .encode("utf-8")
+        ).hexdigest()
+        with _gzip.open(old_path, "wt", encoding="utf-8") as fh:
+            fh.write(json.dumps(envelope, sort_keys=True, separators=(",", ":")))
+
+        # Create a NEW snapshot at the current time.
+        res2 = runner.invoke(main, ["snapshot", "create", "--description", "recent"])
+        assert res2.exit_code == 0, res2.output
+
+        # Dry-run with --keep-days=30 — only the backdated old one is a candidate.
+        result = runner.invoke(
+            main, ["snapshot", "prune", "--keep-days", "30"]
+        )
         assert result.exit_code == 0, result.output
-        assert "T1.6" in result.output or "coming" in result.output.lower()
+        assert "DRY-RUN" in result.stdout
+        # Both files still exist (dry-run).
+        files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
+        assert len(files) == 2
+
+    def test_prune_cli_with_max_total_size_mb(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """``--max-total-size-mb`` is wired through to SnapshotManager.prune()."""
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
+
+        for i in range(3):
+            res = runner.invoke(
+                main, ["snapshot", "create", "--description", f"snap-{i}"]
+            )
+            assert res.exit_code == 0, res.output
+            if i < 2:
+                time.sleep(1.05)
+
+        # Force-evict by setting the budget to ~1 byte (unrealistic but
+        # deterministic — the newest is still protected by the safety net).
+        result = runner.invoke(
+            main, [
+                "snapshot", "prune",
+                "--max-total-size-mb", "1",
+                "--confirm",
+            ]
+        )
+        # Exit 0 even if nothing was deleted (1 MB budget may already
+        # accommodate the 3 tiny snapshots); we only assert the wiring.
+        assert result.exit_code == 0, (
+            f"prune --max-total-size-mb failed: stderr={result.stderr!r}"
+        )
+        # At least the newest is preserved (safety net).
+        assert len(list(snapshots_dir.glob("snap_*.json.gz"))) >= 1
+
+    def test_prune_cli_json_output(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """``--json`` emits a parseable PruneResult JSON on stdout."""
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
+
+        for i in range(3):
+            res = runner.invoke(
+                main, ["snapshot", "create", "--description", f"snap-{i}"]
+            )
+            assert res.exit_code == 0, res.output
+            if i < 2:
+                time.sleep(1.05)
+
+        result = runner.invoke(
+            main, ["snapshot", "prune", "--keep-last", "1", "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        # The 6 fields from PruneResult.to_dict().
+        for field in (
+            "deleted", "would_delete", "would_keep",
+            "freed_bytes", "dry_run", "reason",
+        ):
+            assert field in payload, f"missing field {field!r} in {payload!r}"
+        assert payload["dry_run"] is True
+        assert payload["reason"] == "count"
+
+    def test_prune_cli_force_flag_emits_warning(
+        self, seeded_backend, snapshots_dir, metrics_path
+    ) -> None:
+        """``--force`` deletes the most-recent snapshot + emits stderr warning."""
+        backend, _ = seeded_backend
+        _seed_obs(backend, n=2)
+
+        for i in range(3):
+            res = runner.invoke(
+                main, ["snapshot", "create", "--description", f"snap-{i}"]
+            )
+            assert res.exit_code == 0, res.output
+            if i < 2:
+                time.sleep(1.05)
+
+        # --keep-last=0 --confirm --force overrides the most-recent safety.
+        result = runner.invoke(
+            main, [
+                "snapshot", "prune",
+                "--keep-last", "0",
+                "--confirm",
+                "--force",
+            ]
+        )
+        assert result.exit_code == 0, (
+            f"prune --force failed: stderr={result.stderr!r}"
+        )
+        # All 3 snapshots should be deleted.
+        files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
+        assert files == [], (
+            f"--force should delete all with keep-last=0; remaining={files!r}"
+        )
+        # Stderr warning emitted (matches the SnapshotManager.prune() warning).
+        assert "--force" in (result.stderr or "") or "override" in (
+            result.stderr or ""
+        ).lower(), (
+            f"expected --force warning on stderr; got stderr={result.stderr!r}"
+        )
 
 
 # ---------- REQ-33: flow drift --snapshot=<snap_id> flag ----------

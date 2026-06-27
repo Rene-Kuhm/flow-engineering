@@ -40,6 +40,8 @@ from flow_engineering.scaffold import (
     scaffold_change,
 )
 from flow_engineering.snapshot_manager import (
+    PruneNoFilterError,
+    PruneSafetyGateError,
     RollbackConflictError,
     RollbackRefusedError,
     SnapshotEnvelopeError,
@@ -1737,17 +1739,120 @@ def snapshot_rollback(
 
 
 @snapshot_group.command(name="prune")
-def snapshot_prune() -> None:
+@click.option(
+    "--keep-last",
+    "keep_last",
+    type=int,
+    default=None,
+    help="Keep the N most-recent snapshots; delete the rest (count filter).",
+)
+@click.option(
+    "--keep-days",
+    "keep_days",
+    type=int,
+    default=None,
+    help="Keep snapshots newer than N days (age filter).",
+)
+@click.option(
+    "--max-total-size-mb",
+    "max_total_size_mb",
+    type=int,
+    default=None,
+    help="Delete oldest-first until total size <= N MB (size filter).",
+)
+@click.option(
+    "--confirm",
+    "confirm_flag",
+    is_flag=True,
+    default=False,
+    help="REQUIRED to actually delete. Without --confirm the command is "
+         "dry-run and prints the would-delete list.",
+)
+@click.option(
+    "--force",
+    "force_flag",
+    is_flag=True,
+    default=False,
+    help="Override the most-recent snapshot safety net (DANGEROUS).",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit the PruneResult as a JSON object on stdout.",
+)
+def snapshot_prune(
+    keep_last: int | None,
+    keep_days: int | None,
+    max_total_size_mb: int | None,
+    confirm_flag: bool,
+    force_flag: bool,
+    json_flag: bool,
+) -> None:
     """Retention-driven deletion of snapshot files (REQ-34).
 
-    T1.5 only wires the CLI shell — the full prune method lands in T1.6
-    (batch C) along with the ``--keep-last``, ``--keep-days``,
-    ``--max-total-size-mb``, ``--confirm``, ``--force`` flags.
+    Three retention filters are OR-combined: ``--keep-last`` (count),
+    ``--keep-days`` (age), ``--max-total-size-mb`` (size). At least ONE
+    MUST be supplied; otherwise the command refuses with exit code 2.
+
+    Default (no ``--confirm``) is dry-run: ``PruneResult.dry_run`` is True
+    and NO files are touched. The candidate set is printed to stdout as
+    a ``"would delete"`` list so the operator can preview the impact.
+
+    With ``--confirm``, the candidate set is deleted and the
+    ``PruneResult.deleted`` list is the actually-applied deletions.
+
+    Two safety invariants (REQ-34 D10) are non-negotiable:
+
+    - The most-recent snapshot is NEVER deleted (unless ``--force``).
+    - Pinned snapshots are NEVER deleted.
+
+    Exit codes: 0 on success (including dry-run), 2 on no-filter /
+    safety-gate, 4 on ``PruneSafetyGateError``.
     """
-    click.echo(
-        "TBD — coming in T1.6 (batch C). For now, manage retention manually "
-        "via the filesystem at ~/.flow-engineering/snapshots/."
-    )
+    manager = _build_snapshot_manager()
+    try:
+        result = manager.prune(
+            keep_last=keep_last,
+            keep_days=keep_days,
+            max_total_size_mb=max_total_size_mb,
+            confirm=confirm_flag,
+            force=force_flag,
+        )
+    except PruneNoFilterError as exc:
+        click.echo(
+            json.dumps({"error": str(exc)}, ensure_ascii=False),
+            err=True,
+        )
+        sys.exit(2)
+    except PruneSafetyGateError as exc:
+        click.echo(
+            json.dumps(exc.payload, ensure_ascii=False),
+            err=True,
+        )
+        sys.exit(4)
+
+    if json_flag:
+        click.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    # Human-readable default output. Dry-run prints "would delete"; apply
+    # prints "deleted" so the operator can see what changed.
+    if result.dry_run:
+        click.echo(f"DRY-RUN: would delete {len(result.would_delete)} snapshots")
+        click.echo(f"  reason: {result.reason!r}")
+        for sid in result.would_delete:
+            click.echo(f"  - {sid}")
+        click.echo(f"would keep: {len(result.would_keep)}")
+        return
+
+    click.echo(f"deleted {len(result.deleted)} snapshots")
+    click.echo(f"  reason: {result.reason!r}")
+    for sid in result.deleted:
+        click.echo(f"  - {sid}")
+    click.echo(f"freed_bytes: {result.freed_bytes}")
+    click.echo(f"kept: {len(result.would_keep)}")
 
 
 if __name__ == "__main__":
