@@ -3,6 +3,48 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
+## [1.1.0] - 2026-06-28
+
+### Added
+- `DriftEventLog` JSONL rotation hardening (REQ-V1.1.1 / REQ-44): the
+  drift event log now auto-rotates when either the size threshold
+  (`FLOW_DRIFT_EVENT_LOG_MAX_BYTES`, default 10 MB) or age threshold
+  (`FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS`, default 30 days) is exceeded.
+  Best-effort: rotation failures (full disk, permission denied) never
+  crash the daemon; one-time stderr WARN per path.
+- Prompt render observability counters (REQ-V1.1.4 / REQ-52): three new
+  counters flow through `observability.increment()`:
+  * `prompts_render_total{domain, prompt_id, status}` — every render.
+  * `prompts_render_ms{domain, prompt_id, count}` — wall-clock duration.
+  * `prompts_render_failed_total{domain, prompt_id, error}` — failures only
+    (`error` = `missing_var` / `template_error` / `unknown`).
+  Surface via `flow metrics --domain prompt` (per D10 in proposal).
+- `docs/prompts.md` auto-generated from `PROMPT_NAMES` + `prompts/*.j2`
+  (REQ-V1.1.5 / REQ-53). Regenerate via `python scripts/generate_prompts_doc.py`
+  or `make docs`. The script is idempotent — repeated runs produce
+  byte-identical output.
+- Prompt render JSONL sink (REQ-V1.1.3 / REQ-51): `record_prompt_render()`
+  writes to `~/.flow-engineering/prompt_renders.jsonl` (opt-in via
+  `FLOW_PROMPT_LOG=1`, default OFF). `flow prompts show <id>
+  --render-count N` reads the last N events; `--render-history` prints
+  the full sequence for one prompt.
+
+### Changed
+- `SnapshotGraphMissing` is now a 1-release alias for the canonical
+  `SnapshotGraphMissingError` in `flow_engineering.snapshot_manager`
+  (REQ-V1.1.6). Both names refer to the same class; importing the
+  legacy name emits a `DeprecationWarning` and will be removed in v1.2.
+  The independent `decision_drift.SnapshotGraphMissing(ValueError)` is
+  unchanged for backwards compat with batch B1 BDD tests.
+- `decision_drift.DriftClass` now uses `StrEnum` (was `str, Enum`); pure
+  ruff auto-fix (`UP042`), semantically equivalent on Python 3.11+.
+
+### Migration
+- Code importing `from flow_engineering.snapshot_manager import
+  SnapshotGraphMissing` should switch to `SnapshotGraphMissingError`.
+  The legacy alias keeps v1.0 callers working through v1.1 but emits
+  `DeprecationWarning` at import time. No behavior change; same class.
+
 ## [1.0.0] - 2026-06-28
 
 ### Changed (BREAKING)
