@@ -65,6 +65,16 @@ warn_redundant_casts = true
 [tool.flow_engineering.prompts]
 directory = "prompts"
 
+[tool.flow_engineering]
+# REQ-V1.2.3 (PR#2c): project-pinned minimum sdd-* skill versions enforced
+# at `flow apply` / `flow verify` / `flow archive` startup by
+# `flow_engineering.opencode_skill_catalog.enforce_min_skill_versions()`.
+# Operators running an outdated OpenCode runtime (e.g., sdd-apply 2.5 vs
+# the codebase's 3.0 minimum) get exit code 4 + a remediation message
+# pointing at `pip install --upgrade gentle-ai`. Mirrors the
+# `[tool.flow_engineering.prompts]` precedent on the section above.
+min_sdd_skill_versions = {sdd-explore = "3.0", sdd-propose = "3.0", sdd-spec = "3.0", sdd-design = "3.0", sdd-tasks = "3.0", sdd-apply = "3.0", sdd-verify = "3.0", sdd-archive = "3.0"}
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 bdd_features_base_dir = "tests/bdd"
