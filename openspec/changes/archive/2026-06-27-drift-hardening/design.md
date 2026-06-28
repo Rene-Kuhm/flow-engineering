@@ -444,6 +444,54 @@ accept the old shape and mask migration errors.
 
 ---
 
+## Drift: implementation deviations from design
+
+> **Reading guide**: this section is appended post-archive (W2 from the
+> archived `verify-report.md`) to document where the v0.8.0 implementation
+> diverged from design.md D2. Future operators reading design.md SHOULD
+> consult this section BEFORE reading D2 (~lines 482-511) to avoid
+> confusion about the `graph_unavailable` vs `unable_to_verify` field
+> naming. The capability spec at `openspec/specs/decision-drift/spec.md`
+> is the authoritative v0.8.0 contract.
+
+### D2 deviation — `DriftReport.graph_unavailable` direction-flip
+
+**Design intent (D2 sketch, ~lines 482-511)**: `unable_to_verify: bool` was
+the planned canonical field name (renamed from `graph_unavailable`), with
+`@property graph_unavailable` retained for 1 release as a
+`DeprecationWarning`-emitting alias. The migration would have read
+"replace `report.graph_unavailable` with `report.unable_to_verify`".
+
+**Actual implementation (`src/flow_engineering/decision_drift.py:140-141`)**:
+the field was **kept as `graph_unavailable`** (the canonical name was NOT
+renamed), and `unable_reason: str | None` was added as a NEW field for
+richer diagnostic signal beyond a plain bool.
+
+**Migration direction (`CHANGELOG.md:64` step 3)**: legacy callers using
+the `unable_to_verify: bool` kwarg must migrate to the canonical
+`graph_unavailable: bool` field + the new `unable_reason: str | None`
+field. For legacy kwarg callers, `DriftReport.from_legacy(
+unable_to_verify=True, ...)` maps the kwarg to `graph_unavailable` and
+emits `DeprecationWarning`.
+
+**Rationale for the deviation**: explicitly endorsed by the orchestrator
+brief (`apply-progress/batch-d.md` Deviation #3). The direction-flip
+preserves the existing `graph_unavailable` name as the "is the graph
+reachable?" signal while adding `unable_reason` for structured
+diagnostics. The `@property graph_unavailable` 1-release alias plan was
+replaced with the `from_legacy()` classmethod (per W1 deviation below).
+See the archived `verify-report.md` for full evidence + impact analysis.
+
+### Related deviations (W1 + W3, see verify-report for details)
+
+- **W1** — `Finding` migration uses `from_legacy()` classmethod instead
+  of `__post_init__` coercion (`batch-d.md` Deviation #1).
+- **W3** — `classify_binding` accepts both 2-arg and 3-arg via the
+  `classify_binding_legacy` wrapper (soft compat instead of clean
+  `TypeError` break per OQ-10 / `batch-d.md` Deviation #4).
+
+---
+
 ## Architecture Decisions (D1..D12)
 
 ### D1: Module layout — where do the new helpers live?

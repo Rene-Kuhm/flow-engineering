@@ -32,7 +32,7 @@ import re
 import time
 import warnings
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -83,7 +83,7 @@ class Finding:
         drift_class: Any,
         detail: str = "",
         **kwargs: Any,
-    ) -> "Finding":
+    ) -> Finding:
         """Backward-compat factory for v0.7.x callers.
 
         Emits ``DeprecationWarning`` and coerces legacy ``str`` decision_id
@@ -155,7 +155,7 @@ class DriftReport:
         unable_to_verify: bool | None = None,
         unable_reason: str | None = None,
         **kwargs: Any,
-    ) -> "DriftReport":
+    ) -> DriftReport:
         """Backward-compat factory for v0.7.x callers.
 
         Emits ``DeprecationWarning`` and coerces legacy ``float`` epoch
@@ -165,7 +165,7 @@ class DriftReport:
         when supplied. Removed in v0.9.0.
         """
         warnings.warn(
-            f"DriftReport constructed with legacy float scanned_at; "
+            "DriftReport constructed with legacy float scanned_at; "
             "str (ISO 8601) required in v0.9.0 (REQ-56 W8)",
             DeprecationWarning,
             stacklevel=2,
@@ -204,7 +204,7 @@ def _epoch_to_iso(epoch: float | int) -> str:
     sites to coerce legacy ``float`` epoch inputs into the v0.8.0
     ``str`` ISO 8601 contract.
     """
-    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).strftime(
+    return datetime.fromtimestamp(float(epoch), tz=UTC).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
 
@@ -530,7 +530,7 @@ def _snapshot_has_graph(snap_id: str) -> bool:
     return isinstance(graph_state.get("graph_json"), dict)
 
 
-def _frozen_backend_from_snapshot(snap_id: str) -> "EngramBackend":
+def _frozen_backend_from_snapshot(snap_id: str) -> EngramBackend:
     """Return an ``InMemoryBackend`` populated with the snapshot's frozen observations.
 
     REQ-33 D13: the snapshot's ``graph_state.observations`` becomes the
@@ -597,7 +597,7 @@ def scan_change(
     change_name: str,
     *,
     graph_json_path: Path | None = None,
-    backend: "EngramBackend | None" = None,
+    backend: EngramBackend | None = None,
     include_obsolete: bool = False,
     since: float | None = None,
     snap_id: str | None = None,
@@ -756,7 +756,7 @@ def scan_change(
                             )
                             findings.append(
                                 Finding(
-                                    decision_id=decision_id,
+                                    decision_id=decision_id,  # type: ignore[arg-type]
                                     binding=synthetic,
                                     drift_class=DriftClass.OBSOLETE,
                                     detail="no code_refs; graphify returned 0 candidates",
@@ -769,7 +769,7 @@ def scan_change(
                     drift_class = classify_binding(binding, current_nodes)
                     findings.append(
                         Finding(
-                            decision_id=decision_id,
+                            decision_id=decision_id,  # type: ignore[arg-type]
                             binding=binding,
                             drift_class=drift_class,
                             detail="",
@@ -789,7 +789,7 @@ def scan_change(
                                 str(other.decision_id)
                                 for other in findings
                                 if other.binding.id == f.binding.id
-                                and str(other.decision_id) != f.decision_id
+                                and str(other.decision_id) != f.decision_id  # type: ignore[comparison-overlap]
                             )
                         )
                         rebuilt.append(

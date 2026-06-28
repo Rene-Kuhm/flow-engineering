@@ -1,5 +1,5 @@
-<!-- Spec: prompt-registry. Source: manual. -->
-# Spec: prompt-registry
+<!-- Spec: prompt-registry. Source: manual. Archived 2026-06-27 as PR#1 closeout. -->
+# Spec: prompt-registry (PR#1 archived snapshot)
 
 **Change:** `prompt-registry`
 **Builds on:** `proposal.md` (Approach A — `PromptRegistry` class + JSON-backed catalog; 4 cooperating modules: `prompt_registry.py` / `prompt_render.py` / `prompt_lint.py` / `opencode_skill_catalog.py`; bootstraps `openspec/specs/prompt-registry/spec.md` capability catalog; 2 chained PRs)
@@ -15,7 +15,31 @@ total_reqs: 5
 total_bdd_scenarios: 12
 file_created: C:\dev\proyects\flow-engineering\openspec\changes\prompt-registry\spec.md
 next_recommended: sdd-design prompt-registry
+archived: 2026-06-27 (PR#1 closeout)
 ```
+
+## PR#1 Scope (archived 2026-06-27)
+
+**Shipped in PR#1** (foundation: catalog + render + lint):
+
+- **REQ-45** — `PROMPT_NAMES` catalog with 4 migrated entries (PARTIAL: S1/S2 BDD weaker than spec scenarios; tuple/5-field schema instead of locked dict/6-field)
+- **REQ-46** — `render_prompt` + `render_prompt_safe` + `list_required_vars` (RESOLVED post-`613f716`: `.format()` fallback + `PromptRenderError`/`PromptNotFoundError`)
+- **REQ-47** — `lint_prompts()` + `LintReport` with 5 impl-taxonomy error codes (PARTIAL: impl category names ≠ spec taxonomy; mapping shim deferred)
+
+**Deferred to PR#2** (discovery: SKILL.md mirror + CLI surface):
+
+- **REQ-49** — `SKILL_CATALOG` mirror catalog + checksum drift detection (`opencode_skill_catalog.py`)
+- **REQ-50** — `flow prompts {list,show,lint,check}` CLI subcommand group
+
+**Deferred to v1.1** (future change beyond PR#2):
+
+- **REQ-48** — golden regression tests via `tests/golden/prompts/<prompt_id>.txt`
+- **REQ-51** — `prompt_renders.jsonl` append-only sink
+- **REQ-52** — `prompts_render_total{...}` / `prompts_render_ms` / `prompts_render_failed_total{...}` counters (REQ-52 lands in `observability.py` per D10)
+- **REQ-53** — generated `docs/prompts.md` from `PROMPT_REGISTRY`
+- **REQ-54** — `min_sdd_skill_versions` gate in `pyproject.toml`
+
+See `archive-report.md` for full closeout details.
 
 ## Goal
 
