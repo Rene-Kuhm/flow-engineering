@@ -789,6 +789,67 @@ class TestPromptsList:
             f"expected strict_tdd version=1.0.0; got {strict_tdd['version']!r}"
         )
 
+    def test_json_includes_variables_field(self) -> None:
+        """`flow prompts list --json` per-entry dict includes a `variables` list.
+
+        T3.13 W-A1 carry-forward (verify-report-pr2b.md W-A1): spec REQ-50 S1
+        mandates the per-entry shape ``{prompt_id, domain, version, owner,
+        variables: list, location}``. The pre-T3.13 implementation emitted
+        ``{name, version, owner, location, domain}`` with NO ``variables``
+        field, breaking downstream consumers that need to introspect declared
+        variables from the JSON projection alone (without re-loading the
+        entry via ``prompt_registry.get_prompt()``).
+
+        This RED fixture asserts:
+        - ``variables`` key exists in every per-entry dict.
+        - The value is a ``list`` (not tuple/dict/None).
+        - ``strict_tdd`` declares ``["test_command"]`` per its registry
+          metadata (per PROMPT_NAMES strict_tdd entry).
+        - The 3 auto-suggest entries declare an empty list ``[]`` per their
+          registry metadata (no Jinja2 placeholders).
+        """
+        result = runner.invoke(main, ["prompts", "list", "--json"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on --json; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        loaded = json.loads(result.stdout)
+        for entry in loaded["prompts"]:
+            assert "variables" in entry, (
+                f"expected 'variables' key in {entry!r} (W-A1 spec drift)"
+            )
+            assert isinstance(entry["variables"], list), (
+                f"expected 'variables' to be a list per spec REQ-50 S1; "
+                f"got {type(entry['variables']).__name__} in {entry!r}"
+            )
+        strict_tdd = next(
+            (e for e in loaded["prompts"] if e.get("name") == "strict_tdd"
+             or e.get("prompt_id") == "strict_tdd"),
+            None,
+        )
+        assert strict_tdd is not None, (
+            f"expected strict_tdd in JSON output; got names={[e.get('name') or e.get('prompt_id') for e in loaded['prompts']]!r}"
+        )
+        assert strict_tdd["variables"] == ["test_command"], (
+            f"expected strict_tdd variables=['test_command']; "
+            f"got {strict_tdd['variables']!r}"
+        )
+        for pid in ("auto_suggest_header", "auto_suggest_footer",
+                    "auto_suggest_empty"):
+            entry = next(
+                (e for e in loaded["prompts"]
+                 if e.get("name") == pid or e.get("prompt_id") == pid),
+                None,
+            )
+            assert entry is not None, (
+                f"expected {pid!r} in JSON output; "
+                f"got names={[e.get('name') or e.get('prompt_id') for e in loaded['prompts']]!r}"
+            )
+            assert entry["variables"] == [], (
+                f"expected {pid!r} variables=[] (no Jinja2 placeholders); "
+                f"got {entry['variables']!r}"
+            )
+
 
 # ---------- T3.2: flow prompts show <id> subcommand + --var repeatable (REQ-50 S2) ----------
 

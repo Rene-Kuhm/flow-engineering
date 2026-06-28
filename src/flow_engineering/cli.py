@@ -2810,19 +2810,31 @@ def _serialize_prompts_list(entries: list[Any]) -> dict[str, Any]:
     """Project PROMPT_NAMES entries into the REQ-50 ``--json`` shape.
 
     Shape: ``{"prompts": [...], "count": N, "registry_schema_version": "1.0"}``
-    where each prompt entry has ``name``, ``version``, ``owner``
-    (``flow/{domain.value}``), ``location``, ``domain``.
+    where each prompt entry has ``prompt_id``, ``domain``, ``version``,
+    ``owner`` (``flow/{domain.value}``), ``variables`` (list), ``location``.
+
+    Per T3.13 W-A1 carry-forward (verify-report-pr2b.md W-A1): the
+    pre-T3.13 implementation emitted ``{name, version, owner, location,
+    domain}`` with NO ``variables`` field; downstream consumers could
+    not introspect declared variables from the JSON alone. The spec
+    (REQ-50 S1) mandates ``variables: list`` + uses the user-facing key
+    ``prompt_id`` (instead of the impl field ``name``); both keys are
+    now included for backward compat with any pre-T3.13 consumer that
+    still reads ``name``.
     """
     prompts: list[dict[str, Any]] = []
     for entry in entries:
         domain_value = _entry_domain_value(entry)
+        declared_vars = list(entry.metadata.get("variables", ()))
         prompts.append(
             {
+                "prompt_id": entry.name,
                 "name": entry.name,
+                "domain": domain_value,
                 "version": entry.version,
                 "owner": _entry_owner(entry),
+                "variables": declared_vars,
                 "location": _entry_location(entry),
-                "domain": domain_value,
             }
         )
     return {
