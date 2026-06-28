@@ -37,7 +37,7 @@ def _make_obs(
     title: str = "t",
     content: str = "c",
     project: str = "insyd",
-    type: str = "manual",
+    type: str = "manual",  # noqa: A002
     created_at: str | int = "2026-06-15 10:00:00",
 ) -> dict[str, Any]:
     """Build a memory-observation dict shaped like ``InMemoryBackend.mem_save`` output."""

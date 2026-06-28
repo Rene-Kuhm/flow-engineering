@@ -58,7 +58,7 @@ def walk_phases(change_context, datatable):
     headers = datatable[0] if datatable else []
     rows = datatable[1:] if len(datatable) > 1 else []
     for row in rows:
-        rec = dict(zip(headers, row))
+        rec = dict(zip(headers, row, strict=False))
         sm.transition(
             ChangeStatus(rec["to"]),
             artifact=rec["artifact"] or None,

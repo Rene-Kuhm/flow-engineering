@@ -106,12 +106,12 @@ class TestEmbedBatchInvalidBatchSize:
 
     def test_batch_size_zero_raises(self) -> None:
         provider = MockEmbeddingProvider()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             provider.embed_batch(["a", "b"], batch_size=0)
 
     def test_batch_size_negative_raises(self) -> None:
         provider = MockEmbeddingProvider()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             provider.embed_batch(["a", "b"], batch_size=-1)
 
 

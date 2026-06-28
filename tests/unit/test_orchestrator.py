@@ -77,7 +77,7 @@ class TestApplyChange:
 
     def test_apply_skips_completed_tasks(self, tmp_path: Path) -> None:
         backend = InMemoryBackend()
-        fe = _make_change_with_tasks(tmp_path, status=ChangeStatus.TASKED)
+        _make_change_with_tasks(tmp_path, status=ChangeStatus.TASKED)
         # Pre-populate T1.1 as completed
         client = __import__("flow_engineering.engram_io", fromlist=["EngramClient"]).EngramClient(
             "test-change", backend
@@ -89,8 +89,7 @@ class TestApplyChange:
 
 class TestVerifyChange:
     def _make_applying(self, tmp_path: Path) -> Path:
-        fe = _make_change_with_tasks(tmp_path, status=ChangeStatus.APPLYING)
-        return fe
+        return _make_change_with_tasks(tmp_path, status=ChangeStatus.APPLYING)
 
     def test_verify_clean_output_transitions_to_archiving(self, tmp_path: Path) -> None:
         self._make_applying(tmp_path)
@@ -149,8 +148,7 @@ class TestVerifyChange:
 
 class TestArchiveChange:
     def _make_archiving(self, tmp_path: Path) -> Path:
-        fe = _make_change_with_tasks(tmp_path, status=ChangeStatus.ARCHIVING)
-        return fe
+        return _make_change_with_tasks(tmp_path, status=ChangeStatus.ARCHIVING)
 
     def test_archive_transitions_to_done(self, tmp_path: Path) -> None:
         self._make_archiving(tmp_path)

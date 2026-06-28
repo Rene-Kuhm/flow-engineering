@@ -25,9 +25,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT_PATH = REPO_ROOT / "scripts" / "generate_prompts_doc.py"
 DOC_PATH = REPO_ROOT / "docs" / "prompts.md"

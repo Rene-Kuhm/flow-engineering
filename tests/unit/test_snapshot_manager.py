@@ -326,7 +326,8 @@ class TestSinceFilter:
         entries = manager.list(since=created_b)
 
         kept_ids = {e.id for e in entries}
-        assert id_b in kept_ids and id_c in kept_ids
+        assert id_b in kept_ids
+        assert id_c in kept_ids
         assert id_a not in kept_ids
 
 

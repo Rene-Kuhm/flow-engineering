@@ -26,6 +26,7 @@ Test isolation:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -306,13 +307,13 @@ def seed_three_obs_with_varied_types(federated_world):
 @given("a custom EngramBackend that does not override mem_search_federated")
 def build_plain_backend(federated_world):
     class PlainBackend(EngramBackend):
-        def mem_save(self, title, content, topic_key, type="manual", scope="project"):
+        def mem_save(self, title, content, topic_key, type="manual", scope="project"):  # noqa: A002
             return {"id": 1, "title": title, "content": content}
 
         def mem_search(self, query, topic_key=None, limit=10, scope="project"):
             return []
 
-        def mem_get_observation(self, id):
+        def mem_get_observation(self, id):  # noqa: A002
             return {"id": id}
 
     federated_world["backend"] = PlainBackend()
@@ -565,10 +566,8 @@ def _run_backfill(cli_world: dict[str, Any], cli_args: list[str]) -> None:
     # If the CLI streams to stderr, the combined ``output`` still has it;
     # pytest's CliRunner joins them. We try to parse JSON from stdout first.
     if result.stdout:
-        try:
+        with contextlib.suppress(Exception):
             cli_world["stdout"] = result.stdout
-        except Exception:
-            pass
 
 
 @when(parsers.parse('I run the CLI "flow projects backfill {flags}"'))
@@ -691,7 +690,7 @@ def _seed_obs(
     *,
     obs_id: int,
     project: str | None,
-    type: str = "manual",
+    type: str = "manual",  # noqa: A002
     created_at: str = "2026-06-15 10:00:00",
     title: str = "",
     content: str = "drift detection strategy",
@@ -720,7 +719,7 @@ def seed_two_projects(cli_world: dict[str, Any]) -> None:
 
 
 @given("an InMemoryBackend with drift observations in 3 projects")
-def seed_three_projects(cli_world: dict[str, Any]) -> None:
+def seed_three_projects(cli_world: dict[str, Any]) -> None:  # noqa: F811
     backend = cli_world["backend"]
     _seed_obs(backend, obs_id=1, project="flow-engineering", title="fe drift")
     _seed_obs(backend, obs_id=2, project="mockup-2-blog", title="m2b drift")

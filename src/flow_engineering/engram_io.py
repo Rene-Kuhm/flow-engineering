@@ -32,7 +32,7 @@ METADATA_MARKER: str = "<!-- metadata -->"
 _METADATA_SCHEMA: int = 1
 
 
-class VectorSearchDisabled(RuntimeError):
+class VectorSearchDisabled(RuntimeError):  # noqa: N818
     """Raised when vector / hybrid search is called without the activation gate.
 
     REQ-17: the message MUST include the install hint so users without the
@@ -65,7 +65,7 @@ class EngramBackend(ABC):
         title: str,
         content: str,
         topic_key: str,
-        type: str = "manual",
+        type: str = "manual",  # noqa: A002
         scope: str = "project",
     ) -> dict[str, Any]:
         """Save an observation."""
@@ -81,7 +81,7 @@ class EngramBackend(ABC):
         """Search observations."""
 
     @abstractmethod
-    def mem_get_observation(self, id: int) -> dict[str, Any]:
+    def mem_get_observation(self, id: int) -> dict[str, Any]:  # noqa: A002
         """Get a single observation by ID."""
 
     def mem_search_semantic(
@@ -172,10 +172,10 @@ class EngramBackend(ABC):
 
     def update_observation(
         self,
-        id: int,
+        id: int,  # noqa: A002
         *,
         content: str | None = None,
-        type: str | None = None,
+        type: str | None = None,  # noqa: A002
     ) -> dict[str, Any]:
         """Replace an existing observation's content and/or type.
 
@@ -197,7 +197,7 @@ class InMemoryBackend(EngramBackend):
         title: str,
         content: str,
         topic_key: str,
-        type: str = "manual",
+        type: str = "manual",  # noqa: A002
         scope: str = "project",
     ) -> dict[str, Any]:
         obs = {
@@ -234,7 +234,7 @@ class InMemoryBackend(EngramBackend):
                 break
         return results
 
-    def mem_get_observation(self, id: int) -> dict[str, Any]:
+    def mem_get_observation(self, id: int) -> dict[str, Any]:  # noqa: A002
         if id not in self.observations:
             raise KeyError(f"No observation with id {id}")
         return self.observations[id]
@@ -248,10 +248,10 @@ class InMemoryBackend(EngramBackend):
 
     def update_observation(
         self,
-        id: int,
+        id: int,  # noqa: A002
         *,
         content: str | None = None,
-        type: str | None = None,
+        type: str | None = None,  # noqa: A002
     ) -> dict[str, Any]:
         if id not in self.observations:
             raise KeyError(f"No observation with id {id}")

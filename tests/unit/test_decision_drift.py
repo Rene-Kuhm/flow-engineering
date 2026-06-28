@@ -33,7 +33,7 @@ from flow_engineering.engram_io import InMemoryBackend
 def _ref(
     *,
     project: str = "insyd",
-    id: str = "src_auth_jwt_jwttokenmanager",
+    id: str = "src_auth_jwt_jwttokenmanager",  # noqa: A002
     label: str = "JWTTokenManager",
     file: str = "src/auth/jwt.py",
     line: int = 42,
@@ -182,7 +182,7 @@ def test_finding_is_frozen() -> None:
         drift_class=DriftClass.STILL_VALID,
         detail="ok",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017, PT011
         f.drift_class = DriftClass.LABEL_DRIFT  # type: ignore[misc]
 
 

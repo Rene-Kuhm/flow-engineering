@@ -2139,7 +2139,7 @@ def then_exit_code_0(drift_cli_world: dict) -> None:
         return
     res = drift_cli_world["result"]
     if res is None:
-        assert False, "expected result from prior CLI invocation"
+        raise AssertionError("expected result from prior CLI invocation")
     assert res.exit_code == 0, (
         f"expected exit 0; got {res.exit_code}; "
         f"stdout={res.output!r}; stderr={res.stderr!r}"
@@ -2290,10 +2290,7 @@ def then_missing_obs_raises(drift_cli_world: dict) -> None:
         ]
         if "update_observation_metadata_failed_total" in names:
             return
-    assert False, (
-        "expected either an exception or update_observation_metadata_failed_total "
-        f"counter increment; got exc={exc!r}, metrics_path={path}"
-    )
+    raise AssertionError("expected either an exception or update_observation_metadata_failed_total " f"counter increment; got exc={exc!r}, metrics_path={path}")
 
 
 @then("exit code is 1 (the valid one counted)")

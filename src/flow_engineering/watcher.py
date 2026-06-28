@@ -19,7 +19,7 @@ def make_exploration_watcher(
 
     The callback can be passed to watchdog's FileSystemEventHandler.on_modified.
     """
-    state_path = change_dir / "state.json"
+    change_dir / "state.json"
 
     def _on_change(file_path: Path) -> None:
         # Normalize: only fire for exploration.md inside explore/

@@ -176,7 +176,7 @@ def _classify_with_id_map(
     return DriftClass.STILL_VALID
 
 
-class SnapshotGraphMissing(ValueError):
+class SnapshotGraphMissing(ValueError):  # noqa: N818
     """Raised when ``scan_change(snap_id=...)`` finds no graph_json in the snapshot.
 
     D2 graceful degradation: a snapshot created with

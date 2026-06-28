@@ -832,7 +832,7 @@ def test_req19_embed_shape(embedding_world):
 # =====================================================================
 
 
-from flow_engineering.embedding_provider import (
+from flow_engineering.embedding_provider import (  # noqa: E402
     EmbeddingProviderUnavailable,
     MockEmbeddingProvider,
     SentenceTransformersProvider,
@@ -1117,7 +1117,7 @@ sqlite_vec = pytest.importorskip("sqlite_vec")
 """Skip the whole REQ-20 batch when sqlite-vec is missing (test env without [vectors])."""
 
 
-from flow_engineering.vectors.sqlite_vec_store import (
+from flow_engineering.vectors.sqlite_vec_store import (  # noqa: E402
     VECTOR_DIM,
     SqliteVecStore,
 )
@@ -1353,7 +1353,7 @@ def then_result_list_size(vec_store_world, n: int):
     results = vec_store_world["search_results"]
     assert len(results) == n, f"Expected {n} results, got {len(results)}: {results}"
     for entry in results:
-        assert isinstance(entry, tuple) and len(entry) == 2, (
+        assert isinstance(entry, tuple) and len(entry) == 2, (  # noqa: PT018
             f"Expected (obs_id, distance) tuple, got {entry!r}"
         )
 
@@ -1428,9 +1428,9 @@ def test_req21_reindex_crash_resume(vec_reindex_world):
 # =====================================================================
 
 
-from click.testing import CliRunner as _CliRunner
+from click.testing import CliRunner as _CliRunner  # noqa: E402
 
-from flow_engineering.cli import main as _cli_main
+from flow_engineering.cli import main as _cli_main  # noqa: E402
 
 
 def _seed_reindex_corpus(backend: InMemoryBackend, n: int) -> None:
@@ -1631,7 +1631,7 @@ def then_index_size_gauge(vec_reindex_world, n: int):
             )
             return
     # Fallback: read directly from the SqliteVecStore on disk (truth source).
-    sqlite_vec = pytest.importorskip("sqlite_vec")
+    pytest.importorskip("sqlite_vec")
     from flow_engineering.vectors import SqliteVecStore
 
     store = SqliteVecStore(vec_reindex_world["vectors_path"])
@@ -1696,7 +1696,7 @@ def test_req22_naming_convention(vector_world):
 # =====================================================================
 
 
-from flow_engineering import observability
+from flow_engineering import observability  # noqa: E402
 
 
 def _read_jsonl_events(path: Path) -> list[dict[str, Any]]:
@@ -1920,7 +1920,7 @@ def then_latency_under(vector_world, limit: int):
     ]
     assert latencies, "No vector_search_latency_ms events recorded"
     for elapsed in latencies:
-        assert elapsed is not None and elapsed < limit, (
+        assert elapsed is not None and elapsed < limit, (  # noqa: PT018
             f"elapsed_ms {elapsed} not < {limit}ms limit"
         )
 

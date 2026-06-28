@@ -23,13 +23,11 @@ GREEN commit wires the counters + extends the prefix table.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from flow_engineering import observability
-from flow_engineering import prompt_registry
 from flow_engineering.prompt_registry import render_prompt
 
 
@@ -182,7 +180,7 @@ class TestRenderPromptEmitsCounters:
     def test_render_failure_emits_failed_total(
         self, metrics_sink: Path, render_sink: Path
     ) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017, PT011
             render_prompt("definitely_not_in_catalog_zzz")
         events = observability.read_all(path=metrics_sink)
         fail_events = [

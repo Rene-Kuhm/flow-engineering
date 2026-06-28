@@ -223,7 +223,7 @@ class TestLoadGraphWithSnapId:
         graph_path = tmp_path / "graph.json"
         _write_graph(graph_path, nodes=[])
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             decision_drift.load_graph(
                 graph_json_path=graph_path, snap_id=snap_id,
             )
@@ -256,7 +256,8 @@ class TestLoadGraphNonRegression:
         assert nodes is not None
         assert "alpha" in nodes
         assert id_map == {"alpha": ("src/alpha.py", 10, "Alpha")}
-        assert mtime is not None and mtime > 0
+        assert mtime is not None
+        assert mtime > 0
 
     def test_load_graph_with_explicit_none_returns_same_as_default(
         self, tmp_path: Path
@@ -373,7 +374,7 @@ class TestScanChangeWithSnapId:
             description="mx",
         )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             decision_drift.scan_change(
                 "vector-semantic-search",
                 graph_json_path=None,

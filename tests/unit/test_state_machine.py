@@ -5,6 +5,7 @@ REQ-3: Forward transitions, skip rejection, retry loop, persistence.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -104,10 +105,8 @@ class TestStateMachineRetry:
     def test_max_retries_exceeded(self, tmp_path: Path) -> None:
         sm = StateMachine.create("my-change", tmp_path)
         for _ in range(6):
-            try:
+            with contextlib.suppress(InvalidTransitionError):
                 sm.transition(ChangeStatus.EXPLORED)
-            except InvalidTransitionError:
-                pass
             sm = StateMachine.create("my-change", tmp_path)
         sm.transition(ChangeStatus.EXPLORED)
         sm.transition(ChangeStatus.PROPOSED)

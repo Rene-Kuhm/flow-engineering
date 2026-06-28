@@ -391,7 +391,7 @@ class TestRenderPromptWritesToSinkWhenEnabled:
             raising=False,
         )
 
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017, PT011
             render_prompt("definitely_not_in_catalog_xyz")
 
         # Unknown prompt_id still records a failure event.

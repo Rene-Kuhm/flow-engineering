@@ -25,7 +25,7 @@ import numpy as np
 EMBEDDING_DIMS: int = 384
 
 
-class EmbeddingProviderUnavailable(ImportError):
+class EmbeddingProviderUnavailable(ImportError):  # noqa: N818
     """Raised when an embedding backend cannot be loaded (e.g. ``[vectors]`` extra missing).
 
     REQ-19: subclass of ``ImportError`` so callers can catch both this and a
@@ -189,8 +189,7 @@ class SentenceTransformersProvider(EmbeddingProvider):
             return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
         model = self._ensure_model()
         vectors = model.encode(texts, convert_to_numpy=True)
-        arr = np.asarray(vectors, dtype=np.float32).reshape(len(texts), EMBEDDING_DIMS)
-        return arr
+        return np.asarray(vectors, dtype=np.float32).reshape(len(texts), EMBEDDING_DIMS)
 
 
 __all__ = [

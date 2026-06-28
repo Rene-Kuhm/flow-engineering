@@ -106,8 +106,8 @@ class SnapshotGraphMissingError(Exception):
 # so v1.0 callers that imported ``SnapshotGraphMissing`` keep working
 # until v1.2. Both names refer to the SAME class — there is no parallel
 # hierarchy. DeprecationWarning fires at import time.
-import contextlib
-import warnings as _warnings
+import contextlib  # noqa: E402
+import warnings as _warnings  # noqa: E402
 
 
 def __getattr__(name: str) -> object:
@@ -1205,7 +1205,7 @@ class SnapshotManager:
 __all__ = [
     "SnapshotEnvelopeError",
     "SnapshotGraphMissingError",
-    "SnapshotGraphMissing",
+    "SnapshotGraphMissing",  # noqa: F822
     "SnapshotMeta",
     "SnapshotDiff",
     "RollbackResult",

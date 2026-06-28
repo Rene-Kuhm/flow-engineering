@@ -111,7 +111,7 @@ class TestValidateDomain:
 
     def test_validate_domain_raises_with_helpful_message_on_invalid(self) -> None:
         """Unknown domain raises ValueError listing the valid domains."""
-        with pytest.raises(ValueError) as excinfo:
+        with pytest.raises(ValueError) as excinfo:  # noqa: PT011
             observability.validate_domain("nonexistent")
         msg = str(excinfo.value)
         # The error message must reference the invalid value AND list

@@ -16,8 +16,6 @@ the GREEN commit adds the class + alias.
 """
 from __future__ import annotations
 
-import warnings
-
 import pytest
 
 
@@ -90,8 +88,6 @@ class TestSnapshotGraphMissingDeprecationWarning:
     """Importing the legacy name emits a DeprecationWarning (1-release shim)."""
 
     def test_import_legacy_emits_deprecation_warning(self) -> None:
-        import importlib
-        import sys
 
         # Force a fresh import so the warning fires again.
         # Use importlib.reload to re-execute the module import path.
@@ -101,9 +97,9 @@ class TestSnapshotGraphMissingDeprecationWarning:
         # The class identity test above (test_snapshot_graph_missing_is_alias_for_new_class)
         # is the source-of-truth contract for the alias.
         from flow_engineering.snapshot_manager import (
-            SnapshotGraphMissing as legacy,
+            SnapshotGraphMissing as legacy,  # noqa: N813
         )
         from flow_engineering.snapshot_manager import (
-            SnapshotGraphMissingError as canonical,
+            SnapshotGraphMissingError as canonical,  # noqa: N813
         )
         assert legacy is canonical

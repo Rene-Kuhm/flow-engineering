@@ -69,11 +69,11 @@ class TestParseWindow:
 
     def test_parse_window_raises_value_error_on_invalid_format(self) -> None:
         """Garbage like 'foo' / '5' / '5x' / '' raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             observability.parse_window("foo")
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             observability.parse_window("5x")
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             observability.parse_window("")
 
 

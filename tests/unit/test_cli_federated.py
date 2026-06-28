@@ -32,7 +32,7 @@ def _make_obs(
     title: str,
     content: str,
     project: str = "insyd",
-    type: str = "manual",
+    type: str = "manual",  # noqa: A002
     created_at: str | int = "2026-06-15 10:00:00",
 ) -> dict[str, Any]:
     return {
@@ -229,10 +229,10 @@ class TestSearchFederatedProjectsCSV:
         # Re-route via the cli module's backend spy.
         def backend_factory() -> Any:
             class Spy:
-                def mem_search_federated(self_inner, *a: Any, **k: Any) -> Any:  # type: ignore[no-untyped-def]
+                def mem_search_federated(self_inner, *a: Any, **k: Any) -> Any:  # type: ignore[no-untyped-def]  # noqa: N805
                     return spy(*a, **k)
 
-                def mem_search(self_inner, *a: Any, **k: Any) -> Any:  # type: ignore[no-untyped-def]
+                def mem_search(self_inner, *a: Any, **k: Any) -> Any:  # type: ignore[no-untyped-def]  # noqa: N805
                     return []
 
             return Spy()
