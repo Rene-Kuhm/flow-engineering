@@ -36,6 +36,7 @@ from typing import Any
 
 from jinja2 import (
     Environment,
+    FileSystemLoader,
     StrictUndefined,
     TemplateError,
     UndefinedError,
@@ -693,6 +694,39 @@ def _strict_jinja_env() -> Environment:
     internally cached by the ``Environment``).
     """
     return Environment(undefined=StrictUndefined, keep_trailing_newline=True)
+
+
+def _env(loader_path: Path | str | None = None) -> Environment:
+    """Build the shared Jinja2 ``Environment`` (REQ-46 W4 hoisted helper).
+
+    REQ-46 W4: previously ``scaffold._env()`` and ``prompt_registry._safe_jinja_env()``
+    each carried their own copy of the kwargs
+    (``autoescape=select_autoescape()``, ``keep_trailing_newline=True``).
+    That duplicated the policy in two places — easy to drift if a future
+    maintainer added an option to one but not the other. This helper is
+    the single source of truth for those flags.
+
+    Args:
+        loader_path: When provided, the returned env is configured with a
+            :class:`jinja2.FileSystemLoader` rooted at this directory so
+            callers can use ``env.get_template("<name>.j2")`` to fetch a
+            file by name (used by ``scaffold.render_new_change`` etc.).
+            When ``None``, the env has no loader and only supports
+            ``env.from_string(<source>)``.
+
+    Returns:
+        A fresh :class:`jinja2.Environment` instance. The function is
+        intentionally NOT cached: each caller wants its own loader
+        configuration, and Jinja2 internally caches parsed templates
+        within each ``Environment``.
+    """
+    kwargs: dict[str, Any] = {
+        "autoescape": select_autoescape(),
+        "keep_trailing_newline": True,
+    }
+    if loader_path is not None:
+        kwargs["loader"] = FileSystemLoader(str(loader_path))
+    return Environment(**kwargs)
 
 
 def _safe_jinja_env() -> Environment:
