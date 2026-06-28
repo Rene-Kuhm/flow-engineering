@@ -70,7 +70,7 @@ import tempfile
 import time as _time
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field as _dc_field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -121,6 +121,7 @@ build the per-call project-bucket histogram.
 """
 
 if TYPE_CHECKING:
+    from flow_engineering.decision_drift import DriftReport
     from flow_engineering.engram_io import EngramBackend
 
 
@@ -724,48 +725,8 @@ def summarize(events: Iterable[MetricEvent]) -> dict[str, dict[str, int]]:
     return {domain: dict(counters) for domain, counters in grouped.items()}
 
 
-def prometheus_exposition(events: Iterable[MetricEvent]) -> str:
-    """Format events as Prometheus textfile exposition (D6 monotonic counter semantics).
-
-    Emits ``# HELP <name> <description>`` + ``# TYPE <name> <type>`` comments
-    plus one metric line per counter. Counter names ending in ``_total`` map
-    to Prometheus ``counter`` type; bare names map to ``gauge`` (REQ-38 D6).
-    """
-    lines: list[str] = []
-    seen_types: dict[str, str] = {}
-    metric_lines: dict[str, list[str]] = defaultdict(list)
-    for event in events:
-        name = event.counter_name
-        if name.endswith("_total"):
-            ptype = "counter"
-        else:
-            ptype = "gauge"
-        if name not in seen_types:
-            seen_types[name] = ptype
-        labels_str = ""
-        if event.labels:
-            label_parts = []
-            for k, v in event.labels.items():
-                label_parts.append(f'{k}="{v}"')
-            labels_str = "{" + ",".join(label_parts) + "}"
-        contribution = event.labels.get("count", 1)
-        try:
-            value = float(contribution)
-        except (TypeError, ValueError):
-            value = 1.0
-        metric_lines[name].append(f"{name}{labels_str} {value}")
-    for name in sorted(metric_lines):
-        ptype = seen_types[name]
-        lines.append(f"# HELP {name} flow-engineering counter {name}")
-        lines.append(f"# TYPE {name} {ptype}")
-        lines.extend(metric_lines[name])
-    return "\n".join(lines) + ("\n" if lines else "")
-
-
 # ---------- Change #6 PR#2 T2.1: Prometheus textfile exposition (REQ-38 / D6) ----------
 
-
-from dataclasses import field as _dc_field
 
 #: Default prefix prepended to every Prometheus metric name (D6 / REQ-38).
 #: Callers may override per-call via the ``prefix`` kwarg on
