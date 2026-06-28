@@ -1,4 +1,15 @@
+<!-- spec.md: decision-drift capability catalog. Source: sdd-spec bootstrap in drift-hardening batch D. Archive sync: 2026-06-27. -->
 # Decision-Drift Capability Spec
+
+## Archive status (2026-06-27)
+
+**drift-hardening (change #8) SHIPPED as v0.8.0 — single PR, 4 sequential apply batches (A + B + C + D), 22 tasks complete, ~9 700 realistic LOC landed across 7 commits on `main` (HEAD `4bbcc21`).**
+
+**REQs shipped**: REQ-55 (drift_event_log JSONL writer + still-valid silence), REQ-56 (dataclass shape migration — `decision_id: int`, `scanned_at: str ISO 8601`, `unable_reason: str | None`, 2-arg `classify_binding`), REQ-57 (21 NEW BDD scenarios across 6 feature files), REQ-58 (snapshot spec/design field reconciliation), REQ-59 (W23 dual-name coexistence deprecation + S2 stderr WARN).
+
+**Verdict at archive**: **PASS WITH WARNINGS — archive-ready**. Per `verify-report.md` (mirrored to `openspec/changes/drift-hardening/verify-report.md` and soon `openspec/changes/archive/2026-06-27-drift-hardening/verify-report.md` once the verify agent moves it): **0 CRITICAL findings** + **9 WARNING** (3 design deviations from D2/OQ-10, all explicitly endorsed by the orchestrator brief; 6 doc/style debt) + **5 SUGGESTION** (all non-blocking v0.9.0/v1.0 follow-ups). All 22 tasks (T1.1..T4.5) closed + 1 120/1 125 tests passing + 24 BDD scenarios in drift-related feature files pass + 108/108 drift-hardening unit tests pass + 13/13 v0.8.0 migration RED→GREEN tests pass. The 5 pre-existing pytest failures trace to changes #6 PR#2 (observability) + #7 PR#1 (prompt-registry) — NOT drift-hardening regressions — and are NOT blockers for this archive. **Archive the artifacts regardless** per orchestrator brief; W-fix commits for the 3 design deviations (W1/W2/W3) are endorsed by the brief and the capability spec's migration note.
+
+The 1-release legacy shims (`Finding.from_legacy`, `DriftReport.from_legacy`, `classify_binding_legacy`) and the new `unable_reason: str | None` field are documented below per the brief. The dataclass shape migration deviated from the original design.md (which proposed `__post_init__` coercion + `@property graph_unavailable` rename) to follow the orchestrator brief's `from_legacy()` classmethod pattern + `graph_unavailable: bool` (canonical, NOT renamed) + `unable_reason: str | None` (NEW). This spec reflects the FINAL brief-aligned shape, not the original design.md proposal.
 
 ## v0.8.0 migration note (REQ-56 W8 / REQ-57)
 

@@ -66,7 +66,7 @@ From v0.7.x to v0.8.0:
 
 ### Tests
 
-- 1115 / 1115 tests passing (`uv run pytest`).
+- 1115 / 1115 tests passing nominal in the `drift-hardening` cluster (`uv run pytest`); **1120 / 1125 effective** accounting for 5 pre-existing failures inherited from changes #6 PR#2 + #7 PR#1 (unrelated to `drift-hardening`; tracked separately).
 - 53 BDD scenarios across 24 feature files (req10/11/12/13/14/16 + req15_drift_daemon extensions + prior scenarios from earlier changes).
 
 ### Notes

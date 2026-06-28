@@ -26,15 +26,15 @@ from flow_engineering.state import ChangeStatus, StateMachine
 from flow_engineering.watcher import ExplorationFileHandler
 
 if TYPE_CHECKING:
-    from flow_engineering.engram_io import EngramBackend
     from flow_engineering.decision_drift import DriftReport
+    from flow_engineering.engram_io import EngramBackend
 
 
 DEFAULT_DRIFT_GRAPH_PATH: Path = Path.home() / ".flow-engineering" / "graph.json"
 
 
 def _append_drift_events(
-    report: "DriftReport", *, path: Path | None = None
+    report: DriftReport, *, path: Path | None = None
 ) -> None:
     """Append one JSONL line per NON-STILL_VALID finding to the drift event log (REQ-55 W5).
 
@@ -70,9 +70,9 @@ def handle_apply_progress_event(
     apply_progress: dict[str, Any],
     *,
     graph_json_path: Path | None = None,
-    backend: "EngramBackend | None" = None,
+    backend: EngramBackend | None = None,
     on_summary: Callable[[str], None] | None = None,
-) -> "DriftReport | None":
+) -> DriftReport | None:
     """Process one apply-progress update from the daemon (REQ-15).
 
     When at least one task has ``status: merged``, runs
@@ -151,7 +151,7 @@ def _maybe_emit_drift(
     change: str,
     change_dir: Path,
     graph_json_path: Path | None,
-    backend: "EngramBackend | None",
+    backend: EngramBackend | None,
     on_summary: Callable[[str], None] | None,
 ) -> None:
     """Internal filter: only react to apply-progress file events."""
@@ -195,7 +195,7 @@ def start_watch(
     *,
     drift: bool = False,
     graph_json_path: Path | None = None,
-    backend: "EngramBackend | None" = None,
+    backend: EngramBackend | None = None,
     on_summary: Callable[[str], None] | None = None,
 ) -> tuple[bool, str]:
     """Start a watchdog observer for the given change.

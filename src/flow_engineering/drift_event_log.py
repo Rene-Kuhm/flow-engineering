@@ -88,10 +88,9 @@ class DriftEventLog:
         lock is released so a subsequent crash does not lose the line.
         """
         line = json.dumps(event.to_json_dict(), ensure_ascii=False) + "\n"
-        with self._lock:
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(line)
-                fh.flush()
+        with self._lock, self.path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+            fh.flush()
 
     def read_all(self) -> list[DriftEvent]:
         """Return all events from the JSONL file in append order.
