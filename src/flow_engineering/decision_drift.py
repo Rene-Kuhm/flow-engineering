@@ -110,12 +110,11 @@ def classify_binding(
     ref: CodeRef,
     graph_nodes: dict[str, dict],
 ) -> DriftClass:
-    """Classify a single ``CodeRef`` against the current graph state (REQ-9).
+    """Classify a single ``CodeRef`` against the current graph state (REQ-9 + REQ-V9.3).
 
-    v0.8.0 signature (REQ-56 W8): 2-arg ``(ref, graph_nodes)``. The
-    ``current_id_map`` lookup table is derived internally from
-    ``graph_nodes`` in O(N) at function entry. The legacy 3-arg signature
-    is retained as :func:`classify_binding_legacy` for one release with a
+    v0.9.0 signature (REQ-V9.3): 2-arg ``(ref, graph_nodes)`` is the ONLY
+    entry point. The v0.8.0 3-arg signature was retained as
+    :func:`classify_binding_legacy` for one release with a
     ``DeprecationWarning`` shim; it is removed in v0.9.0.
 
     Algorithm (REQ-9):
@@ -159,27 +158,6 @@ def _classify_with_id_map(
     if cur_label != binding.label:
         return DriftClass.LABEL_DRIFT
     return DriftClass.STILL_VALID
-
-
-def classify_binding_legacy(
-    binding: CodeRef,
-    current_nodes: dict[str, dict],
-    current_id_map: dict[str, tuple[str, int, str]],
-) -> DriftClass:
-    """Backward-compat 3-arg classifier for v0.7.x callers (REQ-56 W8).
-
-    Emits ``DeprecationWarning`` and delegates to the 2-arg
-    :func:`classify_binding` after deriving ``current_id_map`` from
-    ``current_nodes`` (the 3-arg shape is preserved for one release).
-    Removed in v0.9.0.
-    """
-    warnings.warn(
-        "classify_binding 3-arg signature deprecated; "
-        "use 2-arg classify_binding(ref, graph_nodes) (REQ-56 W8)",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return classify_binding(binding, current_nodes)
 
 
 class SnapshotGraphMissing(ValueError):
