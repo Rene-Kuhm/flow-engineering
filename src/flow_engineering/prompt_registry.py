@@ -36,6 +36,49 @@ from typing import Any
 from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError, meta
 
 
+class PromptRenderError(Exception):
+    """Base class for render-related failures (REQ-46).
+
+    Per design D9, the future ``flow prompts show <id>`` CLI maps this
+    exception to exit code 5 (render error). Subclasses cover the specific
+    failure modes (unknown prompt id, missing variable, template parse
+    error, Jinja2 render error).
+
+    Attributes:
+        payload: Structured diagnostic dict with at least ``"prompt"``
+            (the prompt id), ``"reason"`` (a stable short string code),
+            and ``"error"`` (the human-readable message). CLI surfaces
+            read ``payload`` directly; downstream consumers MUST NOT
+            depend on the ``str(exc)`` format (which mirrors ``error``).
+    """
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__(payload.get("error", "prompt render failed"))
+        self.payload = dict(payload)
+
+
+class PromptNotFoundError(PromptRenderError, KeyError):
+    """Raised when ``render_prompt`` is called with an unknown prompt name.
+
+    Inherits from both ``PromptRenderError`` (for the CLI exit-code-5
+    mapping per design D9) and ``KeyError`` (preserves the original
+    REQ-46 §"render contract" contract that unknown ids raise ``KeyError``).
+    Use ``isinstance(exc, KeyError)`` for legacy callers that catch
+    ``KeyError`` directly.
+    """
+
+    def __init__(self, prompt_id: str) -> None:
+        PromptRenderError.__init__(
+            self,
+            {
+                "prompt": prompt_id,
+                "reason": "not_found",
+                "error": f"unknown prompt {prompt_id!r}",
+            },
+        )
+        KeyError.__init__(self, prompt_id)
+
+
 class PromptDomain(str, Enum):
     """Categorical domain for prompt grouping.
 
@@ -501,6 +544,8 @@ __all__ = [
     "PROMPT_NAMES",
     "PromptDef",
     "PromptDomain",
+    "PromptNotFoundError",
+    "PromptRenderError",
     "get_prompt",
     "get_prompt_metadata",
     "get_prompt_template",
@@ -546,9 +591,19 @@ def render_prompt(name: str, **kwargs: Any) -> str:
     Looks up the prompt in :data:`PROMPT_NAMES` via :func:`get_prompt`,
     compiles its template body through the shared strict Jinja2
     ``Environment``, and renders with ``**kwargs``. Strict mode raises
-    :class:`jinja2.UndefinedError` on missing declared variables so
+    :class:`PromptRenderError` on missing declared variables so
     runtime callers cannot accidentally inject empty strings into agent
-    context (per design OQ-4).
+    context (per design OQ-4). The CLI maps :class:`PromptRenderError`
+    to exit code 5 per design D9.
+
+    The 4 migrated entries (``strict_tdd``, ``auto_suggest_header``,
+    ``auto_suggest_footer``, ``auto_suggest_empty``) use Python
+    ``str.format()`` syntax (``{test_command}``); Jinja2 treats those
+    braces as literal text, so the renderer detects templates without
+    Jinja2 ``{{ var }}`` placeholders and falls back to
+    ``prompt.template.format(**kwargs)``. This keeps the public
+    ``render_prompt(name, **kwargs)`` API uniform across both template
+    styles (REQ-46 W5).
 
     Args:
         name: The catalog identifier (e.g., ``"strict_tdd"``).
@@ -562,31 +617,73 @@ def render_prompt(name: str, **kwargs: Any) -> str:
         template body. Trailing newline is preserved.
 
     Raises:
-        KeyError: When ``name`` is not in the catalog (propagated from
-            :func:`get_prompt`).
-        jinja2.UndefinedError: When the template references a variable
-            that was not provided in ``**kwargs``. The prompt name is
-            prefixed to the message for debuggability.
-        jinja2.TemplateError: For any other Jinja2 template error (parse
-            error, runtime error). The prompt name is prefixed to the
-            message.
+        PromptNotFoundError: When ``name`` is not in the catalog. Also
+            a :class:`KeyError` subclass for legacy callers.
+        PromptRenderError: When the template references a variable
+            that was not provided in ``**kwargs`` (Jinja2 ``UndefinedError``
+            or Python ``.format()`` ``KeyError``), or when the template
+            fails to parse / render.
 
     Examples:
         >>> render_prompt("jinja_simple", user_name="World")
         'Hello, World!'
+        >>> render_prompt("strict_tdd", test_command="pytest")
+        'STRICT TDD MODE IS ACTIVE. Test runner: pytest. ...'
     """
-    prompt = get_prompt(name)
-    template = _strict_jinja_env().from_string(prompt.template)
     try:
-        return template.render(**kwargs)
+        prompt = get_prompt(name)
+    except KeyError as exc:
+        raise PromptNotFoundError(name) from exc
+    env = _strict_jinja_env()
+    template = env.from_string(prompt.template)
+    try:
+        rendered = template.render(**kwargs)
     except UndefinedError as exc:
-        raise UndefinedError(
-            f"prompt {name!r} requires undefined variable: {exc.message}"
+        raise PromptRenderError(
+            {
+                "prompt": name,
+                "reason": "missing_var",
+                "variable": getattr(exc, "message", str(exc)),
+                "error": (
+                    f"prompt {name!r} requires undefined variable: "
+                    f"{getattr(exc, 'message', str(exc))}"
+                ),
+            }
         ) from exc
     except TemplateError as exc:
-        raise TemplateError(
-            f"prompt {name!r} template error: {exc.message}"
+        raise PromptRenderError(
+            {
+                "prompt": name,
+                "reason": "template_error",
+                "error": f"prompt {name!r} template error: {exc.message}",
+            }
         ) from exc
+
+    # W5 fallback: templates that contain NO Jinja2 placeholders (the 4
+    # migrated entries) are treated as Python ``str.format()`` templates
+    # so the public ``render_prompt(name, **kwargs)`` API works for both
+    # template styles. Jinja2 has already substituted anything it found;
+    # if there were no Jinja2 placeholders AND the output is identical
+    # to the source template, we still need to do the .format() pass.
+    if rendered == prompt.template:
+        ast = env.parse(prompt.template)
+        if not meta.find_undeclared_variables(ast):
+            try:
+                return prompt.template.format(**kwargs)
+            except KeyError as exc:
+                var = exc.args[0]
+                raise PromptRenderError(
+                    {
+                        "prompt": name,
+                        "reason": "missing_var",
+                        "variable": var,
+                        "error": (
+                            f"prompt {name!r} requires undefined variable: "
+                            f"{var}"
+                        ),
+                    }
+                ) from exc
+    return rendered
 
 
 def render_prompt_safe(name: str, **kwargs: Any) -> str:
