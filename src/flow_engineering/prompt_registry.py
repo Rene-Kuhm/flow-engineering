@@ -910,14 +910,19 @@ def _emit_render_record(
     ok: bool,
     error: str | None,
     var_keys: tuple[str, ...],
+    domain: str | None = None,
 ) -> None:
-    """Emit one JSONL line to the prompt render sink (REQ-V1.1.3).
+    """Emit one JSONL line to the prompt render sink (REQ-V1.1.3) and
+    increment the prompt render counters (REQ-V1.1.4).
 
     Best-effort: failures are swallowed at the :func:`record_prompt_render`
     boundary so a missing dir / full disk never crashes the render path.
     The sink is opt-in via ``FLOW_PROMPT_LOG=1`` (default OFF) so write-free
-    agent flows are untouched.
+    agent flows are untouched. The observability counters are emitted
+    unconditionally — they flow through :func:`observability.increment`
+    which is itself best-effort.
     """
+    from flow_engineering.observability import record_prompt_render_summary
     from flow_engineering.prompt_render_log import record_prompt_render
 
     elapsed_ms = (_time.monotonic() - start_monotonic) * 1000.0
@@ -928,6 +933,14 @@ def _emit_render_record(
         ok=ok,
         error=error,
         var_keys=var_keys,
+    )
+    # Surface to the observability dashboard (REQ-V1.1.4).
+    record_prompt_render_summary(
+        prompt_id=name,
+        domain=domain or "unknown",
+        elapsed_ms=elapsed_ms,
+        ok=ok,
+        error=error,
     )
 
 
