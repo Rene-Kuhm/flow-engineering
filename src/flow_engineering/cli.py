@@ -1983,6 +1983,55 @@ def drift_events_list(
         return
 
 
+@drift_events_group.command(name="tail")
+@click.option("--limit", type=int, default=10,
+              help="Number of events to show, newest-first (default: 10).")
+@click.option("--change", default=None,
+              help="Filter events for a specific change name.")
+@click.option("--event-class", default=None,
+              help="Filter events by drift class (e.g. LABEL_DRIFT).")
+@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Alternative drift event log path "
+                   "(default: ~/.flow-engineering/drift_events.jsonl).")
+@click.option("--format", "fmt", default="text",
+              type=click.Choice(["text", "json"]),
+              help="Output format (default: text).")
+def drift_events_tail(
+    limit: int,
+    change: str | None,
+    event_class: str | None,
+    log_path: Path | None,
+    fmt: str,
+) -> None:
+    """Show the last N drift events newest-first (REQ-V1.0.3).
+
+    Mirrors the shell ``tail -n`` semantics: events are sorted by
+    ``detected_at`` descending and the first ``--limit`` rows are
+    rendered (default 10). Filters compose: ``--change`` and
+    ``--event-class`` are applied BEFORE the limit so the operator sees
+    the most recent N matching events, not the most recent N events
+    post-filtered.
+    """
+    log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
+    events = log.read_all()
+    events = sorted(events, key=lambda ev: ev.detected_at, reverse=True)
+    events = _filter_drift_events(
+        events,
+        since_ts=None,
+        until_ts=None,
+        change=change,
+        event_class=event_class,
+        limit=limit,
+    )
+
+    if fmt == "text":
+        click.echo(_format_drift_events_text(events))
+        return
+    click.echo(
+        json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2)
+    )
+
+
 # ---------- REQ-24: flow projects backfill ----------
 
 
