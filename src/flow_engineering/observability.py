@@ -254,32 +254,19 @@ def _resolve_metrics_max_age_days() -> int:
     return max(0, value)
 
 
-def _rotate_metrics_if_needed(path: Path) -> None:
-    """Rotate ``path`` when its size meets the configured threshold (REQ-V1.2.1).
+def _delete_stale_metrics_siblings(path: Path, max_age_days: int) -> None:
+    """Delete rotated ``metrics.*.jsonl`` siblings older than ``max_age_days``.
 
-    Mirrors ``drift_event_log._rotate_if_needed`` at lines 220-254. The
-    helper is best-effort: every filesystem call is wrapped in
-    ``try/except OSError`` so a slow rename on a network FS never crashes
-    the sink. Behaviour:
+    Extracted from :func:`_rotate_metrics_if_needed` so the age-cleanup
+    concern is testable in isolation. Behaviour:
 
-    - If ``path.stat().st_size >= FLOW_METRICS_LOG_MAX_BYTES`` (default 10 MB),
-      rename ``path`` to ``metrics.<ISO-no-colons>.jsonl`` so the next
-      append creates a fresh active file.
-    - When ``FLOW_METRICS_LOG_MAX_AGE_DAYS`` is set, walk sibling files
-      matching ``metrics.*.jsonl`` and delete any whose mtime is older
-      than the cutoff. ``0`` (or unset-with-default) means 30 days.
+    - ``max_age_days <= 0`` returns immediately (cleanup disabled).
+    - Otherwise walk ``path.parent.glob("metrics.*.jsonl")`` and unlink
+      any sibling whose ``st_mtime`` is older than the cutoff.
+    - The active ``path`` itself is skipped (never delete the live sink).
+    - All filesystem operations are wrapped in ``try/except OSError``
+      so a slow FS never crashes the caller (best-effort contract).
     """
-    threshold = _resolve_metrics_rotation_threshold_bytes()
-    if threshold > 0 and path.exists():
-        try:
-            if path.stat().st_size >= threshold:
-                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-                rotated = path.with_name(f"metrics.{stamp}.jsonl")
-                path.rename(rotated)
-        except OSError:
-            pass
-
-    max_age_days = _resolve_metrics_max_age_days()
     if max_age_days <= 0:
         return
     cutoff = datetime.now(UTC).timestamp() - (max_age_days * 86400)
@@ -292,6 +279,33 @@ def _rotate_metrics_if_needed(path: Path) -> None:
                 sibling.unlink()
         except OSError:
             pass
+
+
+def _rotate_metrics_if_needed(path: Path) -> None:
+    """Rotate ``path`` when its size meets the configured threshold (REQ-V1.2.1).
+
+    Mirrors ``drift_event_log._rotate_if_needed`` at lines 220-254. The
+    helper is best-effort: every filesystem call is wrapped in
+    ``try/except OSError`` so a slow rename on a network FS never crashes
+    the sink. Behaviour:
+
+    - If ``path.stat().st_size >= FLOW_METRICS_LOG_MAX_BYTES`` (default 10 MB),
+      rename ``path`` to ``metrics.<ISO-no-colons>.jsonl`` so the next
+      append creates a fresh active file.
+    - Delegate to :func:`_delete_stale_metrics_siblings` for the
+      age-based cleanup of rotated siblings (default 30 days).
+    """
+    threshold = _resolve_metrics_rotation_threshold_bytes()
+    if threshold > 0 and path.exists():
+        try:
+            if path.stat().st_size >= threshold:
+                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                rotated = path.with_name(f"metrics.{stamp}.jsonl")
+                path.rename(rotated)
+        except OSError:
+            pass
+
+    _delete_stale_metrics_siblings(path, _resolve_metrics_max_age_days())
 
 
 def flush() -> None:
