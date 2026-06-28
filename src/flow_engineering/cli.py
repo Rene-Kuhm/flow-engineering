@@ -23,7 +23,11 @@ from flow_engineering.binding import (
     extract_code_refs,
 )
 from flow_engineering.daemon import start_watch
-from flow_engineering.drift_event_log import DriftEvent, DriftEventLog
+from flow_engineering.drift_event_log import (
+    DriftEvent,
+    DriftEventLog,
+    DriftEventLogLegacyFormatError,
+)
 from flow_engineering.engram_io import (
     EngramBackend,
     EngramClient,
@@ -1902,6 +1906,41 @@ def _filter_drift_events(
     return out
 
 
+def _read_drift_events_with_legacy_policy(
+    log: DriftEventLog, *, strict: bool, log_path: Path
+) -> list[DriftEvent]:
+    """Read drift events from ``log``, handling legacy ``str`` decision_id lines.
+
+    REQ-V1.1.2 S2 hardening: legacy ``str`` decision_id lines from
+    pre-v1.0 sinks raise :class:`DriftEventLogLegacyFormatError`. The
+    read-side CLI catches the error per-file:
+
+    - ``--strict`` mode aborts on first legacy line with exit code 4 +
+      CHANGELOG v1.0 ``sed`` migration hint.
+    - Default mode emits a per-batch stderr WARN and returns ``[]``
+      (legacy contamination preserved + visible to the operator).
+
+    The CHANGELOG v1.0 ``sed`` migration is the documented upgrade path.
+    """
+    try:
+        return log.read_all()
+    except DriftEventLogLegacyFormatError as exc:
+        if strict:
+            click.echo(
+                f"error: legacy format detected in {log_path}; {exc}\n"
+                "Run the CHANGELOG v1.0 sed migration to fix in place.",
+                err=True,
+            )
+            sys.exit(4)
+        click.echo(
+            f"warning: skipped legacy str decision_id lines in {log_path}; "
+            "use --strict to abort. Run the CHANGELOG v1.0 sed migration "
+            "to fix in place.",
+            err=True,
+        )
+        return []
+
+
 @drift_events_group.command(name="list")
 @click.option("--since", default=None,
               help="Filter events with detected_at >= <iso> (ISO 8601).")
@@ -1919,6 +1958,9 @@ def _filter_drift_events(
 @click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
               help="Alternative drift event log path "
                    "(default: ~/.flow-engineering/drift_events.jsonl).")
+@click.option("--strict", is_flag=True,
+              help="Abort on first legacy str decision_id line "
+                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
 def drift_events_list(
     since: str | None,
     until: str | None,
@@ -1927,8 +1969,9 @@ def drift_events_list(
     limit: int | None,
     fmt: str,
     log_path: Path | None,
+    strict: bool,
 ) -> None:
-    """List drift events with optional filters (REQ-V1.0.2)."""
+    """List drift events with optional filters (REQ-V1.0.2 + REQ-V1.1.2)."""
     try:
         since_ts, until_ts = _parse_since_until(since, until)
     except ValueError as exc:
@@ -1936,7 +1979,9 @@ def drift_events_list(
         sys.exit(observability.EXIT_INVALID_VALUE)
 
     log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
-    events = log.read_all()
+    events = _read_drift_events_with_legacy_policy(
+        log, strict=strict, log_path=log.path
+    )
     events = _filter_drift_events(
         events,
         since_ts=since_ts,
@@ -1997,14 +2042,18 @@ def drift_events_list(
 @click.option("--format", "fmt", default="text",
               type=click.Choice(["text", "json"]),
               help="Output format (default: text).")
+@click.option("--strict", is_flag=True,
+              help="Abort on first legacy str decision_id line "
+                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
 def drift_events_tail(
     limit: int,
     change: str | None,
     event_class: str | None,
     log_path: Path | None,
     fmt: str,
+    strict: bool,
 ) -> None:
-    """Show the last N drift events newest-first (REQ-V1.0.3).
+    """Show the last N drift events newest-first (REQ-V1.0.3 + REQ-V1.1.2).
 
     Mirrors the shell ``tail -n`` semantics: events are sorted by
     ``detected_at`` descending and the first ``--limit`` rows are
@@ -2014,7 +2063,9 @@ def drift_events_tail(
     post-filtered.
     """
     log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
-    events = log.read_all()
+    events = _read_drift_events_with_legacy_policy(
+        log, strict=strict, log_path=log.path
+    )
     events = sorted(events, key=lambda ev: ev.detected_at, reverse=True)
     events = _filter_drift_events(
         events,
@@ -2048,6 +2099,9 @@ def drift_events_tail(
               help="Output format (default: text).")
 @click.option("--top-n", "top_n", type=int, default=5,
               help="Top-N decision_ids by frequency (default: 5).")
+@click.option("--strict", is_flag=True,
+              help="Abort on first legacy str decision_id line "
+                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
 def drift_events_stats(
     change: str | None,
     since: str | None,
@@ -2055,8 +2109,9 @@ def drift_events_stats(
     log_path: Path | None,
     fmt: str,
     top_n: int,
+    strict: bool,
 ) -> None:
-    """Per-event-class + per-change + per-decision-id counts (REQ-V1.0.3).
+    """Per-event-class + per-change + per-decision-id counts (REQ-V1.0.3 + REQ-V1.1.2).
 
     Renders an aligned text table with 3 sections (or a JSON envelope
     with ``by_event_class``, ``by_change``, ``by_decision_id`` keys).
@@ -2070,7 +2125,9 @@ def drift_events_stats(
         sys.exit(observability.EXIT_INVALID_VALUE)
 
     log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
-    events = log.read_all()
+    events = _read_drift_events_with_legacy_policy(
+        log, strict=strict, log_path=log.path
+    )
     events = _filter_drift_events(
         events,
         since_ts=since_ts,
