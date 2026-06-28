@@ -193,7 +193,7 @@ def test_classify_binding_never_returns_contradicted() -> None:
 
 def test_finding_is_frozen() -> None:
     f = Finding(
-        decision_id="obs-1",
+        decision_id=1,
         binding=_ref(),
         drift_class=DriftClass.STILL_VALID,
         detail="ok",
