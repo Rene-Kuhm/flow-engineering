@@ -22,6 +22,7 @@ runtime render path. The reader mirrors :class:`DriftEventLog.read_all`
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import threading
@@ -107,10 +108,9 @@ class PromptRenderLog:
         render path never crashes on a full disk).
         """
         line = json.dumps(event.to_json_dict(), ensure_ascii=False) + "\n"
-        with self._lock:
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(line)
-                fh.flush()
+        with self._lock, self.path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+            fh.flush()
 
     def read_all(self) -> list[PromptRenderEvent]:
         """Return all events from the JSONL file in append order.
@@ -186,10 +186,8 @@ def record_prompt_render(
         error=error,
         var_keys=tuple(var_keys),
     )
-    try:
+    with contextlib.suppress(OSError):
         _log_for().append(event)
-    except OSError:
-        pass
 
 
 __all__ = [

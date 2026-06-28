@@ -106,6 +106,7 @@ class SnapshotGraphMissingError(Exception):
 # so v1.0 callers that imported ``SnapshotGraphMissing`` keep working
 # until v1.2. Both names refer to the SAME class — there is no parallel
 # hierarchy. DeprecationWarning fires at import time.
+import contextlib
 import warnings as _warnings
 
 
@@ -525,10 +526,8 @@ class SnapshotManager:
             tmp_path.replace(target)
         except Exception:
             if tmp_path is not None:
-                try:
+                with contextlib.suppress(OSError):
                     tmp_path.unlink()
-                except OSError:
-                    pass
             raise
 
         # REQ-26 T1.7: emit snapshot_create_total after the atomic replace.
