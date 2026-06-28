@@ -2730,5 +2730,125 @@ def prompts_lint(json_flag: bool) -> None:
         sys.exit(1)
 
 
+# ---------- REQ-50 T3.1: flow prompts list subcommand ----------
+
+
+_PROMPT_REGISTRY_SCHEMA_VERSION: str = "1.0"
+"""Catalog-wide schema version for the prompt-registry entries.
+
+Mirrors the spec REQ-50 schema_version contract. Surfaced via
+``flow prompts list --json`` so downstream consumers can detect
+catalog-shape drift between runtime + capability spec.
+"""
+
+
+def _format_prompts_list_row(entry: Any) -> str:
+    """Format one PROMPT_NAMES row for the `flow prompts list` text table.
+
+    Columns: ``prompt_id`` (24-wide), ``version`` (10-wide), ``owner``
+    (24-wide), ``location``. The owner is rendered as
+    ``flow/{domain.value}`` so it matches the spec REQ-50 S1 verbatim
+    (``flow/observability`` / ``flow/binding``).
+    """
+    domain_value = (
+        entry.domain.value
+        if hasattr(entry.domain, "value")
+        else str(entry.domain)
+    )
+    location = "prompts/" + entry.name + ".j2"
+    return (
+        f"{entry.name:<24}  "
+        f"{entry.version:<10}  "
+        f"flow/{domain_value:<20}  "
+        f"{location}"
+    )
+
+
+def _render_prompts_list_table(entries: list[Any]) -> str:
+    """Pretty-print the prompts list as a fixed-width text table.
+
+    Returns the full multi-line string (header + rows + footer). Mirrors
+    the ``flow metrics`` table layout precedent per REQ-8.
+    """
+    headers = ("prompt_id", "version", "owner", "location")
+    sep = "-" * 78
+    lines: list[str] = []
+    lines.append("  ".join(h.upper().ljust(24) for h in headers))
+    lines.append(sep)
+    for entry in entries:
+        lines.append(_format_prompts_list_row(entry))
+    lines.append(sep)
+    lines.append(f"{len(entries)} prompt entries")
+    return "\n".join(lines)
+
+
+def _serialize_prompts_list(entries: list[Any]) -> dict[str, Any]:
+    """Project PROMPT_NAMES entries into the REQ-50 ``--json`` shape.
+
+    Shape: ``{"prompts": [...], "count": N, "registry_schema_version": "1.0"}``
+    where each prompt entry has ``name``, ``version``, ``owner``
+    (``flow/{domain.value}``), ``location``, ``domain``.
+    """
+    prompts: list[dict[str, Any]] = []
+    for entry in entries:
+        domain_value = (
+            entry.domain.value
+            if hasattr(entry.domain, "value")
+            else str(entry.domain)
+        )
+        prompts.append(
+            {
+                "name": entry.name,
+                "version": entry.version,
+                "owner": f"flow/{domain_value}",
+                "location": "prompts/" + entry.name + ".j2",
+                "domain": domain_value,
+            }
+        )
+    return {
+        "prompts": prompts,
+        "count": len(prompts),
+        "registry_schema_version": _PROMPT_REGISTRY_SCHEMA_VERSION,
+    }
+
+
+@prompts_group.command(name="list")
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text table.",
+)
+def prompts_list(json_flag: bool) -> None:
+    """List every prompt in the registry (REQ-50 S1).
+
+    Default text output: a fixed-width table with columns
+    ``prompt_id`` / ``version`` / ``owner`` / ``location``, followed
+    by a footer ``N prompt entries``. Owners are rendered as
+    ``flow/{domain.value}`` to match the spec verbatim
+    (``flow/observability`` / ``flow/binding``).
+
+    ``--json`` emits the flat-dict shape that mirrors REQ-8
+    ``flow metrics --json``: ``{"prompts": [...], "count": N,
+    "registry_schema_version": "1.0"}``.
+
+    Exit codes: 0 always (this is a read-only introspection command).
+    """
+    from flow_engineering import prompt_registry
+
+    entries = prompt_registry.list_prompts()
+    if json_flag:
+        click.echo(
+            json.dumps(
+                _serialize_prompts_list(entries),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    click.echo(_render_prompts_list_table(entries))
+
+
 if __name__ == "__main__":
     main()
