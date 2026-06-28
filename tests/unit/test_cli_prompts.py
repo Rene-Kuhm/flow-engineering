@@ -205,6 +205,138 @@ class TestPromptsCheckInit:
         )
 
 
+# ---------- T2.2 (T2.5 W1 follow-up): --update / --no-fail / --skill flags ----------
+
+
+class TestCheckFlags:
+    def test_update_flag_refreshes_sidecar(
+        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts check --update` refreshes the sidecar JSON and exits 0.
+
+        Per verify-report-pr2a.md W1 + tasks-pr2.md T2.2: ``--update`` must
+        call ``update_checksums()`` (which is functionally equivalent to
+        ``init_checksums()``), print a confirmation line including the count
+        of refreshed entries, and exit 0 unconditionally. The CLI MUST NOT
+        pass-through to the drift-detection branch (which would emit drift
+        lines).
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", clean_catalog)
+        result = runner.invoke(main, ["prompts", "check", "--update"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on --update; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "Updated" in result.stdout, (
+            f"expected 'Updated' marker in stdout; got {result.stdout!r}"
+        )
+        # The sidecar file MUST exist on disk after --update.
+        skill_path = Path(clean_catalog["sdd-test/skill"].expected_path)
+        sidecar_file = skill_path.parent / ".flow-engineering" / "prompt_checksums.json"
+        assert sidecar_file.exists(), (
+            f"expected sidecar at {sidecar_file}; file not found"
+        )
+
+    def test_no_fail_flag_exits_zero_on_drift(
+        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts check --no-fail` exits 0 even when drift is detected.
+
+        Per verify-report-pr2a.md W1 + design D5: ``--no-fail`` suppresses
+        exit 1 on drift detection so CI pipelines can use ``flow prompts
+        check`` as a warning-only gate. The drift lines MUST still appear in
+        stdout (visibility preserved), but the exit code MUST be 0.
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", drifted_catalog)
+        result = runner.invoke(main, ["prompts", "check", "--no-fail"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 with --no-fail on drift; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        # Drift is still surfaced in stdout for visibility.
+        assert "sdd-test" in result.stdout or "drift" in result.stdout.lower(), (
+            f"expected drift marker in stdout even with --no-fail; "
+            f"got {result.stdout!r}"
+        )
+
+    def test_skill_flag_filters_to_named_skill(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts check --skill sdd-apply` filters to a single skill.
+
+        Per verify-report-pr2a.md W1 + tasks-pr2.md T2.2: ``--skill <name>``
+        limits the catalog walk to the named skill's two surfaces (skill +
+        prompt). A multi-entry catalog MUST report at most 2 lines on stdout
+        (one per surface) and the footer MUST count only the filtered set.
+        """
+        skill_a = tmp_path / "skill_a.md"
+        skill_a.write_text(
+            '---\nname: sdd-alpha\ndescription: a\nversion: "3.0"\n---\n\nA.\n',
+            encoding="utf-8",
+        )
+        prompt_a = tmp_path / "prompt_a.md"
+        prompt_a.write_text(
+            '---\nname: sdd-alpha\ndescription: a\nversion: "3.0"\n---\n\nA.\n',
+            encoding="utf-8",
+        )
+        skill_b = tmp_path / "skill_b.md"
+        skill_b.write_text(
+            '---\nname: sdd-beta\ndescription: b\nversion: "3.0"\n---\n\nB.\n',
+            encoding="utf-8",
+        )
+        prompt_b = tmp_path / "prompt_b.md"
+        prompt_b.write_text(
+            '---\nname: sdd-beta\ndescription: b\nversion: "3.0"\n---\n\nB.\n',
+            encoding="utf-8",
+        )
+        multi = {
+            "sdd-alpha/skill": SkillEntry(
+                skill_name="sdd-alpha",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(skill_a),
+                last_verified_checksum=osc.compute_frontmatter_sha256(skill_a),
+                owner="test-owner",
+            ),
+            "sdd-alpha/prompt": SkillEntry(
+                skill_name="sdd-alpha",
+                surface="prompt",
+                expected_version="3.0",
+                expected_path=str(prompt_a),
+                last_verified_checksum=osc.compute_frontmatter_sha256(prompt_a),
+                owner="test-owner",
+            ),
+            "sdd-beta/skill": SkillEntry(
+                skill_name="sdd-beta",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(skill_b),
+                last_verified_checksum=osc.compute_frontmatter_sha256(skill_b),
+                owner="test-owner",
+            ),
+            "sdd-beta/prompt": SkillEntry(
+                skill_name="sdd-beta",
+                surface="prompt",
+                expected_version="3.0",
+                expected_path=str(prompt_b),
+                last_verified_checksum=osc.compute_frontmatter_sha256(prompt_b),
+                owner="test-owner",
+            ),
+        }
+        monkeypatch.setattr(osc, "_read_sidecar", lambda: {})
+        monkeypatch.setattr(osc, "SKILL_CATALOG", multi)
+        result = runner.invoke(main, ["prompts", "check", "--skill", "sdd-alpha"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on filtered clean state; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        # Footer MUST count only the filtered 2 entries.
+        assert "2 skills verified" in result.stdout, (
+            f"expected '2 skills verified' in footer (filtered to sdd-alpha "
+            f"which has 2 surfaces); got {result.stdout!r}"
+        )
+
+
 # ---------- T2.3: flow prompts lint subcommand ----------
 
 
