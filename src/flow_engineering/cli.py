@@ -3261,6 +3261,28 @@ _EXIT_UNKNOWN_PROMPT_ID: int = 5
 """Exit code for ``flow prompts show <unknown>`` per design D9."""
 
 
+_EXIT_GOLDEN_DRIFT: int = 3
+"""Exit code for ``flow prompts show --check-snapshot`` on drift (REQ-V1.2.2)."""
+
+
+_GOLDEN_PROMPTS_DIR: Path = (
+    Path(__file__).resolve().parent.parent.parent
+    / "tests"
+    / "golden"
+    / "prompts"
+)
+"""Canonical on-disk location for the 4 PROMPT_NAMES golden snapshots.
+
+REQ-V1.2.2: per ``openspec/changes/v1.2-followups/explore.md`` REQ-48
+section, the 4 PROMPT_NAMES entries each get a byte-identical snapshot
+under ``tests/golden/prompts/`` so unintentional template edits fail CI
+with a precise drift message. The ``--update-goldens`` flag writes the
+canonical render here; ``--check-snapshot`` compares the canonical
+render to the file at this path. Tests override this constant via
+``monkeypatch.setattr`` to isolate from the committed artifacts.
+"""
+
+
 def _parse_var_pair(raw: str) -> tuple[str, str]:
     """Parse a ``key=value`` string into ``(key, value)`` tuple.
 
@@ -3327,12 +3349,39 @@ def _parse_var_pair(raw: str) -> tuple[str, str]:
         "(REQ-V1.1.3). Use ``--render-history 10`` to override N explicitly."
     ),
 )
+@click.option(
+    "--update-goldens",
+    "update_goldens",
+    is_flag=True,
+    default=False,
+    help=(
+        "Regenerate the golden snapshot file at "
+        "``tests/golden/prompts/<id>.txt`` with the canonical render "
+        "(REQ-V1.2.2). Use after an intentional template change to "
+        "refresh the committed snapshot. Composes with the existing "
+        "rendered body output."
+    ),
+)
+@click.option(
+    "--check-snapshot",
+    "check_snapshot",
+    is_flag=True,
+    default=False,
+    help=(
+        "Compare the canonical render against the golden snapshot file "
+        "at ``tests/golden/prompts/<id>.txt`` (REQ-V1.2.2). Exits 3 + "
+        "emits 'snapshot drift detected' to stderr on mismatch; exits 0 "
+        "on match. Use in CI to gate merges on snapshot freshness."
+    ),
+)
 def prompts_show(
     prompt_id: str,
     var_pairs: list[tuple[str, str]],
     render_count: bool,
     render_history: int,
     show_render_history: bool,
+    update_goldens: bool,
+    check_snapshot: bool,
 ) -> None:
     """Render a prompt by id with optional --var substitutions (REQ-50 S2).
 
@@ -3377,6 +3426,72 @@ def prompts_show(
     for var_name in declared:
         if var_name not in safe_kwargs:
             safe_kwargs[var_name] = f"<{var_name}>"
+
+    # REQ-V1.2.2 (T2.4 GREEN): golden snapshot flags. The snapshot
+    # comparison uses the CANONICAL render (via ``render_prompt_canonical``)
+    # which is independent of the user's --var pairs so the snapshot
+    # file is deterministic across operator invocations.
+    if update_goldens or check_snapshot:
+        canonical_render = prompt_registry.render_prompt_canonical(prompt_id)
+        snap_path = _GOLDEN_PROMPTS_DIR / f"{prompt_id}.txt"
+        if update_goldens:
+            try:
+                _GOLDEN_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+                snap_path.write_text(canonical_render, encoding="utf-8")
+            except OSError as exc:
+                click.echo(
+                    json.dumps(
+                        {
+                            "error": "snapshot_write_failed",
+                            "prompt_id": prompt_id,
+                            "path": str(snap_path),
+                            "reason": str(exc),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    err=True,
+                )
+                sys.exit(_EXIT_GOLDEN_DRIFT)
+            click.echo(
+                f"snapshot updated: {snap_path} ({len(canonical_render)} bytes)"
+            )
+        if check_snapshot:
+            if not snap_path.exists():
+                click.echo(
+                    json.dumps(
+                        {
+                            "error": "snapshot_missing",
+                            "prompt_id": prompt_id,
+                            "path": str(snap_path),
+                            "hint": "run 'flow prompts show <id> --update-goldens' first",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    err=True,
+                )
+                sys.exit(_EXIT_GOLDEN_DRIFT)
+            existing = snap_path.read_text(encoding="utf-8")
+            if existing != canonical_render:
+                click.echo(
+                    json.dumps(
+                        {
+                            "error": "snapshot_drift_detected",
+                            "message": "snapshot drift detected",
+                            "prompt_id": prompt_id,
+                            "path": str(snap_path),
+                            "expected_bytes": len(canonical_render),
+                            "found_bytes": len(existing),
+                            "hint": (
+                                "run 'flow prompts show <id> --update-goldens' "
+                                "if the template change was intentional"
+                            ),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    err=True,
+                )
+                sys.exit(_EXIT_GOLDEN_DRIFT)
+            click.echo(f"snapshot OK: {snap_path}")
 
     try:
         rendered = prompt_registry.render_prompt_safe(prompt_id, **safe_kwargs)
