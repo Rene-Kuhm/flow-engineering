@@ -258,7 +258,10 @@ def _delete_stale_metrics_siblings(path: Path, max_age_days: int) -> None:
     """Delete rotated ``metrics.*.jsonl`` siblings older than ``max_age_days``.
 
     Extracted from :func:`_rotate_metrics_if_needed` so the age-cleanup
-    concern is testable in isolation. Behaviour:
+    concern is testable in isolation. Behaviour mirrors the equivalent
+    block in :func:`drift_event_log._rotate_if_needed` at
+    ``drift_event_log.py:243-254`` (REQ-V1.1.1 precedent; the metrics
+    helper is REQ-V1.2.1):
 
     - ``max_age_days <= 0`` returns immediately (cleanup disabled).
     - Otherwise walk ``path.parent.glob("metrics.*.jsonl")`` and unlink
