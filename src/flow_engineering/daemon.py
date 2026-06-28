@@ -43,11 +43,9 @@ def _append_drift_events(
     pollute the audit trail. Per design D11, this is best-effort and never
     raises into the caller (``DriftEventLog.append`` swallows OSError).
 
-    v0.8.0 (REQ-56 W8): ``finding.decision_id`` is now ``int`` (was ``str``).
-    The wire-format ``DriftEvent`` dataclass still requires ``str`` (legacy
-    JSONL consumers expect it), so we coerce via ``str()`` here. Future v1
-    follow-up may flip ``DriftEvent.decision_id`` to ``int`` once the wire
-    format itself migrates.
+    v1.0 (REQ-V1.0.1 D1): ``DriftEvent.decision_id`` is now ``int`` (matches
+    ``Finding.decision_id: int`` post-v0.9.0 hard break). No coercion is
+    needed — direct assignment works.
     """
     log = DriftEventLog(path=path) if path is not None else DriftEventLog()
     detected_at = time.time()
@@ -57,7 +55,7 @@ def _append_drift_events(
         log.append(
             DriftEvent(
                 change=report.change_name,
-                decision_id=str(finding.decision_id),
+                decision_id=finding.decision_id,
                 binding_id=finding.binding.id,
                 event_class=finding.drift_class.value,
                 detected_at=detected_at,
