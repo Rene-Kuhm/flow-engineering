@@ -289,7 +289,10 @@ class TestListLegacyCompat:
             ],
         )
         assert result.exit_code == 0, result.output
-        payload = json.loads(result.output)
+        # The one-time WARN goes to stderr; stdout is the JSON envelope.
+        # Parse stdout only (skip the stderr WARN prefix if mixed).
+        stdout = result.stdout if hasattr(result, "stdout") else result.output
+        payload = json.loads(stdout)
         assert len(payload) == 1
         assert payload[0]["decision_id"] == 42
         assert isinstance(payload[0]["decision_id"], int)
