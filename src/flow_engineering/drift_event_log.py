@@ -19,6 +19,7 @@ follow-up (REQ-44 → v1.1).
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,6 +90,10 @@ class DriftEventLog:
         self.path: Path = path if path is not None else DEFAULT_DRIFT_EVENT_LOG_PATH
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # REQ-V1.0.1 D2: per-instance flag for one-time stderr WARN cadence.
+        # Per-instance (not module-global) so multi-log CLI invocations each
+        # get their own WARN (correct cadence).
+        self._legacy_warn_emitted: bool = False
 
     def append(self, event: DriftEvent) -> None:
         """Append one event as a single JSONL line under an in-process lock.
@@ -110,6 +115,12 @@ class DriftEventLog:
         Missing file returns ``[]``; malformed lines are silently
         skipped (the sink is best-effort — partial writes on disk
         full must NOT crash the caller).
+
+        REQ-V1.0.1 D2: legacy ``decision_id: "42"`` (str) lines from
+        pre-v1.0 JSONL files are coerced to ``int`` with a one-time
+        stderr WARN per log-path (per-instance flag; not module-global).
+        Operators may run the CHANGELOG v1.0 ``sed`` migration to
+        convert in place and silence the WARN.
         """
         if not self.path.exists():
             return []
@@ -125,6 +136,17 @@ class DriftEventLog:
                 # the reserved word. Remap on read.
                 if "class" in data and "event_class" not in data:
                     data["event_class"] = data.pop("class")
+                # REQ-V1.0.1 D2: defensive coercion for legacy str decision_id.
+                if isinstance(data.get("decision_id"), str):
+                    data["decision_id"] = int(data["decision_id"])
+                    if not self._legacy_warn_emitted:
+                        print(
+                            f"warning: legacy str decision_id in {self.path}; "
+                            "coercing to int. Run the CHANGELOG v1.0 sed "
+                            "migration to silence.",
+                            file=sys.stderr,
+                        )
+                        self._legacy_warn_emitted = True
                 events.append(DriftEvent(**data))
             except (json.JSONDecodeError, TypeError, ValueError):
                 continue

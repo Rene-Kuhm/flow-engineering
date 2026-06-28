@@ -255,6 +255,35 @@ class TestReadAllLegacyCoercion:
         # via the CHANGELOG v1.0 sed).
         assert events == []
 
+    def test_read_all_one_time_warn_cadence(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Multiple legacy str lines in one read_all() call emit ONE WARN (per-instance flag)."""
+        log_path = tmp_path / "drift_events.jsonl"
+        lines = []
+        for i in range(3):
+            lines.append(json.dumps({
+                "change": "x",
+                "decision_id": str(i + 100),
+                "binding_id": f"y{i}",
+                "class": "z",
+                "detected_at": 1_710_000_000.0 + i,
+            }))
+        log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        log = DriftEventLog(path=log_path)
+
+        events = log.read_all()
+
+        # All 3 events read back as int.
+        assert len(events) == 3
+        assert [ev.decision_id for ev in events] == [100, 101, 102]
+        # Exactly ONE stderr WARN was emitted (per-instance flag works).
+        stderr = capsys.readouterr().err
+        warn_lines = [ln for ln in stderr.splitlines() if "legacy str decision_id" in ln]
+        assert len(warn_lines) == 1, (
+            f"expected 1 WARN line; got {len(warn_lines)}: {warn_lines}"
+        )
+
 
 # ---------- thread safety via portable file lock ----------
 
