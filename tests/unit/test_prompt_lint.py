@@ -195,3 +195,153 @@ class TestLintPromptsCustomCatalogIsolation:
         assert {e.error_code for e in report.errors} == {
             e.error_code for e in expected
         }
+
+
+# ---------- T3.3 (W1): lint spec-taxonomy alias map shim ----------
+
+
+class TestLintSpecTaxonomyAlias:
+    """RED fixtures for the LINT_CATEGORY_SPEC_ALIASES mapping shim (W1).
+
+    Per verify-report-pr1.md W1 + tasks-pr2.md T3.3: the spec-locked
+    taxonomy (``missing_placeholder`` / ``unused_variable`` /
+    ``template_parse_error`` / ``autoescape_disabled`` /
+    ``missing_variable``) has ZERO name overlap with the impl's 5
+    codes. Downstream consumers querying for spec-mandated names need
+    a mapping shim. This shim DOES NOT rename the impl codes — it
+    adds a public mapping + ``get_spec_category()`` helper so callers
+    can resolve spec names to impl codes (or ``None`` for unimplemented
+    spec codes).
+
+    Acceptance criteria:
+    - ``LINT_CATEGORY_SPEC_ALIASES`` is a module-level constant.
+    - ``get_spec_category("missing_placeholder")`` returns
+      ``"undefined_var"`` (impl equivalent).
+    - ``get_spec_category("template_parse_error")`` returns
+      ``"jinja_syntax"``.
+    - ``get_spec_category("undefined_var")`` returns ``None`` (impl
+      name has no spec equivalent; reverse mapping is NOT exposed
+      because the spec mandates the spec-name as the source of truth).
+    - Round-trip: ``get_spec_category("missing_placeholder") ==
+      "undefined_var"`` and the impl code IS emitted by ``lint_prompts``.
+    """
+
+    def test_aliases_constant_exists_at_module_level(self) -> None:
+        """``LINT_CATEGORY_SPEC_ALIASES`` is exported from the module.
+
+        The mapping MUST live at module scope so it can be imported
+        as ``from flow_engineering.prompt_registry import
+        LINT_CATEGORY_SPEC_ALIASES`` without instantiating any object.
+        """
+        from flow_engineering import prompt_registry
+        assert hasattr(prompt_registry, "LINT_CATEGORY_SPEC_ALIASES"), (
+            "expected LINT_CATEGORY_SPEC_ALIASES module constant"
+        )
+        assert isinstance(prompt_registry.LINT_CATEGORY_SPEC_ALIASES, dict), (
+            "expected LINT_CATEGORY_SPEC_ALIASES to be a dict"
+        )
+
+    def test_missing_placeholder_maps_to_undefined_var(self) -> None:
+        """``get_spec_category("missing_placeholder")`` returns ``"undefined_var"``.
+
+        Per spec REQ-47: ``missing_placeholder`` is the spec-locked
+        name for "Jinja2 placeholder appears in the template body but
+        is not declared in metadata.required_vars". The impl's
+        equivalent code is ``undefined_var``.
+        """
+        from flow_engineering import prompt_registry
+        assert prompt_registry.get_spec_category("missing_placeholder") == (
+            "undefined_var"
+        ), (
+            f"expected missing_placeholder → undefined_var; "
+            f"got {prompt_registry.get_spec_category('missing_placeholder')!r}"
+        )
+
+    def test_template_parse_error_maps_to_jinja_syntax(self) -> None:
+        """``get_spec_category("template_parse_error")`` returns ``"jinja_syntax"``.
+
+        Per spec REQ-47: ``template_parse_error`` is the spec-locked
+        name for "Jinja2 template body fails to parse". The impl's
+        equivalent code is ``jinja_syntax``.
+        """
+        from flow_engineering import prompt_registry
+        assert (
+            prompt_registry.get_spec_category("template_parse_error")
+            == "jinja_syntax"
+        )
+
+    def test_unimplemented_spec_codes_return_none(self) -> None:
+        """Spec codes the impl never emits return ``None``.
+
+        The spec lists 5 codes; the impl only emits 2 (the other 3
+        are deferred to v1.1). ``get_spec_category`` returns ``None``
+        for the unimplemented spec codes so downstream consumers can
+        detect "no impl equivalent yet" rather than getting a
+        misleading mapping.
+        """
+        from flow_engineering import prompt_registry
+        for unimplemented in (
+            "unused_variable",
+            "autoescape_disabled",
+            "missing_variable",
+        ):
+            assert (
+                prompt_registry.get_spec_category(unimplemented) is None
+            ), (
+                f"expected {unimplemented} → None (unimplemented); "
+                f"got {prompt_registry.get_spec_category(unimplemented)!r}"
+            )
+
+    def test_impl_codes_have_no_reverse_mapping(self) -> None:
+        """Reverse lookups (impl name → spec name) return ``None``.
+
+        The mapping is forward-only: spec → impl. The spec mandates
+        spec names as the source of truth; impl names that happen to
+        not match any spec code (e.g., ``duplicate_name``,
+        ``invalid_domain``, ``invalid_version``) return ``None``.
+        """
+        from flow_engineering import prompt_registry
+        for impl_only in (
+            "undefined_var",  # reverse: impl has it but spec calls it missing_placeholder
+            "duplicate_name",
+            "invalid_domain",
+            "invalid_version",
+            "jinja_syntax",
+        ):
+            assert prompt_registry.get_spec_category(impl_only) is None, (
+                f"expected reverse lookup {impl_only} → None; "
+                f"got {prompt_registry.get_spec_category(impl_only)!r}"
+            )
+
+    def test_round_trip_with_lint_prompts(self) -> None:
+        """Spec code resolves to an impl code that ``lint_prompts`` actually emits.
+
+        Triangulation: register a prompt with an undefined Jinja2
+        placeholder (which ``lint_prompts`` flags as
+        ``undefined_var``), then assert that
+        ``get_spec_category("missing_placeholder")`` resolves to that
+        same code — proving the spec→impl mapping IS end-to-end
+        usable.
+        """
+        from flow_engineering import prompt_registry
+        prompt_registry.register(
+            name="bdd_test_w1_alias",
+            template="hello {{ undefined_thing }}",
+            domain=prompt_registry.PromptDomain.OBSERVABILITY,
+            version="1.0.0",
+        )
+        try:
+            report = prompt_registry.lint_prompts()
+            spec_code = "missing_placeholder"
+            impl_code = prompt_registry.get_spec_category(spec_code)
+            assert impl_code is not None, (
+                f"expected spec→impl mapping for {spec_code}"
+            )
+            codes_emitted = {e.error_code for e in report.errors}
+            assert impl_code in codes_emitted, (
+                f"expected impl_code={impl_code!r} (resolved from "
+                f"spec={spec_code!r}) to appear in lint_prompts output; "
+                f"got codes={codes_emitted!r}"
+            )
+        finally:
+            prompt_registry.unregister_prompt("bdd_test_w1_alias")
