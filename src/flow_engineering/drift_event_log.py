@@ -35,7 +35,8 @@ class DriftEvent:
 
     Attributes:
         change: The change name (e.g., ``"decision-reality-drift"``).
-        decision_id: The decision ID (string per pre-v0.8.0).
+        decision_id: The decision ID (int per v1.0; matches
+            ``Finding.decision_id: int`` post-v0.9.0).
         binding_id: The binding identifier.
         event_class: Drift class (e.g., ``"label_drift"``,
             ``"stale_location"``, ``"stale_id"``).
@@ -43,10 +44,21 @@ class DriftEvent:
     """
 
     change: str
-    decision_id: str
+    decision_id: int  # REQ-V1.0.1: int (was str pre-v1.0); matches Finding.decision_id post-v0.9.0
     binding_id: str
     event_class: str
     detected_at: float
+
+    def __post_init__(self) -> None:
+        # REQ-V1.0.1 hard break: enforce int decision_id at the dataclass
+        # boundary (mirrors Finding.__post_init__ at decision_drift.py:84-90).
+        # bool is rejected because it is an int subclass; the legacy "42"
+        # str form is rejected because the wire format now matches the
+        # Python int contract (single source of truth per D1).
+        if not isinstance(self.decision_id, int) or isinstance(self.decision_id, bool):
+            raise TypeError(
+                f"DriftEvent.decision_id must be int, got {type(self.decision_id).__name__}"
+            )
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return the JSON wire dict with the spec schema (``class`` key)."""
