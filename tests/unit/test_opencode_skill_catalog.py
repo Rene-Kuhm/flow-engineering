@@ -18,11 +18,14 @@ from pathlib import Path
 import pytest
 
 from flow_engineering.opencode_skill_catalog import (
+    FRONTMATTER_PATTERN,
     SKILL_CATALOG,
     SIDECAR_PATH,
     SkillDrift,
     SkillEntry,
     SkillVersionError,
+    compute_frontmatter_sha256,
+    parse_frontmatter,
 )
 
 
@@ -221,3 +224,103 @@ class TestSkillCatalog:
             assert re.fullmatch(
                 r"\d+\.\d+", entry.expected_version,
             ), f"{key}: version {entry.expected_version!r} is not MAJOR.MINOR"
+
+
+# ---------- T1.2: frontmatter checksum + parser ----------
+
+
+_FRONTMATTER_TEXT = (
+    "---\n"
+    "name: sdd-apply\n"
+    "description: test\n"
+    "version: \"3.0\"\n"
+    "metadata:\n"
+    "  author: gentleman-programming\n"
+    "---\n\n"
+    "Body content here.\n"
+)
+
+
+class TestFrontmatterPattern:
+    def test_frontmatter_pattern_matches_double_dash_block(self) -> None:
+        match = FRONTMATTER_PATTERN.match(_FRONTMATTER_TEXT)
+        assert match is not None
+        assert match.group(1).startswith("name: sdd-apply")
+
+    def test_frontmatter_pattern_rejects_no_dashes(self) -> None:
+        assert FRONTMATTER_PATTERN.match("no frontmatter here\n") is None
+
+
+class TestComputeFrontmatterChecksum:
+    def test_compute_frontmatter_checksum_returns_64_char_hex(self, tmp_path: Path) -> None:
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(_FRONTMATTER_TEXT, encoding="utf-8")
+        digest = compute_frontmatter_sha256(skill)
+        assert isinstance(digest, str)
+        assert re.fullmatch(r"[0-9a-f]{64}", digest)
+
+    def test_compute_frontmatter_checksum_is_deterministic(self, tmp_path: Path) -> None:
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(_FRONTMATTER_TEXT, encoding="utf-8")
+        first = compute_frontmatter_sha256(skill)
+        second = compute_frontmatter_sha256(skill)
+        assert first == second
+
+    def test_compute_frontmatter_checksum_ignores_body_whitespace(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.md"
+        b = tmp_path / "b.md"
+        body_a = "Body content here.\n"
+        body_b = "Body content here.\n\n\n   \n\nMore body lines.\n"
+        a.write_text(_FRONTMATTER_TEXT.replace("Body content here.\n", body_a), encoding="utf-8")
+        b.write_text(_FRONTMATTER_TEXT.replace("Body content here.\n", body_b), encoding="utf-8")
+        assert compute_frontmatter_sha256(a) == compute_frontmatter_sha256(b)
+
+    def test_compute_frontmatter_checksum_detects_field_change(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.md"
+        b = tmp_path / "b.md"
+        a.write_text(_FRONTMATTER_TEXT, encoding="utf-8")
+        b.write_text(
+            _FRONTMATTER_TEXT.replace('description: test', 'description: changed'),
+            encoding="utf-8",
+        )
+        assert compute_frontmatter_sha256(a) != compute_frontmatter_sha256(b)
+
+    def test_compute_frontmatter_checksum_preserves_unicode(self, tmp_path: Path) -> None:
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\nname: sdd-apply\ndescription: \"hola mundo ñ\"\n---\n",
+            encoding="utf-8",
+        )
+        digest = compute_frontmatter_sha256(skill)
+        assert re.fullmatch(r"[0-9a-f]{64}", digest)
+
+
+class TestParseFrontmatter:
+    def test_parse_frontmatter_returns_dict(self, tmp_path: Path) -> None:
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(_FRONTMATTER_TEXT, encoding="utf-8")
+        parsed = parse_frontmatter(skill)
+        assert isinstance(parsed, dict)
+        assert parsed["name"] == "sdd-apply"
+        assert parsed["version"] == "3.0"
+
+    def test_parse_frontmatter_raises_skill_version_error_when_missing(
+        self, tmp_path: Path,
+    ) -> None:
+        no_fm = tmp_path / "no-fm.md"
+        no_fm.write_text("Just body, no frontmatter.\n", encoding="utf-8")
+        with pytest.raises(SkillVersionError, match="no YAML frontmatter"):
+            parse_frontmatter(no_fm)
+
+    def test_parse_frontmatter_raises_when_not_dict(self, tmp_path: Path) -> None:
+        scalar_fm = tmp_path / "scalar.md"
+        scalar_fm.write_text("---\njust a string\n---\n", encoding="utf-8")
+        with pytest.raises(SkillVersionError, match="not a YAML dict"):
+            parse_frontmatter(scalar_fm)
+
+    def test_parse_frontmatter_raises_skill_version_error_on_missing_file(
+        self, tmp_path: Path,
+    ) -> None:
+        ghost = tmp_path / "ghost.md"
+        with pytest.raises(SkillVersionError):
+            parse_frontmatter(ghost)
