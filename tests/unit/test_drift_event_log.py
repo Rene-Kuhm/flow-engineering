@@ -197,6 +197,65 @@ class TestAppendMultipleEvents:
         assert log.read_all() == []
 
 
+# ---------- REQ-V1.0.1 D2: defensive coercion of legacy str lines ----------
+
+
+class TestReadAllLegacyCoercion:
+    """REQ-V1.0.1 D2: legacy ``decision_id: "42"`` (str) JSONL lines from
+    pre-v1.0 files are defensively coerced to ``int`` on read with a
+    one-time stderr WARN per log-path.
+    """
+
+    def test_read_all_coerces_legacy_str_decision_id(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A legacy JSONL line with str decision_id reads back as int + emits WARN."""
+        log_path = tmp_path / "drift_events.jsonl"
+        # Hand-write a legacy-format JSONL line (str decision_id).
+        legacy_line = json.dumps({
+            "change": "x",
+            "decision_id": "42",
+            "binding_id": "y",
+            "class": "z",
+            "detected_at": 1_710_000_000.0,
+        })
+        log_path.write_text(legacy_line + "\n", encoding="utf-8")
+        log = DriftEventLog(path=log_path)
+
+        events = log.read_all()
+
+        # Exactly one event read back.
+        assert len(events) == 1
+        # decision_id was coerced from str "42" to int 42.
+        assert events[0].decision_id == 42
+        assert isinstance(events[0].decision_id, int)
+        # One-time stderr WARN was emitted with the legacy marker.
+        stderr = capsys.readouterr().err
+        assert "legacy str decision_id" in stderr
+
+    def test_read_all_skips_legacy_str_non_numeric_decision_id(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A legacy str decision_id that can't parse to int is silently skipped."""
+        log_path = tmp_path / "drift_events.jsonl"
+        legacy_line = json.dumps({
+            "change": "x",
+            "decision_id": "not-a-number",
+            "binding_id": "y",
+            "class": "z",
+            "detected_at": 1_710_000_000.0,
+        })
+        log_path.write_text(legacy_line + "\n", encoding="utf-8")
+        log = DriftEventLog(path=log_path)
+
+        events = log.read_all()
+
+        # Non-numeric legacy str lines are silently skipped (mirrors the
+        # malformed-line silent-skip behavior; operator should re-migrate
+        # via the CHANGELOG v1.0 sed).
+        assert events == []
+
+
 # ---------- thread safety via portable file lock ----------
 
 
