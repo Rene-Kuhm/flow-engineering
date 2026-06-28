@@ -1,24 +1,19 @@
-"""REQ-56 W8 / REQ-57 v0.8.0 dataclass migration tests.
+"""REQ-56 W8 / REQ-57 v0.8.0 dataclass migration tests (with v0.9.0 carry-forward).
 
-T4.1, T4.2, T4.3 RED fixtures for the v0.8.0 BREAKING dataclass shape
-migration in ``decision_drift``. Each fixture asserts one of:
+Canonical type-contract smokes for ``decision_drift.Finding`` +
+``DriftReport``. After v0.9.0 these are the only remaining tests in
+this file; the v0.8.0 migration shim tests
+(``Finding.from_legacy``, ``DriftReport.from_legacy``,
+``classify_binding_legacy``) were deleted when their respective compat
+shims were removed (REQ-V9.1, REQ-V9.2, REQ-V9.3).
 
-- ``Finding.decision_id`` is now ``int`` (was ``str``); ``from_legacy``
-  classmethod accepts legacy ``str`` inputs and emits
-  ``DeprecationWarning`` while coercing via ``int()``.
-- ``DriftReport.scanned_at`` is now ``str`` ISO 8601 (was ``float``
-  epoch); ``from_legacy`` classmethod accepts legacy ``float`` epoch
-  inputs and coerces via the internal ``_epoch_to_iso`` helper.
-- ``classify_binding`` now has a 2-arg ``(ref, graph_nodes)`` signature
-  (was 3-arg ``(binding, current_nodes, current_id_map)``);
-  ``classify_binding_legacy`` retains the 3-arg signature with a
-  ``DeprecationWarning`` shim.
+Each remaining fixture asserts one of:
 
-All v0.8.0 canonical surfaces must accept the new types; the legacy
-factories are the migration path for any v0.7.x caller still passing
-``str`` / ``float`` / 3 args.
+- ``Finding.decision_id`` is ``int`` (canonical type contract).
+- ``DriftReport.scanned_at`` is ``str`` ISO 8601 (canonical type contract).
+- ``DriftReport.unable_reason`` defaults to ``None`` when omitted.
 
-Refs: openspec/changes/drift-hardening/{spec,design,tasks}.md T4.1..T4.3.
+Refs: openspec/changes/archive/2026-06-27-drift-hardening/{spec,design,tasks}.md T4.1..T4.3.
 """
 
 from __future__ import annotations
@@ -101,49 +96,13 @@ def test_finding_decision_id_is_int_type() -> None:
     )
 
 
-def test_finding_from_legacy_emits_deprecation_warning() -> None:
-    """v0.7.x callers using ``Finding.from_legacy(decision_id="42", ...)``
-    must see a DeprecationWarning that points at the v0.9.0 migration.
-    """
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        f = Finding.from_legacy(
-            decision_id="42",
-            binding=_ref(),
-            drift_class=DriftClass.STILL_VALID,
-            detail="ok",
-        )
-    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert deprecations, "from_legacy(str) must emit DeprecationWarning"
-    assert "decision_id" in str(deprecations[0].message)
-    assert "v0.9.0" in str(deprecations[0].message)
-
-
-def test_finding_from_legacy_coerces_str_to_int() -> None:
-    """v0.7.x str "42" must coerce to int 42 via ``from_legacy``."""
-    f = Finding.from_legacy(
-        decision_id="42",
-        binding=_ref(),
-        drift_class=DriftClass.STILL_VALID,
-        detail="ok",
-    )
-    assert f.decision_id == 42
-    assert isinstance(f.decision_id, int)
-
-
-def test_finding_from_legacy_non_numeric_str_raises() -> None:
-    """Non-numeric legacy str ("not-a-number") must raise ValueError so
-    callers see the migration signal instead of a silent ``0`` coercion.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        with pytest.raises(ValueError):
-            Finding.from_legacy(
-                decision_id="not-a-number",
-                binding=_ref(),
-                drift_class=DriftClass.STILL_VALID,
-                detail="ok",
-            )
+# v0.9.0 (REQ-V9.1): Finding.from_legacy compat shim was removed in v0.9.0.
+# The 3 v0.8.0 fixtures that exercised the shim (test_finding_from_legacy_*
+# — emits_deprecation_warning, coerces_str_to_int, non_numeric_str_raises)
+# are deleted; the canonical type-contract smoke at line 76
+# (test_finding_decision_id_is_int_type) remains as the regression gate.
+# See tests/unit/test_decision_drift_v090_hardening.py for the v0.9.0
+# assertion that ``Finding.from_legacy`` no longer exists.
 
 
 # ---- T4.2 — DriftReport.scanned_at str ISO + from_legacy shim ------------

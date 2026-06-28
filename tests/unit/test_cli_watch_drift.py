@@ -96,7 +96,7 @@ def _make_finding(*, drift_class: DriftClass = DriftClass.STILL_VALID) -> Findin
         project="insyd", id="n1", label="L1", file="src/x.py", line=1,
         confidence=0.9, source="manual",
     )
-    return Finding(decision_id="1", binding=binding, drift_class=drift_class, detail="")
+    return Finding(decision_id=1, binding=binding, drift_class=drift_class, detail="")
 
 
 def _patch_observer(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
