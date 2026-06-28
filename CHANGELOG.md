@@ -40,7 +40,7 @@ No automatic migration — v0.9.0 is a hard break.
 - W1: lint_prompts spec-taxonomy alias map (`LINT_CATEGORY_SPEC_ALIASES` + `get_spec_category()`) so spec-mandated category names (`missing_placeholder`, `template_parse_error`) resolve to the implementation categories (`undefined_var`, `jinja_syntax`).
 - W2: `select_autoescape(default_for_string=True)` for `_safe_jinja_env()` — HTML escape blocks Jinja2 `{{ var }}` injection on untrusted input.
 - W3: `prompts/` directory + 4 `.j2` files (`strict_tdd.j2` + `auto_suggest_header.j2` + `auto_suggest_footer.j2` + `auto_suggest_empty.j2`) restored at repo root.
-- W4: `scaffold._env()` hoisted to shared `prompt_render._env()` so the scaffold render path and the prompt-render path share the same Jinja2 `Environment` configuration (including autoescape + `StrictUndefined`).
+- W4: `scaffold._env()` hoisted to shared `prompt_registry._env()` so the scaffold render path and the prompt-render path share the same Jinja2 `Environment` configuration (including autoescape + `StrictUndefined`).
 - W7: `[tool.flow_engineering.prompts] directory = "prompts"` section added to `pyproject.toml`.
 - W8: `pyproject.toml` version bumped 0.8.0 → 0.8.1 (additive MINOR bump for REQ-50 + 8 W-fix carry-forwards).
 - W9: ruff auto-fix run on PR#2b changed files (no auto-fixable issues; the single UP042 finding for `PromptDomain(str, Enum)` requires `--unsafe-fixes` and is left as a follow-up).
