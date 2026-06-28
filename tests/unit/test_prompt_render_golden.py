@@ -18,7 +18,7 @@ The companion ``--update-goldens`` flag on ``flow prompts show`` lets
 operators regenerate the snapshots when an intentional template change
 is approved (mirrors ``scripts/generate_prompts_doc.py`` "regenerate
 via ``make docs``" precedent). The CLI flag tests live in
-``TestGoldenUpdate`` (added in T2.3 RED).
+``TestGoldenUpdate``.
 
 Strict TDD: tests written BEFORE the helper implementation. They MUST
 fail with ``ImportError: cannot import name 'render_prompt_canonical'``
@@ -29,45 +29,63 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
+from flow_engineering.cli import main
 from flow_engineering.prompt_registry import render_prompt_canonical
 
-GOLDEN_DIR = Path(__file__).resolve().parent.parent / "golden" / "prompts"
+_RUNNER = CliRunner()
 
 
 class TestGoldenRegression:
     """``render_prompt_canonical()`` output is byte-identical to the committed snapshot."""
 
-    def test_strict_tdd_matches_snapshot(self) -> None:
+    def test_strict_tdd_matches_snapshot(
+        self, production_golden_dir: Path
+    ) -> None:
         """strict_tdd snapshot = render_prompt_canonical('strict_tdd')."""
-        snapshot = (GOLDEN_DIR / "strict_tdd.txt").read_text(encoding="utf-8")
+        snapshot = (
+            production_golden_dir / "strict_tdd.txt"
+        ).read_text(encoding="utf-8")
         rendered = render_prompt_canonical("strict_tdd")
         assert rendered == snapshot, (
             f"strict_tdd drift detected: "
             f"expected {len(snapshot)} bytes, got {len(rendered)} bytes"
         )
 
-    def test_auto_suggest_header_matches_snapshot(self) -> None:
+    def test_auto_suggest_header_matches_snapshot(
+        self, production_golden_dir: Path
+    ) -> None:
         """auto_suggest_header snapshot = render_prompt_canonical('auto_suggest_header')."""
-        snapshot = (GOLDEN_DIR / "auto_suggest_header.txt").read_text(encoding="utf-8")
+        snapshot = (
+            production_golden_dir / "auto_suggest_header.txt"
+        ).read_text(encoding="utf-8")
         rendered = render_prompt_canonical("auto_suggest_header")
         assert rendered == snapshot, (
             f"auto_suggest_header drift detected: "
             f"expected {len(snapshot)} bytes, got {len(rendered)} bytes"
         )
 
-    def test_auto_suggest_footer_matches_snapshot(self) -> None:
+    def test_auto_suggest_footer_matches_snapshot(
+        self, production_golden_dir: Path
+    ) -> None:
         """auto_suggest_footer snapshot = render_prompt_canonical('auto_suggest_footer')."""
-        snapshot = (GOLDEN_DIR / "auto_suggest_footer.txt").read_text(encoding="utf-8")
+        snapshot = (
+            production_golden_dir / "auto_suggest_footer.txt"
+        ).read_text(encoding="utf-8")
         rendered = render_prompt_canonical("auto_suggest_footer")
         assert rendered == snapshot, (
             f"auto_suggest_footer drift detected: "
             f"expected {len(snapshot)} bytes, got {len(rendered)} bytes"
         )
 
-    def test_auto_suggest_empty_matches_snapshot(self) -> None:
+    def test_auto_suggest_empty_matches_snapshot(
+        self, production_golden_dir: Path
+    ) -> None:
         """auto_suggest_empty snapshot = render_prompt_canonical('auto_suggest_empty')."""
-        snapshot = (GOLDEN_DIR / "auto_suggest_empty.txt").read_text(encoding="utf-8")
+        snapshot = (
+            production_golden_dir / "auto_suggest_empty.txt"
+        ).read_text(encoding="utf-8")
         rendered = render_prompt_canonical("auto_suggest_empty")
         assert rendered == snapshot, (
             f"auto_suggest_empty drift detected: "
@@ -117,59 +135,19 @@ class TestCanonicalRenders:
             render_prompt_canonical("definitely_not_in_catalog_xyz")
 
 
-@pytest.fixture
-def golden_snapshot_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Provide an isolated golden snapshot directory for ``TestGoldenUpdate``.
-
-    Mirrors the production ``tests/golden/prompts/`` layout but rooted at
-    ``tmp_path`` so the ``--update-goldens`` + ``--check-snapshot`` tests
-    do NOT mutate the committed artifacts. The CLI helper reads the
-    directory from ``flow_engineering.cli._GOLDEN_PROMPTS_DIR`` (wired by
-    T2.4 GREEN); the fixture overrides that constant for the test scope.
-
-    Lazy monkeypatch: the override is registered only when the fixture
-    resolves so tests that DON'T use this fixture (e.g., the snapshot
-    byte-match tests in ``TestGoldenRegression``) don't pay the import
-    cost. Tests that DO use this fixture see the override applied at
-    fixture-resolve time.
-    """
-    snap_dir = tmp_path / "golden" / "prompts"
-    snap_dir.mkdir(parents=True)
-    from flow_engineering import cli as cli_mod
-
-    monkeypatch.setattr(cli_mod, "_GOLDEN_PROMPTS_DIR", snap_dir, raising=False)
-    return snap_dir
-
-
 class TestGoldenUpdate:
-    """``flow prompts show --update-goldens`` + ``--check-snapshot`` flags (T2.3..T2.4).
-
-    These tests verify the CLI surface that lets operators regenerate
-    golden snapshots after an intentional template change (mirrors
-    ``scripts/generate_prompts_doc.py`` "regenerate via ``make docs``"
-    precedent) AND detect drift when the rendered output diverges from
-    the committed snapshot.
-
-    Strict TDD: tests written BEFORE the flag implementation. They
-    MUST fail with ``Error: no such option: --update-goldens`` (or
-    ``--check-snapshot``) until ``cli.py`` wires the flags (T2.4 GREEN).
-    """
+    """``flow prompts show --update-goldens`` + ``--check-snapshot`` flags (T2.3..T2.4)."""
 
     def test_update_goldens_flag_writes_canonical_snapshot(
         self, golden_snapshot_dir: Path
     ) -> None:
         """`--update-goldens` writes the canonical render to the snapshot file."""
-        from click.testing import CliRunner
-
-        from flow_engineering.cli import main
-
-        runner = CliRunner()
         snap_path = golden_snapshot_dir / "strict_tdd.txt"
         assert not snap_path.exists(), (
             "precondition: snapshot file must not exist before --update-goldens"
         )
 
-        result = runner.invoke(
+        result = _RUNNER.invoke(
             main,
             ["prompts", "show", "strict_tdd", "--update-goldens"],
         )
@@ -192,15 +170,12 @@ class TestGoldenUpdate:
         self, golden_snapshot_dir: Path
     ) -> None:
         """`--check-snapshot` exits non-zero + emits 'snapshot drift detected' on mismatch."""
-        from click.testing import CliRunner
-
-        from flow_engineering.cli import main
-
-        runner = CliRunner()
         snap_path = golden_snapshot_dir / "auto_suggest_header.txt"
-        snap_path.write_text("GARBAGE BYTES THAT WILL NEVER MATCH", encoding="utf-8")
+        snap_path.write_text(
+            "GARBAGE BYTES THAT WILL NEVER MATCH", encoding="utf-8"
+        )
 
-        result = runner.invoke(
+        result = _RUNNER.invoke(
             main,
             ["prompts", "show", "auto_suggest_header", "--check-snapshot"],
         )
@@ -212,8 +187,7 @@ class TestGoldenUpdate:
         err_text = ""
         if result.stderr_bytes:
             err_text = result.stderr_bytes.decode("utf-8", errors="replace")
-        out_text = result.output or ""
-        full = out_text + err_text
+        full = (result.output or "") + err_text
         assert "snapshot drift detected" in full, (
             f"stderr should mention 'snapshot drift detected'; got: {full!r}"
         )
@@ -222,18 +196,13 @@ class TestGoldenUpdate:
         self, golden_snapshot_dir: Path
     ) -> None:
         """`--check-snapshot` exits 0 when snapshot matches canonical render."""
-        from click.testing import CliRunner
-
-        from flow_engineering.cli import main
-
-        runner = CliRunner()
         snap_path = golden_snapshot_dir / "auto_suggest_empty.txt"
         snap_path.write_text(
             render_prompt_canonical("auto_suggest_empty"),
             encoding="utf-8",
         )
 
-        result = runner.invoke(
+        result = _RUNNER.invoke(
             main,
             ["prompts", "show", "auto_suggest_empty", "--check-snapshot"],
         )
