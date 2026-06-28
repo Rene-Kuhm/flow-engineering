@@ -4,9 +4,9 @@
 **Change:** `prompt-registry` PR#2a (change #7, second PR, REQ-49 only)
 **Branch:** main
 **Base HEAD (PR#2a start):** `cb82274` (post drift-hardening archive + BDD fix)
-**Final HEAD:** `<filled by commit>` (post-apply-progress closeout commit)
+**Final HEAD:** `<filled by commit>` (post-apply-progress closeout + T2.5 follow-up fixes)
 **Strict TDD:** ON throughout (RED → GREEN → REFACTOR per task)
-**Status:** success — prompt-registry PR#2a landed as REQ-49 ship
+**Status:** success — prompt-registry PR#2a landed as REQ-49 ship (with T2.5 follow-up fixes for verify findings C1+W1+W2)
 
 ## Goal
 
@@ -124,11 +124,68 @@ apply cycle.
 
 ## Timeout recovery
 
-Two delegation timeouts occurred during this apply phase:
+Three delegation timeouts occurred during this apply phase:
 1. `worldwide-apricot-aardvark` (15-min timeout) — completed Sub-batches A1+A2 = 8 commits
 2. `sharp-silver-chinchilla` (15-min timeout) — completed Sub-batches A3+B1 = 7 commits
+3. `valuable-red-yak` (15-min timeout) — completed T2.5 follow-up fixes (C1+W1+W2) = 8 commits
 
-Per timeout-recovery pattern (memory #185), both agents had committed work before timeout. Apply-progress checkpoint at `sdd/prompt-registry/apply-progress-pr2a` (3 revisions, last sync_id `obs-8bdd31b4a344b861`) preserved state across the gap.
+Per timeout-recovery pattern (memory #185), all agents had committed work before timeout. Apply-progress checkpoint at `sdd/prompt-registry/apply-progress-pr2a` (multiple revisions) preserved state across gaps.
+
+## T2.5 follow-up — verify finding fixes (C1 + W1 + W2)
+
+After initial apply (HEAD `83e55b9`), the sdd-verify phase (`straightforward-aqua-vicuna`) returned **PARTIAL** verdict with 1 CRITICAL + 6 WARNING findings. Per the verify-report recommendation (Path A — fix before archive), the 3 highest-priority findings were addressed in a T2.5 follow-up:
+
+### T2.5.1 — C1 fix: `parse_frontmatter` nested `metadata.version` fallback
+
+- **Problem:** `parse_frontmatter()` (opencode_skill_catalog.py:498) only read top-level `version` field. Real OpenCode SKILL.md corpus has `version` nested under `metadata.version`. Result: `flow prompts check` reported 20/20 false-positive DRIFT after `--init`.
+- **Fix:** Added nested fallback in `parse_frontmatter`: `version = parsed.get('version') or parsed.get('metadata', {}).get('version', '0.0')`. Extracted `_extract_version(parsed: dict) -> str` helper for clarity.
+- **Commits (3):**
+  - `df680b3` test(unit): RED fixtures for parse_frontmatter nested metadata.version
+  - `08eaef2` feat(skill-catalog): parse_frontmatter surfaces nested metadata.version fallback
+  - `0e5e036` refactor(skill-catalog): extract _extract_version helper from parse_frontmatter
+- **Smoke test:** `flow prompts check` now reports "20 skills verified · 0 drift detected" on real corpus (was "20/20 false positive DRIFT").
+
+### T2.5.2 — W1 fix: T2.2 4-flag matrix complete
+
+- **Problem:** T2.2 shipped only `--init` flag (1 of 4 expected). Missing: `--update`, `--no-fail`, `--skill`.
+- **Fix:** Added the 3 missing flags to `flow prompts check` in `src/flow_engineering/cli.py`:
+  - `--update`: re-compute and update sidecar JSON
+  - `--no-fail`: exit 0 even if drift detected (warnings-only mode)
+  - `--skill SKILL_NAME`: check only a specific skill by name
+- **Refactor:** Extracted `_resolve_check_action(ctx) -> CheckAction` helper to consolidate flag-handling logic.
+- **Commits (3):**
+  - `0c89c8c` test(unit): RED fixtures for --update/--no-fail/--skill flags
+  - `0ade871` feat(cli): flow prompts check --update + --no-fail + --skill flags
+  - `121686a` refactor(cli): extract _resolve_check_action helper + CheckAction dataclass
+
+### T2.5.3 — W2 fix: stderr WARN + observability counters
+
+- **Problem:** T2.4 acceptance criteria included S2 stderr WARN summary + 4 observability counter names (`prompts_check_total{result}`, `prompts_check_drift_total{skill}`, `prompts_check_duration_seconds`). None implemented.
+- **Fix:** Added stderr WARN summary when drift detected + 4 counter emissions via `observability.increment()` / `observability.observe()`.
+- **Commits (2):**
+  - `1fb4bae` test(unit): RED fixtures for stderr WARN + 4 observability counters
+  - `e9b4ca9` feat(cli): flow prompts check stderr WARN + 4 observability counters
+
+### T2.5 test delta
+
+- Pre-T2.5: 1187 tests
+- Post-T2.5: **1199 tests** (+12 new tests for C1/W1/W2 fixes)
+- All passing, ruff clean, mypy clean
+
+### T2.5 remaining WARNING findings (NOT addressed in this follow-up)
+
+- **W3** — test_prompt_registry_steps.py grew +373 LOC (within forecast; approaches split threshold) — deferred
+- **W4** — flow prompts check always exits 1 on real corpus (downstream of C1, RESOLVED by C1 fix)
+- **W5** — parse_frontmatter does not distinguish top-level vs nested version (root cause of C1, RESOLVED by C1 fix)
+- **W6** — apply-progress/batch-{a,b,c,d}.md closeout files not produced (single merged file) — accepted pattern
+
+### T2.5 SUGGESTION findings (NOT addressed — accepted as follow-ups)
+
+- S1 (middle dot in non-UTF-8 terminals) — low priority
+- S2 (sidecar sort_keys=True) — already correct, documented
+- S3 (check_drift dict-iteration order) — cosmetic
+- S4 (CLI output per-row vs grouped) — UX improvement, deferred
+- S5 (footer doesn't show sidecar path) — UX improvement, deferred
 
 ## Files (filesystem)
 
