@@ -31,6 +31,7 @@ from click.testing import CliRunner
 from pytest_bdd import given, parsers, scenario, then, when
 
 from flow_engineering import prompt_registry
+from flow_engineering.cli import main
 from flow_engineering.opencode_skill_catalog import (
     SkillEntry,
     check_drift,
@@ -750,4 +751,322 @@ def then_clean_state_no_raise(prompt_world: dict[str, Any]) -> None:
     assert exc is None, f"expected no exception; got {exc!r}"
     assert prompt_world["drift_list"] == [], (
         f"expected empty list; got {prompt_world['drift_list']!r}"
+    )
+
+
+# ---------- Scenario bindings: REQ-50 ----------
+
+
+@scenario(
+    "../bdd/req50_cli_prompts.feature",
+    "`flow prompts list` shows all registered prompts grouped by domain",
+)
+def test_req50_prompts_list(prompt_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req50_cli_prompts.feature",
+    "`flow prompts show <name>` renders the prompt with kwargs",
+)
+def test_req50_prompts_show(prompt_world: dict[str, Any]) -> None:
+    pass
+
+
+@scenario(
+    "../bdd/req50_cli_prompts.feature",
+    "`flow prompts show <unknown>` exits with code 5 and JSON error on stderr",
+)
+def test_req50_prompts_show_unknown(prompt_world: dict[str, Any]) -> None:
+    pass
+
+
+# ---------- REQ-50 Given steps ----------
+
+
+@given(
+    "PROMPT_REGISTRY has 4 entries (1 flow/observability, 3 flow/binding)"
+)
+def given_prompt_registry_has_4_entries(prompt_world: dict[str, Any]) -> None:
+    """The PROMPT_NAMES catalog has the 4 migrated entries (REQ-45 + REQ-50).
+
+    Asserts the spec REQ-50 S1 precondition: 1 entry under
+    flow/observability (strict_tdd) + 3 entries under flow/binding
+    (auto_suggest_header, auto_suggest_footer, auto_suggest_empty).
+    """
+    assert len(prompt_registry.PROMPT_NAMES) == 4, (
+        f"expected 4 entries in PROMPT_NAMES; "
+        f"got {len(prompt_registry.PROMPT_NAMES)}"
+    )
+    by_domain: dict[str, int] = {}
+    for entry in prompt_registry.PROMPT_NAMES:
+        domain_value = (
+            entry.domain.value
+            if hasattr(entry.domain, "value")
+            else str(entry.domain)
+        )
+        by_domain[f"flow/{domain_value}"] = (
+            by_domain.get(f"flow/{domain_value}", 0) + 1
+        )
+    assert by_domain.get("flow/observability") == 1, (
+        f"expected exactly 1 flow/observability entry; got {by_domain!r}"
+    )
+    assert by_domain.get("flow/binding") == 3, (
+        f"expected exactly 3 flow/binding entries; got {by_domain!r}"
+    )
+
+
+@given(
+    parsers.parse(
+        'PROMPT_REGISTRY has an entry `{name}` with variables=({variables})'
+    )
+)
+def given_prompt_registry_has_entry_with_variables(
+    prompt_world: dict[str, Any], name: str, variables: str,
+) -> None:
+    """The catalog contains ``name`` with the documented variables tuple.
+
+    ``variables`` is the BDD-style tuple body, e.g. ``"test_command"``
+    or ``"a", "b"``. We strip surrounding quotes + whitespace so the
+    comparison against the catalog's declared variables list is
+    shape-stable across Gherkin surface variations.
+    """
+    entry = prompt_registry.get_prompt(name)
+    raw_tokens = [t.strip() for t in variables.split(",")]
+    var_list = [t.strip().strip('"').strip("'") for t in raw_tokens if t.strip()]
+    declared = list(entry.metadata.get("variables", ()))
+    assert declared == var_list, (
+        f"expected {name} declared variables={var_list!r}; got {declared!r}"
+    )
+
+
+@given(
+    parsers.parse("the user provides an unknown prompt id `{name}`")
+)
+def given_unknown_prompt_id(
+    prompt_world: dict[str, Any], name: str,
+) -> None:
+    """Capture the unknown prompt id the user will try to render.
+
+    The name is stashed so the ``When`` step can pass it as the
+    positional ``prompt_id`` argument. The negative-control step then
+    asserts exit 5 + JSON error payload.
+    """
+    prompt_world["unknown_id"] = name
+    with pytest.raises(KeyError):
+        prompt_registry.get_prompt(name)
+
+
+# ---------- REQ-50 When steps ----------
+
+
+@when(
+    parsers.parse("the user runs `flow prompts list`")
+)
+def when_run_prompts_list(prompt_world: dict[str, Any]) -> None:
+    """Invoke ``flow prompts list`` via CliRunner; capture stdout/exit."""
+    result = runner.invoke(main, ["prompts", "list"])
+    prompt_world["stdout"] = result.stdout
+    prompt_world["stderr"] = result.stderr
+    prompt_world["exit_code"] = result.exit_code
+
+
+@when(
+    parsers.re(
+        r'the user runs `flow prompts show (?P<name>\S+) --var (?P<pair>[^`]+)`'
+    )
+)
+def when_run_prompts_show_with_var(
+    prompt_world: dict[str, Any], name: str, pair: str,
+) -> None:
+    """Invoke ``flow prompts show <name> --var <pair>`` via CliRunner.
+
+    Uses ``parsers.re`` instead of ``parsers.parse`` because the
+    ``--var <pair>`` suffix collides with the greedy ``{name}``
+    placeholder (would otherwise capture the rest of the backtick
+    string into ``name``).
+    """
+    result = runner.invoke(main, ["prompts", "show", name, "--var", pair])
+    prompt_world["stdout"] = result.stdout
+    prompt_world["stderr"] = result.stderr
+    prompt_world["exit_code"] = result.exit_code
+
+
+@when(
+    parsers.re(
+        r'the user runs `flow prompts show (?P<name>[^`]+)`'
+    )
+)
+def when_run_prompts_show_no_var(
+    prompt_world: dict[str, Any], name: str,
+) -> None:
+    """Invoke ``flow prompts show <name>`` (no --var) via CliRunner.
+
+    Uses ``parsers.re`` with ``[^`]+`` to capture the prompt id up
+    to the closing backtick; the more specific ``--var`` step is
+    registered FIRST so pytest-bdd matches it before this fallback.
+    """
+    result = runner.invoke(main, ["prompts", "show", name])
+    prompt_world["stdout"] = result.stdout
+    prompt_world["stderr"] = result.stderr
+    prompt_world["exit_code"] = result.exit_code
+
+
+# ---------- REQ-50 Then steps ----------
+
+
+@then(parsers.parse("stdout contains a header line `{fragment}`"))
+def then_stdout_contains_header_line(
+    prompt_world: dict[str, Any], fragment: str,
+) -> None:
+    """Assert stdout contains the header marker line for `flow prompts list`.
+
+    The CLI table emits the header in uppercase (``PROMPT_ID``); we
+    lowercase both sides for a stable comparison so the Gherkin
+    scenario can use the canonical lowercase spec string.
+    """
+    stdout_lower = prompt_world["stdout"].lower()
+    fragment_lower = fragment.lower()
+    assert fragment_lower in stdout_lower, (
+        f"expected {fragment!r} (case-insensitive) in stdout; "
+        f"got {prompt_world['stdout']!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'stdout contains a row for `{name}` with version="{version}" '
+        'and owner="{owner}"'
+    )
+)
+def then_stdout_contains_row_for(
+    prompt_world: dict[str, Any], name: str, version: str, owner: str,
+) -> None:
+    """Assert stdout has a row carrying ``name`` + ``version`` + ``owner``."""
+    stdout = prompt_world["stdout"]
+    matching_lines = [
+        line for line in stdout.splitlines()
+        if name in line and version in line and owner in line
+    ]
+    assert matching_lines, (
+        f"expected row with name={name!r} version={version!r} owner={owner!r}; "
+        f"got stdout={stdout!r}"
+    )
+
+
+@then(parsers.parse("stdout contains a footer line `{fragment}`"))
+def then_stdout_contains_footer_line(
+    prompt_world: dict[str, Any], fragment: str,
+) -> None:
+    """Assert stdout contains the footer marker line for `flow prompts list`."""
+    assert fragment in prompt_world["stdout"], (
+        f"expected {fragment!r} in stdout footer; "
+        f"got {prompt_world['stdout']!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'stdout contains a `prompt_id:` line with `{name}`'
+    )
+)
+def then_stdout_contains_prompt_id_line(
+    prompt_world: dict[str, Any], name: str,
+) -> None:
+    """Assert stdout has a ``prompt_id:`` line carrying ``name``."""
+    stdout = prompt_world["stdout"]
+    matches = [
+        line for line in stdout.splitlines()
+        if line.startswith("prompt_id:") and name in line
+    ]
+    assert matches, (
+        f"expected 'prompt_id:' line with {name!r} in stdout; "
+        f"got stdout={stdout!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'stdout contains a `version:` line with `{value}`'
+    )
+)
+def then_stdout_contains_version_line(
+    prompt_world: dict[str, Any], value: str,
+) -> None:
+    """Assert stdout has a ``version:`` line carrying ``value``."""
+    matches = [
+        line for line in prompt_world["stdout"].splitlines()
+        if line.startswith("version:") and value in line
+    ]
+    assert matches, (
+        f"expected 'version:' line with {value!r} in stdout; "
+        f"got stdout={prompt_world['stdout']!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'stdout contains a `variables:` line with `{pair}`'
+    )
+)
+def then_stdout_contains_variables_line(
+    prompt_world: dict[str, Any], pair: str,
+) -> None:
+    """Assert stdout has a ``variables:`` line carrying the ``pair`` marker."""
+    matches = [
+        line for line in prompt_world["stdout"].splitlines()
+        if line.startswith("variables:") and pair in line
+    ]
+    assert matches, (
+        f"expected 'variables:' line with {pair!r} in stdout; "
+        f"got stdout={prompt_world['stdout']!r}"
+    )
+
+
+@then(
+    parsers.parse("stdout contains the rendered string `{value}`")
+)
+def then_stdout_contains_rendered_string(
+    prompt_world: dict[str, Any], value: str,
+) -> None:
+    """Assert stdout contains the rendered template body fragment."""
+    assert value in prompt_world["stdout"], (
+        f"expected rendered string {value!r} in stdout; "
+        f"got stdout={prompt_world['stdout']!r}"
+    )
+
+
+@then("stderr contains a JSON error object with key `error` equal to `unknown prompt id`")
+def then_stderr_contains_json_unknown_error(prompt_world: dict[str, Any]) -> None:
+    """Assert stderr is a JSON object with ``error == "unknown prompt id"``."""
+    loaded = json.loads(prompt_world["stderr"])
+    assert loaded.get("error") == "unknown prompt id", (
+        f"expected error='unknown prompt id' in stderr JSON; got {loaded!r}"
+    )
+
+
+@then(
+    parsers.parse("stderr contains the prompt_id `{name}`")
+)
+def then_stderr_contains_prompt_id(
+    prompt_world: dict[str, Any], name: str,
+) -> None:
+    """Assert stderr JSON carries the unknown ``prompt_id`` value."""
+    loaded = json.loads(prompt_world["stderr"])
+    assert loaded.get("prompt_id") == name, (
+        f"expected prompt_id={name!r} in stderr JSON; got {loaded!r}"
+    )
+
+
+@then(parsers.parse("the command exits {code:d}"))
+def then_command_exits_n(prompt_world: dict[str, Any], code: int) -> None:
+    """Assert the captured CLI invocation exited with ``code``.
+
+    Generalized version of :func:`then_exit_code_zero` for any exit
+    code (used by REQ-50 to assert exit 5 on unknown prompt id).
+    """
+    actual = prompt_world["exit_code"]
+    assert actual == code, (
+        f"expected exit {code}; got {actual}. "
+        f"stdout={prompt_world['stdout']!r} stderr={prompt_world['stderr']!r}"
     )
