@@ -2277,6 +2277,143 @@ def drift_events_stats(
     click.echo("\n".join(lines) + "\n")
 
 
+# ---------- REQ-V1.2.4: 1-release DEPRECATED Click group alias for `flow drift-events` ----------
+
+
+@main.group(
+    name="drift-events",
+    deprecated=True,
+    help=(
+        "DEPRECATED alias for ``flow drift events`` (REQ-V1.2.4). "
+        "Use ``flow drift events {list,tail,stats}`` instead. "
+        "This hyphenated form is REMOVED in v1.3."
+    ),
+)
+def drift_events_alias_group() -> None:
+    """Read drift events from ~/.flow-engineering/drift_events.jsonl.
+
+    REQ-V1.2.4 1-release DEPRECATED Click group alias — preserved for
+    backwards compatibility with the pre-v1.2 top-level
+    ``flow drift-events`` surface. The canonical v1.2 surface is
+    ``flow drift events {list,tail,stats}`` (nested under the new
+    ``drift`` group). This alias emits a Click ``DeprecationWarning``
+    on every invocation via ``deprecated=True`` and delegates to the
+    canonical subcommands. REMOVED in v1.3 per the
+    ``SnapshotGraphMissing`` v1.1 precedent.
+    """
+
+
+@drift_events_alias_group.command(name="list")
+@click.option("--since", default=None,
+              help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None,
+              help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option("--change", default=None,
+              help="Filter events for a specific change name.")
+@click.option("--event-class", default=None,
+              help="Filter events by drift class (e.g. LABEL_DRIFT).")
+@click.option("--limit", type=int, default=None,
+              help="Cap the number of returned events.")
+@click.option("--format", "fmt", default="text",
+              type=click.Choice(["text", "json", "prometheus", "csv"]),
+              help="Output format (default: text).")
+@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Alternative drift event log path "
+                   "(default: ~/.flow-engineering/drift_events.jsonl).")
+@click.option("--strict", is_flag=True,
+              help="Abort on first legacy str decision_id line "
+                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.pass_context
+def drift_events_alias_list(
+    ctx: click.Context,
+    since: str | None,
+    until: str | None,
+    change: str | None,
+    event_class: str | None,
+    limit: int | None,
+    fmt: str,
+    log_path: Path | None,
+    strict: bool,
+) -> None:
+    """DEPRECATED alias for ``flow drift events list`` (REQ-V1.2.4)."""
+    ctx.forward(
+        drift_events_list,
+        since=since, until=until, change=change, event_class=event_class,
+        limit=limit, fmt=fmt, log_path=log_path, strict=strict,
+    )
+
+
+@drift_events_alias_group.command(name="tail")
+@click.option("--limit", type=int, default=10,
+              help="Number of events to show, newest-first (default: 10).")
+@click.option("--change", default=None,
+              help="Filter events for a specific change name.")
+@click.option("--event-class", default=None,
+              help="Filter events by drift class (e.g. LABEL_DRIFT).")
+@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Alternative drift event log path "
+                   "(default: ~/.flow-engineering/drift_events.jsonl).")
+@click.option("--format", "fmt", default="text",
+              type=click.Choice(["text", "json"]),
+              help="Output format (default: text).")
+@click.option("--strict", is_flag=True,
+              help="Abort on first legacy str decision_id line "
+                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.pass_context
+def drift_events_alias_tail(
+    ctx: click.Context,
+    limit: int,
+    change: str | None,
+    event_class: str | None,
+    log_path: Path | None,
+    fmt: str,
+    strict: bool,
+) -> None:
+    """DEPRECATED alias for ``flow drift events tail`` (REQ-V1.2.4)."""
+    ctx.forward(
+        drift_events_tail,
+        limit=limit, change=change, event_class=event_class,
+        log_path=log_path, fmt=fmt, strict=strict,
+    )
+
+
+@drift_events_alias_group.command(name="stats")
+@click.option("--change", default=None,
+              help="Filter stats to a specific change name.")
+@click.option("--since", default=None,
+              help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None,
+              help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Alternative drift event log path "
+                   "(default: ~/.flow-engineering/drift_events.jsonl).")
+@click.option("--format", "fmt", default="text",
+              type=click.Choice(["text", "json"]),
+              help="Output format (default: text).")
+@click.option("--top-n", "top_n", type=int, default=5,
+              help="Top-N decision_ids by frequency (default: 5).")
+@click.option("--strict", is_flag=True,
+              help="Abort on first legacy str decision_id line "
+                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.pass_context
+def drift_events_alias_stats(
+    ctx: click.Context,
+    change: str | None,
+    since: str | None,
+    until: str | None,
+    log_path: Path | None,
+    fmt: str,
+    top_n: int,
+    strict: bool,
+) -> None:
+    """DEPRECATED alias for ``flow drift events stats`` (REQ-V1.2.4)."""
+    ctx.forward(
+        drift_events_stats,
+        change=change, since=since, until=until, log_path=log_path,
+        fmt=fmt, top_n=top_n, strict=strict,
+    )
+
+
 # ---------- REQ-24: flow projects backfill ----------
 
 
