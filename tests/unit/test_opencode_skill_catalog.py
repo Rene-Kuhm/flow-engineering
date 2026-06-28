@@ -19,11 +19,12 @@ import pytest
 
 from flow_engineering.opencode_skill_catalog import (
     FRONTMATTER_PATTERN,
-    SIDECAR_PATH,
     SKILL_CATALOG,
+    SIDECAR_PATH,
     SkillDrift,
     SkillEntry,
     SkillVersionError,
+    check_drift,
     compute_frontmatter_sha256,
     parse_frontmatter,
 )
@@ -323,3 +324,156 @@ class TestParseFrontmatter:
         ghost = tmp_path / "ghost.md"
         with pytest.raises(SkillVersionError):
             parse_frontmatter(ghost)
+
+
+# ---------- T1.3: check_drift core ----------
+
+
+def _make_mock_skill(
+    tmp_path: Path,
+    *,
+    name: str = "sdd-test",
+    version: str = "3.0",
+    body: str = "Body content here.\n",
+) -> Path:
+    """Write a SKILL.md with valid frontmatter; return the path."""
+    path = tmp_path / f"{name}.md"
+    path.write_text(
+        f"---\nname: {name}\ndescription: mock\nversion: \"{version}\"\n---\n\n{body}",
+        encoding="utf-8",
+    )
+    return path
+
+
+class TestCheckDrift:
+    def test_check_drift_empty_catalog_returns_empty_list(self) -> None:
+        assert check_drift({}) == []
+
+    def test_check_drift_clean_state_returns_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When no sidecar exists, fallback uses catalog ``last_verified_checksum``.
+
+        With the sidecar absent, the catalog's ``last_verified_checksum``
+        is the comparison baseline. A matching on-disk checksum reports no
+        drift; the function returns an empty list.
+        """
+        monkeypatch.setattr(
+            "flow_engineering.opencode_skill_catalog._read_sidecar",
+            lambda: {},
+        )
+        path = _make_mock_skill(tmp_path)
+        checksum = compute_frontmatter_sha256(path)
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(path),
+                last_verified_checksum=checksum,
+                owner="test-owner",
+            ),
+        }
+        assert check_drift(catalog) == []
+
+    def test_check_drift_detects_checksum_mismatch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "flow_engineering.opencode_skill_catalog._read_sidecar",
+            lambda: {},
+        )
+        path = _make_mock_skill(tmp_path)
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(path),
+                last_verified_checksum="0" * 64,  # intentionally wrong
+                owner="test-owner",
+            ),
+        }
+        drifts = check_drift(catalog)
+        assert len(drifts) == 1
+        drift = drifts[0]
+        assert drift.skill_name == "sdd-test"
+        assert drift.surface == "skill"
+        assert drift.drift_kind == "checksum_mismatch"
+        assert drift.expected_checksum == "0" * 64
+        assert drift.on_disk_checksum == compute_frontmatter_sha256(path)
+        assert drift.on_disk_version == "3.0"
+
+    def test_check_drift_detects_missing_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "flow_engineering.opencode_skill_catalog._read_sidecar",
+            lambda: {},
+        )
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(tmp_path / "ghost.md"),
+                last_verified_checksum="a" * 64,
+                owner="test-owner",
+            ),
+        }
+        drifts = check_drift(catalog)
+        assert len(drifts) == 1
+        assert drifts[0].drift_kind == "missing_file"
+        assert drifts[0].on_disk_version == ""
+        assert drifts[0].on_disk_checksum == ""
+
+    def test_check_drift_detects_frontmatter_parse_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "flow_engineering.opencode_skill_catalog._read_sidecar",
+            lambda: {},
+        )
+        path = tmp_path / "broken.md"
+        path.write_text("just body, no frontmatter\n", encoding="utf-8")
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(path),
+                last_verified_checksum="a" * 64,
+                owner="test-owner",
+            ),
+        }
+        drifts = check_drift(catalog)
+        assert len(drifts) == 1
+        assert drifts[0].drift_kind == "frontmatter_parse_error"
+        assert drifts[0].on_disk_version == ""
+        assert drifts[0].on_disk_checksum == ""
+
+    def test_check_drift_detects_version_mismatch_when_checksum_matches(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Version mismatch fires only after checksum matches (per design)."""
+        monkeypatch.setattr(
+            "flow_engineering.opencode_skill_catalog._read_sidecar",
+            lambda: {},
+        )
+        path = _make_mock_skill(tmp_path, version="2.0")
+        checksum = compute_frontmatter_sha256(path)
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",  # catalog says 3.0, file says 2.0
+                expected_path=str(path),
+                last_verified_checksum=checksum,
+                owner="test-owner",
+            ),
+        }
+        drifts = check_drift(catalog)
+        assert len(drifts) == 1
+        assert drifts[0].drift_kind == "version_mismatch"
+        assert drifts[0].expected_version == "3.0"
+        assert drifts[0].on_disk_version == "2.0"
