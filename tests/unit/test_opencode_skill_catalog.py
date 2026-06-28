@@ -921,10 +921,9 @@ class TestPyprojectMinSkillVersionsSection:
     def test_pyproject_min_sdd_skill_versions_parses(self) -> None:
         """tomllib.loads(pyproject.read_text()) exposes the 8-key dict."""
         import tomllib
+        from pathlib import Path as _p  # noqa: N813
 
-        from pathlib import Path as _P
-
-        data = tomllib.loads(_P("pyproject.toml").read_text(encoding="utf-8"))
+        data = tomllib.loads(_p("pyproject.toml").read_text(encoding="utf-8"))
         assert "tool" in data
         assert "flow_engineering" in data["tool"]
         section = data["tool"]["flow_engineering"]
@@ -949,10 +948,9 @@ class TestPyprojectMinSkillVersionsSection:
     def test_pyproject_section_coexists_with_prompts_section(self) -> None:
         """[tool.flow_engineering] + [tool.flow_engineering.prompts] coexist."""
         import tomllib
+        from pathlib import Path as _p  # noqa: N813
 
-        from pathlib import Path as _P
-
-        data = tomllib.loads(_P("pyproject.toml").read_text(encoding="utf-8"))
+        data = tomllib.loads(_p("pyproject.toml").read_text(encoding="utf-8"))
         fe = data["tool"]["flow_engineering"]
         # Umbrella section: NEW [tool.flow_engineering] (this PR).
         assert "min_sdd_skill_versions" in fe
