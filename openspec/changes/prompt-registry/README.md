@@ -1,11 +1,9 @@
-<!-- README.md: prompt-registry PR#2b active scope skeleton. Created 2026-06-27 by sdd-archive PR#2a closeout. -->
-# prompt-registry — PR#2b active scope skeleton
+<!-- README.md: prompt-registry final closure README. CHANGE #7 FULLY CLOSED 2026-06-28. -->
+# prompt-registry — change #7 FULLY CLOSED
 
-**Status**: PR#1 archived 2026-06-27 (see `openspec/changes/archive/2026-06-27-prompt-registry-pr1/archive-report.md`). PR#2a archived 2026-06-27 (see `openspec/changes/archive/2026-06-27-prompt-registry-pr2a/archive-report.md`). This folder is reserved for **PR#2b** planning artifacts.
+**Status**: **ARCHIVED — CHANGE #7 (`prompt-registry`) FULLY CLOSED** as of 2026-06-28 PR#2b archive.
 
-## PR#1 (archived)
-
-REQ-45 + REQ-46 + REQ-47 — foundation surface (catalog + render + lint). The full PR#1 proposal/spec/design/tasks/explore/verify-report + apply-progress are now under:
+All 3 PRs of the `prompt-registry` change have shipped and been archived:
 
 ```
 openspec/changes/archive/2026-06-27-prompt-registry-pr1/
@@ -21,60 +19,42 @@ openspec/changes/archive/2026-06-27-prompt-registry-pr1/
 │   ├── pr1-batch-c.md
 │   └── pr1-merged.md
 └── archive-report.md
-```
 
-## PR#2a (archived)
-
-REQ-49 — `SKILL_CATALOG` mirror catalog (20 entries) + SHA-256 frontmatter drift detection + sidecar JSON I/O + `flow prompts {check, lint}` Click subcommands (4-flag matrix: `--init`/`--update`/`--no-fail`/`--skill`). Full PR#2a tasks/verify-report/apply-progress + archive-report are under:
-
-```
 openspec/changes/archive/2026-06-27-prompt-registry-pr2a/
 ├── tasks-pr2.md              # full PR#2 task list (T1.1..T3.12)
 ├── verify-report-pr2a.md     # PR#2a closeout + T2.5 re-verify
 ├── apply-progress-pr2a.md    # 4 sub-batches A1/A2/A3/B1 + T2.5 follow-up
+└── archive-report.md
+
+openspec/changes/archive/2026-06-27-prompt-registry-pr2b/
+├── apply-progress-pr2b.md    # 3 sub-batches B1/B2/B3 closeout
+├── verify-report-pr2b.md     # PR#2b closeout (PASS WITH WARNINGS)
+├── README-pr2b-skeleton.md   # the PR#2b-only skeleton that lived here pre-archive
 └── archive-report.md         # this archive's audit trail
 ```
 
-**T2.5 follow-up fixes** (between initial PR#2a apply at HEAD `83e55b9` and archive at HEAD `0dea408`) resolved 3 verify findings end-to-end on the real OpenCode SKILL.md corpus:
-- **C1** — `parse_frontmatter` nested `metadata.version` fallback (`_extract_version` helper)
-- **W1** — `flow prompts check` 4-flag matrix complete (added `--update`/`--no-fail`/`--skill` + `--init` + `_resolve_check_action` helper + `CheckAction` dataclass)
-- **W2** — `flow prompts check` stderr WARN summary when drift detected + 4 observability counters via `observability.increment()` / `observability.observe()`
+## What shipped (cumulative across the 3 PRs)
 
-Test baseline: 1125 (pre-PR#2a) → 1187 (post-PR#2a) → **1199** (post-T2.5 follow-up) — all passing, ruff clean, mypy clean on `opencode_skill_catalog.py`.
+| PR | REQs | W-fixes resolved | Test count | HEAD at archive |
+|----|------|------------------|------------|-----------------|
+| **PR#1** (2026-06-27) | REQ-45 (PromptRegistry catalog) + REQ-46 (render_prompt helpers) + REQ-47 (lint_prompts validator) | (deferred 10 W-fixes to PR#2b) | 1125 baseline | `4bbcc21` |
+| **PR#2a** (2026-06-27) | REQ-49 (SKILL_CATALOG mirror + SHA-256 drift detection + `flow prompts {check, lint}` CLI) | T2.5 follow-up: C1 (nested `metadata.version` fallback) + W1 (4-flag matrix) + W2 (stderr WARN + 4 observability counters) | 1125 → 1199 (+74) | `0dea408` |
+| **PR#2b** (2026-06-28) | REQ-50 (`flow prompts list --json` + `flow prompts show <id>` with sentinel substitution + exit 5) | W1 (lint taxonomy alias map) + W2 (`select_autoescape`) + W3 (prompts/ directory + 4 .j2 files) + W4 (`scaffold._env()` hoist) + W7 (`[tool.flow_engineering.prompts]` section) + W8 (pyproject.toml version 0.8.1) + W9 (ruff --fix on changed files) + W10 (REQ-45 S1 BDD strengthen) | 1199 → 1232 (+33) | `50c3b64` |
 
-The canonical capability spec lives at `openspec/specs/prompt-registry/spec.md` and now carries the PR#1 archive status header + PR#2a archive status header + the post-archive scope table.
+**Final capability spec**: `openspec/specs/prompt-registry/spec.md` reflects the FULL post-archive state with explicit `## PR#{N} archive status (DATE)` sections for all 3 PRs + a unified `## PR#1 + PR#2a + PR#2b Scope (post-archive 2026-06-28)` table + Versioning v1.0 → v1.1 → v1.2 history.
 
-## PR#2b (active — REQ-50 + 8 W-fix carry-forwards)
+## Verify verdict at PR#2b archive
 
-**Decision** (cached at engram `sdd/prompt-registry/pr2-chain-decision`): PR#2 forecast 1560 LOC exceeded 400-line review budget → chained PRs. Chain strategy: **stacked-to-main** (per proposal #201 precedent + C4 auto-forecast). PR#2a merged first (REQ-49); PR#2b stacks on top.
+**`PASS WITH WARNINGS`** — 0 CRITICAL, 4 WARNING, 6 SUGGESTION. All 4 WARNING findings accepted as future follow-ups per drift-hardening precedent (PR#2b's 4 WARNING + 6 SUGGESTION is the smallest carry-forward footprint of any change in this repo). Optional T3.13 follow-up (~25 LOC + 3 doc touch-ups, ~30 min) documented in `verify-report-pr2b.md` §"Pre-archive fixes" if user wants fully clean lint surface before push.
 
-### Scope
+## Carry-forwards (after PR#2b archive)
 
-- REQ-50 — `flow prompts list --json` + `flow prompts show <id> --var key=value` (repeatable) with sentinel substitution + exit 5 on unknown id (sdd-tasks T3.1 + T3.2)
-- 8 W-fix carry-forwards from PR#1 verify-report (bundled into PR#2b batch C):
-  - **W1** — `lint_prompts` spec-taxonomy alias map (`LINT_CATEGORY_SPEC_ALIASES` in `prompt_registry.py`)
-  - **W2** — `select_autoescape(default_for_string=True)` for `_safe_jinja_env()` (HTML escape blocks Jinja2 `{{ var }}` injection)
-  - **W3** — restore `prompts/` directory + 4 `.j2` files at repo root (per D1/D2)
-  - **W4** — hoist `scaffold._env()` to shared `prompt_render._env()` (per D3)
-  - **W7** — `[tool.flow_engineering.prompts] directory = "prompts"` in `pyproject.toml`
-  - **W8** — bump `pyproject.toml` version to `0.8.0` (CHANGELOG already claims `0.8.0`)
-  - **W9** — `uv run ruff check --fix` on changed files (3 of 5 auto-fixable)
-  - **W10** — strengthen BDD scenarios for REQ-45 S1/S2 to match spec Gherkin shape
-- Capability spec sync (T3.11) — add REQ-50 sections to `openspec/specs/prompt-registry/spec.md`; document W-fix resolutions
-- CHANGELOG + closeout (T3.12) — `## [0.8.0] - 2026-06-27` entry + 3 BDD scenarios for REQ-50 + closeout tests
-- Forecast: ~720 LOC, ~36 work-unit commits (per `tasks-pr2.md:54-55` PR#2b batch table)
-- Files: `src/flow_engineering/cli.py` (MODIFY — `flow prompts list` + `flow prompts show <id>`), `src/flow_engineering/prompt_registry.py` (MODIFY — `LINT_CATEGORY_SPEC_ALIASES` + autoescape), `src/flow_engineering/prompt_render.py` (MODIFY — `_env()` factory with `select_autoescape`), `src/flow_engineering/scaffold.py` (REFACTOR — replace local `_env()` with re-export), `prompts/strict_tdd.j2` + `prompts/auto_suggest_{header,footer,empty}.j2` (NEW), `pyproject.toml` (MODIFY — `[tool.flow_engineering.prompts]` section + version bump), `tests/bdd/req45_prompt_registry.feature` (MODIFY — strengthen S1/S2 per W10), `openspec/specs/prompt-registry/spec.md` (MODIFY — add REQ-50 sections + W-fix resolution notes)
+### Deferred to `v0.9.0-hardening` (next change — already exploring)
 
-### Already-RESOLVED at commit `613f716` (PR#1 verify, verify only, no work needed in PR#2b)
-- **W5** — re-test the 4 migrated entries via `render_prompt(name, **kwargs)` (25 tests passing)
-- **W6** — `PromptRenderError` exception class (implemented + tested)
+- Removal of v0.8.0 1-release compat shims (`Finding.from_legacy`, `DriftReport.from_legacy`, `classify_binding_legacy`) per CHANGELOG v0.8.0 lines 43/44/46/74 ("removed in v0.9.0")
+- `pyproject.toml` bump 0.8.1 → 0.9.0
 
-### Already-RESOLVED in PR#2a (commit `0dea408` post-T2.5 fixes)
-- **T2.2 W1** — `flow prompts check` 4-flag matrix (`--init` + `--update` + `--no-fail` + `--skill`)
-- **T2.4 W2** — `flow prompts check` stderr WARN + 4 observability counters
-- **C1** — nested `metadata.version` fallback for the real OpenCode SKILL.md corpus
-
-## Carry-forwards deferred to v1.1 (NOT PR#2b)
+### Deferred to v1.1 (post-`v0.9.0-hardening`)
 
 - **REQ-48** — golden regression tests via `tests/golden/prompts/<prompt_id>.txt` snapshots
 - **REQ-51** — `prompt_renders.jsonl` append-only sink (`FLOW_PROMPT_LOG=1` gate)
@@ -82,28 +62,34 @@ The canonical capability spec lives at `openspec/specs/prompt-registry/spec.md` 
 - **REQ-53** — generated `docs/prompts.md` from `PROMPT_REGISTRY` at build time
 - **REQ-54** — `min_sdd_skill_versions: dict[str, str]` gate in `pyproject.toml`
 
-## Out-of-scope reminders (deferred beyond PR#2b — v0.8.x schema migrations)
+### Deferred to v0.8.x schema migrations (independent of PR#2 chain)
 
-- `PromptDef` → `PromptEntry` schema migration (5 fields → 6 fields: add `template_id` + `location` + `schema_version` as separate fields)
+- `PromptDef` → `PromptEntry` (5 fields → 6 fields: add `template_id` + `location` + `schema_version` as separate fields)
 - `PROMPT_NAMES: tuple` → `PROMPT_REGISTRY: dict` shape migration
+- `PromptDomain(str, Enum)` → `PromptDomain(StrEnum)` UP042 ruff finding (requires `--unsafe-fixes`)
+- The `LINT_CATEGORY_SPEC_ALIASES` mapping shim (W1 of PR#2b) covers the spec/impl taxonomy gap until the schema migration lands
 
-The `LINT_CATEGORY_SPEC_ALIASES` mapping shim (W1 in PR#2b) covers the spec/impl taxonomy gap until the schema migration lands.
+### Optional T3.13 follow-up (NOT blocking; accepted per drift-hardening precedent)
 
-## Next recommended step
+If the user wants a fully clean lint surface before push to origin (~30 min, ~25 LOC):
 
-`sdd-apply prompt-registry PR#2b` (template cached at engram `sdd/prompt-registry/apply-prompt-template-pr2b`). Apply batches ready per `tasks-pr2.md:114-122` (B1: T3.1 + T3.2 REQ-50 CLI surface; B2: T3.3..T3.6 W1+W2+W3+W4 lint+autoescape+prompts+scaffold hoist; B3: T3.7..T3.9 W7+W8+W9 pyproject + ruff; B4: T3.10..T3.12 W10 BDD + spec sync + CHANGELOG closeout). When PR#2b completes:
-1. `sdd-verify prompt-registry PR#2b` (verify 12 tasks + REQ-50 acceptance criteria)
-2. `sdd-archive prompt-registry PR#2b` (move to `archive/2026-06-27-prompt-registry-pr2b/`)
-3. `git push` to origin
-4. `sdd-explore v1.1 prompt-registry` (REQs 48/51..54 + v0.8.x schema migrations + a possible `prompt-registry v1.1` change)
+- **W-A3** (~10 LOC) — Add `from typing import Any` to `tests/unit/test_cli_prompts.py:18-27` (fixes F821 × 3); apply `ruff --fix` (fixes UP037); split `test_cli_prompts.py:507` assertion into 2 lines (PT018).
+- **W-A1** (~6 LOC) — Add `variables: list[str]` to `_serialize_prompts_list` at `cli.py:2820-2827`; add 1 unit test assertion.
+- **W-A4** (doc-only) — Update `CHANGELOG.md:16` + `apply-progress-pr2b.md:146,212` + `spec.md:48` to say `prompt_registry._env()` instead of `prompt_render._env()`.
+
+If declined (default), the 3 fixes remain as carry-forwards into v0.8.x.
+
+## Next steps (post-change #7 closure)
+
+1. **Orchestrator pushes to origin**: `git push origin main` — closes change #7 entirely.
+2. **`sdd-explore v0.9.0-hardening`** (already explored per `openspec/changes/v0.9.0-hardening/explore.md`) — ready for the next `sdd-propose` + `sdd-design` + `sdd-spec` + `sdd-tasks` cycle when the orchestrator decides to schedule it.
+3. **v1.1 cluster** (post-`v0.9.0-hardening`) — REQ-48/51..54 + federated prompts + i18n + A/B testing; separate change when ready.
 
 ## Reference
 
-- PR#2b tasks: `openspec/changes/archive/2026-06-27-prompt-registry-pr2a/tasks-pr2.md` (T3.x breakdown)
-- PR#2a verify-report: `openspec/changes/archive/2026-06-27-prompt-registry-pr2a/verify-report-pr2a.md`
-- PR#2a archive-report: `openspec/changes/archive/2026-06-27-prompt-registry-pr2a/archive-report.md`
-- PR#2a apply-progress: `openspec/changes/archive/2026-06-27-prompt-registry-pr2a/apply-progress-pr2a.md`
-- PR#1 archive: `openspec/changes/archive/2026-06-27-prompt-registry-pr1/`
-- Capability spec: `openspec/specs/prompt-registry/spec.md` (PR#1 + PR#2a archive status headers + post-archive scope table)
-- PR#2 chain decision: engram topic_key `sdd/prompt-registry/pr2-chain-decision`
-- PR#2b apply prompt template (cached): engram topic_key `sdd/prompt-registry/apply-prompt-template-pr2b`
+- **Capability spec**: `openspec/specs/prompt-registry/spec.md` (the canonical source of truth for prompt-registry behavior)
+- **CHANGELOG**: `CHANGELOG.md` — `## [0.8.1] - 2026-06-28` entry documents REQ-50 + 8 W-fixes
+- **pyproject.toml**: `version = "0.8.1"` (was `0.8.0` at PR#2a archive)
+- **Engram chain decisions**: `sdd/prompt-registry/pr2-chain-decision` (chained PR strategy) + `sdd/prompt-registry/apply-progress-pr2b` (PR#2b apply-progress checkpoint) + `sdd/prompt-registry/archive-report-pr2b` (this archive's audit trail)
+
+**Topic**: sdd/prompt-registry/change-closure-readme
