@@ -7,7 +7,6 @@ into the same modules exercised by the unit tests in tests/unit/.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, scenario, then, when
@@ -21,7 +20,6 @@ from flow_engineering.binding import (
     format_code_refs_block,
 )
 from flow_engineering.engram_io import EngramClient, InMemoryBackend
-
 
 # ---------- Fixtures shared across scenarios ----------
 

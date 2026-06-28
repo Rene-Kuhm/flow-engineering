@@ -3,11 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_engineering.daemon import start_watch, stop_watch
+from flow_engineering.daemon import start_watch
 from flow_engineering.state import ChangeStatus, StateMachine
 from flow_engineering.timeline import (
     ProjectTimeline,
-    TimelineEvent,
     build_timeline,
     render_timeline,
 )

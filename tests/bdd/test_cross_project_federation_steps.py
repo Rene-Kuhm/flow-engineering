@@ -38,7 +38,6 @@ from flow_engineering.cli import main
 from flow_engineering.engram_io import EngramBackend, InMemoryBackend
 from flow_engineering.project_detector import detect
 
-
 runner = CliRunner()
 
 

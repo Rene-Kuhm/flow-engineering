@@ -27,7 +27,6 @@ from pytest_bdd import given, parsers, scenario, then, when
 
 from flow_engineering.cli import main
 
-
 runner = CliRunner()
 
 

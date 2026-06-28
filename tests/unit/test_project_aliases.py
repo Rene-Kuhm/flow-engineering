@@ -37,7 +37,6 @@ from flow_engineering.project_aliases import (
     save_aliases,
 )
 
-
 # ---------- REQ-27 scenario 1: resolve ----------
 
 
@@ -292,9 +291,9 @@ class TestModuleSurface:
     ) -> None:
         from pathlib import Path as _P
 
-        assert DEFAULT_ALIASES_PATH == (
+        assert (
             _P.home() / ".config" / "flow-engineering" / "project-aliases.json"
-        )
+        ) == DEFAULT_ALIASES_PATH
 
     def test_aliases_module_exposes_public_functions(self) -> None:
         for name in (

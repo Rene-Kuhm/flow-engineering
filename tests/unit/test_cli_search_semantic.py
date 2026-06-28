@@ -112,6 +112,7 @@ def seeded_hybrid_backend(monkeypatch: pytest.MonkeyPatch) -> Any:
     everything else — so the ranking is deterministic.
     """
     import numpy as np
+
     from flow_engineering.hybrid_backend import HybridBackend
 
     backend = InMemoryBackend()

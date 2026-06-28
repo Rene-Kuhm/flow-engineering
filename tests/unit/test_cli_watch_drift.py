@@ -33,7 +33,7 @@ from flow_engineering import daemon, observability
 from flow_engineering.binding import CodeRef
 from flow_engineering.cli import main as cli_main
 from flow_engineering.decision_drift import DriftClass, DriftReport, Finding
-from flow_engineering.state import ChangeStatus, StateMachine
+from flow_engineering.state import StateMachine
 
 runner = CliRunner()
 

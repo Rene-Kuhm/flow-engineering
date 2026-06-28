@@ -13,6 +13,7 @@ phase (T1.5) implements the function so all of these pass.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -342,9 +343,9 @@ def test_scan_change_snapshot(tmp_path: Path) -> None:
 
     assert report.graph_unavailable is False
     # v0.8.0 (REQ-56 W8): graph_mtime is ISO 8601 str, not float epoch.
-    from datetime import datetime, timezone
+    from datetime import datetime
     expected_iso = datetime.fromtimestamp(
-        graph_path.stat().st_mtime, tz=timezone.utc
+        graph_path.stat().st_mtime, tz=UTC
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     assert report.graph_mtime == expected_iso
 

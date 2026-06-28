@@ -28,7 +28,6 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from flow_engineering.binding import format_code_refs_block
 from flow_engineering.cli import main
 from flow_engineering.decision_drift import (
     DriftClass,
@@ -724,4 +723,4 @@ class TestWriteBackSkipWarn:
                 drift_class=DriftClass.STALE_ID,
                 detail="",
             )
-        assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value) 
+        assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value)

@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +47,7 @@ def _patch_snapshots_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Point ``_resolve_snapshots_dir`` at this test's ``tmp_path/snaps``."""
     snaps_dir = tmp_path / "snaps"
     monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snaps_dir))
-    yield
+    return
 
 
 # ---------- Helpers ----------

@@ -203,9 +203,9 @@ class TestPromptRegistryLoadsFromJ2Files:
 
     def test_load_template_from_file_helper_reads_disk(self) -> None:
         """``load_template_from_file()`` reads the body of a ``.j2`` file."""
-        from flow_engineering.prompt_registry import load_template_from_file
-
         from pathlib import Path
+
+        from flow_engineering.prompt_registry import load_template_from_file
 
         repo_root = Path(__file__).resolve().parent.parent.parent
         body = load_template_from_file(repo_root / "prompts" / "strict_tdd.j2")
@@ -214,9 +214,9 @@ class TestPromptRegistryLoadsFromJ2Files:
 
     def test_catalog_templates_match_disk(self) -> None:
         """``prompt.template`` matches what ``load_template_from_file`` returns."""
-        from flow_engineering.prompt_registry import load_template_from_file
-
         from pathlib import Path
+
+        from flow_engineering.prompt_registry import load_template_from_file
 
         repo_root = Path(__file__).resolve().parent.parent.parent
         for entry in PROMPT_NAMES:
@@ -230,10 +230,10 @@ class TestPromptRegistryLoadsFromJ2Files:
     def test_load_template_from_file_strips_trailing_newline(self) -> None:
         """POSIX text files end in ``\\n``; the loader strips it so the
         resolved ``template`` matches the inline-Python expectation."""
-        from flow_engineering.prompt_registry import load_template_from_file
-
         import tempfile
         from pathlib import Path
+
+        from flow_engineering.prompt_registry import load_template_from_file
 
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".j2", delete=False, encoding="utf-8"
