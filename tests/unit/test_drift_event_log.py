@@ -34,7 +34,7 @@ def log_path(tmp_path: Path) -> Path:
 def _make_event(
     *,
     change: str = "decision-reality-drift",
-    decision_id: str = "42",
+    decision_id: int = 42,
     binding_id: str = "obs-42",
     event_class: str = "label_drift",
     detected_at: float = 1_710_000_000.0,
@@ -141,7 +141,7 @@ class TestAppendMultipleEvents:
     ) -> None:
         """Three appends produce exactly three lines, no overwrites."""
         log = DriftEventLog(path=log_path)
-        events = [_make_event(decision_id=str(i), binding_id=f"obs-{i}") for i in range(3)]
+        events = [_make_event(decision_id=i, binding_id=f"obs-{i}") for i in range(3)]
 
         for ev in events:
             log.append(ev)
@@ -158,9 +158,9 @@ class TestAppendMultipleEvents:
         """``read_all()`` returns the events in append order."""
         log = DriftEventLog(path=log_path)
         events = [
-            _make_event(decision_id="1", binding_id="a"),
-            _make_event(decision_id="2", binding_id="b"),
-            _make_event(decision_id="3", binding_id="c"),
+            _make_event(decision_id=1, binding_id="a"),
+            _make_event(decision_id=2, binding_id="b"),
+            _make_event(decision_id=3, binding_id="c"),
         ]
         for ev in events:
             log.append(ev)
@@ -176,17 +176,17 @@ class TestAppendMultipleEvents:
     ) -> None:
         """Malformed JSONL lines are silently skipped (sink is best-effort)."""
         log = DriftEventLog(path=log_path)
-        log.append(_make_event(decision_id="1"))
-        log.append(_make_event(decision_id="2"))
+        log.append(_make_event(decision_id=1))
+        log.append(_make_event(decision_id=2))
         # Append a malformed line directly so read_all() must skip it.
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write("not-json\n")
-        log.append(_make_event(decision_id="3"))
+        log.append(_make_event(decision_id=3))
 
         result = log.read_all()
 
         assert len(result) == 3
-        assert [ev.decision_id for ev in result] == ["1", "2", "3"]
+        assert [ev.decision_id for ev in result] == [1, 2, 3]
 
     def test_drift_event_log_read_all_on_missing_file_returns_empty(
         self, tmp_path: Path
@@ -305,7 +305,7 @@ class TestThreadSafety:
             for i in range(per_thread):
                 log.append(
                     _make_event(
-                        decision_id=str(thread_idx * per_thread + i),
+                        decision_id=thread_idx * per_thread + i,
                         binding_id=f"obs-{thread_idx}-{i}",
                     )
                 )

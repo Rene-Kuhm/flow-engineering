@@ -431,7 +431,8 @@ class TestDriftEventLogWiring:
         # binding_id, event_class, detected_at.
         for change, decision_id, binding_id, event_class, detected_at in appended:
             assert change == "obs"
-            assert decision_id in {"10", "11"}
+            assert decision_id in {10, 11}
+            assert isinstance(decision_id, int)
             assert binding_id.startswith("n")
             assert event_class in {"STALE_ID", "LABEL_DRIFT"}
             assert isinstance(detected_at, float)
@@ -538,7 +539,8 @@ class TestDriftEventLogWiring:
             "detected_at",
         }
         assert parsed["change"] == "obs"
-        assert parsed["decision_id"] == "42"
+        assert parsed["decision_id"] == 42
+        assert isinstance(parsed["decision_id"], int)
         assert parsed["binding_id"] == "n42"
         assert parsed["class"] == "STALE_ID"
         assert isinstance(parsed["detected_at"], float)
