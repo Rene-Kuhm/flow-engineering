@@ -13,13 +13,20 @@ Public API:
 - :data:`FRONTMATTER_PATTERN` -- regex matching the YAML frontmatter block.
 - :func:`compute_frontmatter_sha256` -- SHA-256 of the canonicalized frontmatter.
 - :func:`parse_frontmatter` -- YAML frontmatter -> dict parser.
+- :func:`check_drift` -- walk catalog and report drifts.
+- :func:`init_checksums` -- bootstrap the sidecar with current on-disk state.
+- :func:`update_checksums` -- refresh the sidecar with current on-disk state.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -298,19 +305,76 @@ __all__ = [
     "SkillVersionError",
     "check_drift",
     "compute_frontmatter_sha256",
+    "init_checksums",
     "parse_frontmatter",
+    "update_checksums",
 ]
 
 
 def _read_sidecar() -> dict[str, dict[str, str]]:
     """Read the sidecar JSON; return ``{}`` when the file is missing.
 
-    Stubbed to return ``{}`` in T1.3; the real implementation that reads
-    from :data:`SIDECAR_PATH` lands in T1.4. Returning ``{}`` keeps the
-    function pure for unit-test scenarios where the sidecar should not
-    influence the comparison (tests monkeypatch this stub).
+    The lazy-bootstrap contract (REQ-49 D8 + D9): first-run safety — when
+    the sidecar does not exist yet, return an empty mapping so callers
+    can detect "no prior verification" and trigger ``--init``.
+
+    Returns:
+        A nested dict shaped ``{key: {"version": str, "checksum": str,
+        "last_verified_at": str}}``. Empty dict when the file is missing
+        OR empty.
     """
-    return {}
+    path = _sidecar_path()
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    if not isinstance(loaded, dict):
+        return {}
+    return loaded
+
+
+def _write_sidecar(sidecar: dict[str, dict[str, str]]) -> None:
+    """Write the sidecar JSON atomically (tempfile + os.replace).
+
+    Atomic write guarantees that a mid-write interruption (process kill,
+    power loss, disk full) never leaves a half-written JSON file behind.
+    The temporary file is created in the SAME directory as the target so
+    the ``os.replace`` is an atomic rename on the same filesystem.
+
+    Args:
+        sidecar: The nested dict to serialize. Written with ``indent=2``
+            for grep-ability.
+    """
+    path = _sidecar_path()
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".prompt_checksums_",
+        suffix=".json.tmp",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(sidecar, fh, indent=2, sort_keys=True)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_name)
+        raise
+
+
+def _sidecar_path() -> Path:
+    """Return the sidecar path; lazily create parent directories.
+
+    The ``~/.flow-engineering/`` directory is created on first invocation
+    so callers do not need to pre-create it. This is the "lazy bootstrap"
+    contract (per design D9): the sidecar file is created only when
+    ``flow prompts check --init`` runs (or via :func:`init_checksums` /
+    :func:`update_checksums`).
+    """
+    path = SIDECAR_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def compute_frontmatter_sha256(path: Path) -> str:
@@ -472,3 +536,79 @@ def check_drift(
             )
 
     return drifts
+
+
+def _now_iso_z() -> str:
+    """Return current UTC time as ``YYYY-MM-DDTHH:MM:SSZ`` (ISO 8601, Z-suffixed)."""
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def init_checksums(
+    catalog: dict[str, SkillEntry] | None = None,
+) -> int:
+    """Bootstrap the sidecar with current on-disk state; return entry count.
+
+    Per REQ-49 D8 + D9: opt-in via ``flow prompts check --init``. Walks
+    ``catalog`` (or :data:`SKILL_CATALOG` by default), computes the SHA-256
+    frontmatter checksum + reads the ``version`` field for each entry, and
+    writes a fresh sidecar JSON. Existing entries are overwritten
+    (idempotent re-init).
+
+    Args:
+        catalog: The catalog to walk. ``None`` defaults to
+            :data:`SKILL_CATALOG`.
+
+    Returns:
+        The number of sidecar entries written.
+    """
+    catalog = catalog if catalog is not None else SKILL_CATALOG
+    sidecar: dict[str, dict[str, str]] = {}
+    now = _now_iso_z()
+
+    for key, entry in catalog.items():
+        path = Path(entry.expected_path).expanduser()
+        if not path.exists():
+            sidecar[key] = {
+                "version": entry.expected_version,
+                "checksum": "",
+                "last_verified_at": now,
+            }
+            continue
+        try:
+            checksum = compute_frontmatter_sha256(path)
+            parsed = parse_frontmatter(path)
+            version = str(parsed.get("version", entry.expected_version))
+        except SkillVersionError:
+            sidecar[key] = {
+                "version": entry.expected_version,
+                "checksum": "",
+                "last_verified_at": now,
+            }
+            continue
+        sidecar[key] = {
+            "version": version,
+            "checksum": checksum,
+            "last_verified_at": now,
+        }
+
+    _write_sidecar(sidecar)
+    return len(sidecar)
+
+
+def update_checksums(
+    catalog: dict[str, SkillEntry] | None = None,
+) -> int:
+    """Refresh the sidecar with current on-disk state; return entry count.
+
+    Per REQ-49 D9: opt-in via ``flow prompts check --update``. Functionally
+    equivalent to :func:`init_checksums`; the separate name documents
+    intent (idempotent refresh vs first-run bootstrap).
+
+    Args:
+        catalog: The catalog to walk. ``None`` defaults to
+            :data:`SKILL_CATALOG`.
+
+    Returns:
+        The number of sidecar entries refreshed.
+    """
+    return init_checksums(catalog)

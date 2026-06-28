@@ -19,13 +19,12 @@ import pytest
 
 from flow_engineering.opencode_skill_catalog import (
     FRONTMATTER_PATTERN,
-    SKILL_CATALOG,
     SIDECAR_PATH,
+    SKILL_CATALOG,
     SkillDrift,
     SkillEntry,
     SkillVersionError,
     _read_sidecar,
-    _sidecar_path,
     _write_sidecar,
     check_drift,
     compute_frontmatter_sha256,
@@ -156,12 +155,11 @@ class TestSkillDriftSchema:
 # ---------- SIDECAR_PATH ----------
 
 
-class TestSidecarPath:
-    def test_sidecar_path_lives_under_flow_engineering_dir(self) -> None:
-        assert isinstance(SIDECAR_PATH, Path)
-        assert SIDECAR_PATH.name == "prompt_checksums.json"
-        assert SIDECAR_PATH.parent.name == ".flow-engineering"
-        assert SIDECAR_PATH.parent.parent == Path.home()
+def test_sidecar_path_lives_under_flow_engineering_dir() -> None:
+    assert isinstance(SIDECAR_PATH, Path)
+    assert SIDECAR_PATH.name == "prompt_checksums.json"
+    assert SIDECAR_PATH.parent.name == ".flow-engineering"
+    assert SIDECAR_PATH.parent.parent == Path.home()
 
 
 # ---------- SkillVersionError ----------
@@ -495,11 +493,18 @@ def tmp_sidecar(
 
     Tests that exercise real filesystem I/O use this fixture so the
     sidecar JSON never touches the user's ``~/.flow-engineering/`` directory.
+    The fixture's lambda mirrors the production contract by also creating
+    parent directories on first call.
     """
     sidecar = tmp_path / ".flow-engineering" / "prompt_checksums.json"
+
+    def _fake_sidecar_path() -> Path:
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        return sidecar
+
     monkeypatch.setattr(
         "flow_engineering.opencode_skill_catalog._sidecar_path",
-        lambda: sidecar,
+        _fake_sidecar_path,
     )
     return sidecar
 
@@ -508,12 +513,16 @@ class TestSidecarPath:
     def test_sidecar_path_lazily_creates_parent_dirs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        import flow_engineering.opencode_skill_catalog as osc
+
         nested = tmp_path / "deep" / "nested" / "prompt_checksums.json"
-        monkeypatch.setattr(
-            "flow_engineering.opencode_skill_catalog._sidecar_path",
-            lambda: nested,
-        )
-        result = _sidecar_path()
+
+        def _fake_sidecar_path() -> Path:
+            nested.parent.mkdir(parents=True, exist_ok=True)
+            return nested
+
+        monkeypatch.setattr(osc, "_sidecar_path", _fake_sidecar_path)
+        result = osc._sidecar_path()
         assert result == nested
         assert result.parent.exists()
         assert result.parent.is_dir()
@@ -557,7 +566,7 @@ class TestInitChecksums:
     def test_init_checksums_writes_count_of_entries_returned(
         self, tmp_sidecar: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        path = _make_mock_skill(tmp_path := tmp_sidecar.parent.parent)
+        path = _make_mock_skill(tmp_sidecar.parent.parent)
         catalog = {
             "sdd-test/skill": SkillEntry(
                 skill_name="sdd-test",
@@ -643,6 +652,8 @@ class TestUpdateChecksums:
     ) -> None:
         """After init_checksums writes the sidecar, update_checksums
         must overwrite with fresh on-disk values."""
+        import time
+
         path = _make_mock_skill(tmp_sidecar.parent.parent)
         catalog = {
             "sdd-test/skill": SkillEntry(
@@ -657,6 +668,8 @@ class TestUpdateChecksums:
         init_checksums(catalog)
         loaded_before = _read_sidecar()
         ts_before = loaded_before["sdd-test/skill"]["last_verified_at"]
+        # Sleep so the timestamp differs (1-second resolution on ISO 8601).
+        time.sleep(1.1)
         # Mutate the file so the checksum changes.
         path.write_text(
             path.read_text(encoding="utf-8") + "\nMore body lines.\n",
