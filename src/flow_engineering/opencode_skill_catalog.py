@@ -402,6 +402,32 @@ def compute_frontmatter_sha256(path: Path) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _extract_version(parsed: dict[str, Any]) -> str:
+    """Return the ``version`` string from a parsed YAML frontmatter dict.
+
+    Lookup order (first non-empty wins):
+    1. Top-level ``version`` (canonical; preferred per spec).
+    2. ``metadata.version`` (real OpenCode SKILL.md convention).
+    3. ``"0.0"`` default sentinel when neither is set.
+
+    Args:
+        parsed: A parsed YAML mapping. MUST be a ``dict``; callers
+            normalize this via :func:`parse_frontmatter` before reaching
+            here.
+
+    Returns:
+        The version string. Empty strings are treated as missing and
+        fall through to the next lookup.
+    """
+    top_level = parsed.get("version")
+    if top_level:
+        return str(top_level)
+    nested = parsed.get("metadata", {}).get("version")
+    if nested:
+        return str(nested)
+    return "0.0"
+
+
 def parse_frontmatter(path: Path) -> dict[str, Any]:
     """Parse the YAML frontmatter block at ``path`` into a ``dict``.
 
@@ -445,8 +471,7 @@ def parse_frontmatter(path: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise SkillVersionError(f"{path}: frontmatter is not a YAML dict")
     if "version" not in parsed:
-        nested_version = parsed.get("metadata", {}).get("version")
-        parsed["version"] = str(nested_version) if nested_version else "0.0"
+        parsed["version"] = _extract_version(parsed)
     return parsed
 
 
