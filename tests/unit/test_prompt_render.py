@@ -104,11 +104,15 @@ class TestRenderPromptSubstitutesNumericKwargs:
         assert render_prompt("jinja_numeric", count=0, pi=-1.5) == "count=0 pi=-1.5"
 
 
-class TestRenderPromptRaisesUndefinedErrorOnMissingKwarg:
+class TestRenderPromptRaisesPromptRenderErrorOnMissingKwarg:
     def test_strict_mode_raises_when_var_missing(self, jinja_prompts: None) -> None:
-        with pytest.raises(UndefinedError) as excinfo:
+        from flow_engineering.prompt_registry import PromptRenderError
+
+        with pytest.raises(PromptRenderError) as excinfo:
             render_prompt("jinja_missing")
         assert "user_name" in str(excinfo.value)
+        assert excinfo.value.payload["reason"] == "missing_var"
+        assert excinfo.value.payload["prompt"] == "jinja_missing"
 
     def test_strict_mode_renders_when_all_vars_provided(
         self, jinja_prompts: None
