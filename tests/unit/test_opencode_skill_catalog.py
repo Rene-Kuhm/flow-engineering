@@ -19,15 +19,14 @@ import pytest
 
 from flow_engineering.opencode_skill_catalog import (
     FRONTMATTER_PATTERN,
-    SKILL_CATALOG,
     SIDECAR_PATH,
+    SKILL_CATALOG,
     SkillDrift,
     SkillEntry,
     SkillVersionError,
     compute_frontmatter_sha256,
     parse_frontmatter,
 )
-
 
 # ---------- Fixtures ----------
 

@@ -10,11 +10,32 @@ Public API:
 - :data:`SKILL_CATALOG` -- the 20-entry catalog keyed by ``<skill>/<surface>``.
 - :data:`SIDECAR_PATH` -- path to ``~/.flow-engineering/prompt_checksums.json``.
 - :class:`SkillVersionError` -- raised on parse errors per design.
+- :data:`FRONTMATTER_PATTERN` -- regex matching the YAML frontmatter block.
+- :func:`compute_frontmatter_sha256` -- SHA-256 of the canonicalized frontmatter.
+- :func:`parse_frontmatter` -- YAML frontmatter -> dict parser.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+import yaml
+
+FRONTMATTER_PATTERN: re.Pattern[str] = re.compile(
+    r"\A---\s*\n(.*?\n)---\s*\n",
+    re.DOTALL,
+)
+r"""Regex that captures the YAML frontmatter block between two ``---`` markers.
+
+The pattern is anchored at start-of-string (``\A``) so trailing content
+(body + closing fence) does NOT participate in the match. Whitespace after
+the opening and closing ``---`` fences is tolerated so ``---\n`` and
+``--- \n`` both work (matches the OpenCode SKILL.md convention).
+"""
 
 
 SIDECAR_PATH: Path = Path.home() / ".flow-engineering" / "prompt_checksums.json"
@@ -269,9 +290,72 @@ discovered at runtime) for deterministic drift detection.
 
 
 __all__ = [
+    "FRONTMATTER_PATTERN",
     "SIDECAR_PATH",
     "SKILL_CATALOG",
     "SkillDrift",
     "SkillEntry",
     "SkillVersionError",
+    "compute_frontmatter_sha256",
+    "parse_frontmatter",
 ]
+
+
+def compute_frontmatter_sha256(path: Path) -> str:
+    """Compute SHA-256 of the canonicalized YAML frontmatter dict at ``path``.
+
+    Per design D5 + OQ-5: parse the YAML block between ``---`` markers,
+    canonicalize via JSON-dump with sorted keys + no whitespace, then hash
+    the UTF-8 bytes. The body is intentionally IGNORED so a whitespace-only
+    body edit does NOT trigger a false-positive drift signal.
+
+    Args:
+        path: The on-disk ``SKILL.md`` (or ``prompts/sdd/*.md``) file.
+
+    Returns:
+        A 64-char lowercase hex SHA-256 digest.
+
+    Raises:
+        SkillVersionError: When ``path`` has no YAML frontmatter, the YAML
+            parses to a non-dict, or the file does not exist.
+    """
+    parsed = parse_frontmatter(path)
+    canonical = json.dumps(
+        parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def parse_frontmatter(path: Path) -> dict[str, Any]:
+    """Parse the YAML frontmatter block at ``path`` into a ``dict``.
+
+    The block is delimited by ``---`` fences (see :data:`FRONTMATTER_PATTERN`).
+    Non-dict YAML parses (e.g., a scalar at the top level) are rejected with
+    :class:`SkillVersionError` so the caller can surface a uniform
+    ``frontmatter_parse_error`` drift signal.
+
+    Args:
+        path: The on-disk file to parse.
+
+    Returns:
+        The parsed YAML mapping as a plain ``dict``. UTF-8 unicode is
+        preserved (no normalization).
+
+    Raises:
+        SkillVersionError: When the file is missing, has no YAML frontmatter,
+            or the parsed YAML is not a dict.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise SkillVersionError(f"{path}: file not found") from exc
+    match = FRONTMATTER_PATTERN.match(text)
+    if not match:
+        raise SkillVersionError(f"{path}: no YAML frontmatter found")
+    try:
+        parsed = yaml.safe_load(match.group(1))
+    except yaml.YAMLError as exc:
+        raise SkillVersionError(f"{path}: YAML parse failed: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise SkillVersionError(f"{path}: frontmatter is not a YAML dict")
+    return parsed
