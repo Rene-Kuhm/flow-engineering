@@ -160,7 +160,7 @@ class TestExitCodeZero:
         )
         _patch_scan(monkeypatch, report=report)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 0, result.output
 
 
@@ -185,7 +185,7 @@ class TestExitCodeOne:
         )
         _patch_scan(monkeypatch, report=report)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 1, result.output
 
     def test_drift_with_label_drift_exits_1(
@@ -210,7 +210,7 @@ class TestExitCodeOne:
         )
         _patch_scan(monkeypatch, report=report)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 1, result.output
 
 
@@ -236,7 +236,7 @@ class TestExitCodeTwo:
         )
         _patch_scan(monkeypatch, report=report)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 2, result.output
 
     def test_drift_graph_unavailable_wins_over_drift_findings(
@@ -256,7 +256,7 @@ class TestExitCodeTwo:
         )
         _patch_scan(monkeypatch, report=report)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 2, result.output
 
     def test_drift_since_invalid_exits_2(
@@ -279,7 +279,7 @@ class TestExitCodeTwo:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path),
+            ["drift", "run", "my-change", "--graph-json", str(graph_path),
              "--since", "yesterday"],
         )
         assert result.exit_code == 2, result.output
@@ -311,7 +311,7 @@ class TestJsonOutput:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path), "--json"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--json"],
         )
         assert result.exit_code == 1, result.output
         payload = json.loads(result.output)
@@ -360,7 +360,7 @@ class TestIncludeObsolete:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path),
+            ["drift", "run", "my-change", "--graph-json", str(graph_path),
              "--include-obsolete"],
         )
         assert result.exit_code == 0, result.output
@@ -397,7 +397,7 @@ class TestSince:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path),
+            ["drift", "run", "my-change", "--graph-json", str(graph_path),
              "--since", "2026-06-15"],
         )
         assert result.exit_code == 0, result.output
@@ -451,7 +451,7 @@ class TestWriteBack:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--write-back"],
         )
         assert result.exit_code == 1, result.output
         assert len(update_calls) == 1, update_calls
@@ -499,7 +499,7 @@ class TestWriteBack:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--write-back"],
         )
         assert result.exit_code == 1, result.output
         # The second row still got updated despite the first raising.
@@ -537,7 +537,7 @@ class TestWriteBack:
 
         monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 1, result.output
         assert update_calls == [], "default mode must NOT call update_observation_metadata"
 
@@ -566,7 +566,7 @@ class TestTableOutput:
         )
         _patch_scan(monkeypatch, report=report)
 
-        result = runner.invoke(main, ["drift", "my-change", "--graph-json", str(graph_path)])
+        result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 1, result.output
         out = result.output
         # Decision_id and binding.id + drift_class all visible.
@@ -680,7 +680,7 @@ class TestWriteBackSkipWarn:
 
         result = runner.invoke(
             main,
-            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--write-back"],
         )
 
         stderr_text = (result.stderr or "") + capsys.readouterr().err

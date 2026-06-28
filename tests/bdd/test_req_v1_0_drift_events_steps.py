@@ -132,7 +132,7 @@ def when_operator_runs_list(drift_events_world: dict[str, Any]) -> None:
     drift_events_world["result"] = runner.invoke(
         cli_main,
         [
-            "drift-events",
+            "drift", "events",
             "list",
             "--path", str(drift_events_world["log_path"]),
         ],
@@ -147,7 +147,7 @@ def when_operator_runs_tail_with_limit(
     drift_events_world["result"] = runner.invoke(
         cli_main,
         [
-            "drift-events",
+            "drift", "events",
             "tail",
             "--path", str(drift_events_world["log_path"]),
             "--limit", str(limit),
@@ -161,7 +161,7 @@ def when_operator_runs_stats(drift_events_world: dict[str, Any]) -> None:
     drift_events_world["result"] = runner.invoke(
         cli_main,
         [
-            "drift-events",
+            "drift", "events",
             "stats",
             "--path", str(drift_events_world["log_path"]),
         ],

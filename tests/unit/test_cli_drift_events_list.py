@@ -91,7 +91,7 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(seeded_log),
@@ -108,7 +108,7 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(seeded_log),
@@ -124,7 +124,7 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(seeded_log),
@@ -140,7 +140,7 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(seeded_log),
@@ -166,7 +166,7 @@ class TestListJsonFormat:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=json",
                 "--path", str(seeded_log),
@@ -194,7 +194,7 @@ class TestListCsvFormat:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=csv",
                 "--path", str(seeded_log),
@@ -222,7 +222,7 @@ class TestListPrometheusFormat:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=prometheus",
                 "--path", str(seeded_log),
@@ -245,7 +245,7 @@ class TestListErrorExitCodes:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=invalid",
                 "--path", str(seeded_log),
@@ -258,7 +258,7 @@ class TestListErrorExitCodes:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--since", "yesterday",
                 "--path", str(seeded_log),
@@ -288,7 +288,7 @@ class TestListLegacyCompat:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=json",
                 "--path", str(log_path),
@@ -313,7 +313,7 @@ class TestListLegacyCompat:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--strict",
                 "--format=json",
@@ -342,7 +342,7 @@ class TestListEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(log_path),
@@ -355,7 +355,7 @@ class TestListEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(tmp_path / "nope.jsonl"),
@@ -418,7 +418,7 @@ class TestFormatDriftEventsTextHelper:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "list",
                 "--format=text",
                 "--path", str(seeded_log),
