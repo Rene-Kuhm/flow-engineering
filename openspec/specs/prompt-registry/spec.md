@@ -1,4 +1,4 @@
-<!-- spec.md: prompt-registry capability spec. Source: manual. PR#1 archive sync: 2026-06-27; PR#2a archive sync: 2026-06-27; PR#2b archive sync: 2026-06-28. CHANGE #7 FULLY CLOSED. v1.2-followups (#12) PR#2a archive sync: 2026-06-28; v1.2-followups PR#2b archive sync: 2026-06-28 (REQ-V1.2.2 / REQ-48 golden regression tests SHIPPED). -->
+<!-- spec.md: prompt-registry capability spec. Source: manual. PR#1 archive sync: 2026-06-27; PR#2a archive sync: 2026-06-27; PR#2b archive sync: 2026-06-28. CHANGE #7 FULLY CLOSED. v1.2-followups (#12) PR#2a archive sync: 2026-06-28; v1.2-followups PR#2b archive sync: 2026-06-28 (REQ-V1.2.2 / REQ-48 golden regression tests SHIPPED). v1.2-followups PR#2d archive sync: 2026-06-28 (v1.2.0 BREAKING SHIPPED — Path A rename; REQ-V1.2.2 light-sync confirmed; pyproject 1.1.0 → 1.2.0). CHANGE #12 (`v1.2-followups`) FULLY CLOSED. -->
 # PromptRegistry Capability Spec
 
 ## PR#1 archive status (2026-06-27)
@@ -291,3 +291,20 @@ scenarios for REQ-50.
 **Net carry-forward closure for v1.2 (after PR#2b)**: **2/4 v1.2 carry-forwards closed** — REQ-44 metrics.jsonl rotation ✅ (closed by PR#2a) + REQ-48 golden regression tests ✅ (closed by PR#2b). **2/4 v1.2 carry-forwards still pending** — REQ-54 `min_sdd_skill_versions` → **PR#2c** + Path A subcommand group rename (BREAKING `flow drift` → `flow drift-events`) + 17 ruff residuals cleanup → **PR#2d**. `pyproject.toml` version still `1.1.0` (correct — PR#2d handles the `1.1.0 → 1.2.0` BREAKING bump + `## [1.2.0]` CHANGELOG entry). PR#2b CHANGELOG entry is `## [1.2.0b]` (pre-release marker, NOT v1.2.0 — that's PR#2d BREAKING scope).
 
 **Note on archive structure**: this is a **single-PR chained-release** archive — PR#2b (v1.2.0b) is 2 of 4 chained PRs (`stacked-to-main` strategy per `proposal.md`). ONLY `verify-report-pr2b.md` (PR#2b-specific artifact) moves to the archive folder; the **planning artifacts** (`explore.md` + `proposal.md` + `design.md` + `tasks.md`) **stay in `openspec/changes/v1.2-followups/`** for chained-PR continuity since they cover all 4 PRs (PR#2c/d reference them as inputs). PR#2c will create its own `verify-report-pr2c.md` and move that to the archive when its cycle completes. The full release is `v1.2.0` (BREAKING — Path A rename ships in PR#2d); PR#2a/b/c ship as v1.2.0a/b/c pre-release markers per CHANGELOG versioning convention. PR#2b is **debt-closure for REQ-48 only** — not a feature release.
+
+## v1.2.0 archive status (2026-06-28)
+
+**v1.2-followups (#12) FULLY CLOSED as v1.2.0 — 4 chained PRs (`stacked-to-main` strategy per `proposal.md`) ship as a single BREAKING release. CHANGE #12 closeout via PR#2d: `pyproject.toml` bumped `1.1.0 → 1.2.0` + CHANGELOG `## [1.2.0] - 2026-06-28` BREAKING entry + capability spec sync.**
+
+**Light-sync confirmation for prompt-registry surface** (per PR#2d T4.4 scope — full closeout lives in `openspec/specs/decision-drift/spec.md`):
+
+| REQ | Title | Status |
+|-----|-------|--------|
+| **REQ-V1.2.2** (alias REQ-48) | Golden regression tests for `render_prompt` (shipped via PR#2b; light-synced here at PR#2d closeout) — `render_prompt_canonical()` helper + 4 snapshot files at `tests/golden/prompts/` + `--update-goldens` + `--check-snapshot` Click flags on `flow prompts show <id>` (exit code 3 on drift) + 11 NEW tests in `tests/unit/test_prompt_render_golden.py` | ✅ **SHIPPED** (PR#2b, v1.2.0b) |
+
+**No prompt-registry surface changed in PR#2c or PR#2d.** The `prompt_registry.py` module is untouched by REQ-V1.2.3 (`min_sdd_skill_versions` enforcement — that surface lives in `opencode_skill_catalog.py`) and by REQ-V1.2.4 (Path A subcommand rename — that surface lives in `cli.py` + `decision_drift.py`). The 4 `PROMPT_NAMES` entries + `render_prompt` + `render_prompt_safe` + `render_prompt_canonical` + `lint_prompts` + `validate_catalog` + `flow prompts {list,show}` CLI + golden snapshot tests all remain byte-stable at v1.2.0.
+
+**Carry-forward closure (prompt-registry lens)**:
+- `v1.1-followups` **REQ-48** (golden regression tests via `tests/golden/prompts/<prompt_id>.txt` snapshots) — closed via REQ-V1.2.2 (PR#2b).
+
+**CHANGE #12 (`v1.2-followups`) FULLY CLOSED** as of 2026-06-28 PR#2d archive — 4 chained PRs (`stacked-to-main`) merged to `main`: PR#2a (v1.2.0a REQ-V1.2.1 metrics rotation) → PR#2b (v1.2.0b REQ-V1.2.2 golden regression tests) → PR#2c (v1.2.0c REQ-V1.2.3 min_sdd_skill_versions enforcement) → PR#2d (v1.2.0 REQ-V1.2.4 Path A rename + REQ-V1.2.5 closeout). The full release is `v1.2.0` (BREAKING — Path A rename ships in PR#2d); PR#2a/b/c ship as v1.2.0a/b/c pre-release markers per CHANGELOG versioning convention. `pyproject.toml` version `1.2.0`. CHANGELOG `## [1.2.0] - 2026-06-28` BREAKING entry documents the rename + the 1-release `deprecated=True` alias + the migration hint + the new env vars (`FLOW_METRICS_LOG_MAX_BYTES` + `FLOW_METRICS_LOG_MAX_AGE_DAYS`) + the new pyproject section (`[tool.flow_engineering] min_sdd_skill_versions`). 4 chained PR archives live under `openspec/changes/archive/2026-06-28-v1.2-followups-pr2{abcd}/`.

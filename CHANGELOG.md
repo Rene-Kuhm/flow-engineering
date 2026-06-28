@@ -3,6 +3,57 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
+
+## [1.2.0] - 2026-06-28
+
+### BREAKING
+- **Path A subcommand group rename** (REQ-V1.2.4): the drift events
+  read-side CLI group moves from the top-level hyphenated form to a
+  nested group under the new `drift` namespace. The pre-v1.2 surface
+  `flow drift-events {list,tail,stats}` becomes a 1-release
+  `deprecated=True` Click group alias; the new canonical surface is
+  `flow drift events {list,tail,stats}` (nested under `flow drift`,
+  mirroring the `flow metrics {summary,export,aggregate}` and
+  `flow prompts {list,show,render}` group pattern). The detection
+  subcommand also moves into the new namespace as `flow drift run <change>`
+  (the legacy `flow drift <change>` positional form is REPLACED — use
+  the explicit `flow drift run <change>` from now on). The hyphenated
+  alias `flow drift-events` is REMOVED in v1.3 per the
+  `SnapshotGraphMissing` v1.1 precedent.
+
+  **Migration**:
+  - `flow drift <change>` → `flow drift run <change>` (explicit subcommand)
+  - `flow drift-events list` → `flow drift events list` (nested group)
+  - `flow drift-events tail` → `flow drift events tail`
+  - `flow drift-events stats` → `flow drift events stats`
+
+### Added
+- `flow drift events {list,tail,stats}` canonical subcommand group
+  (REQ-V1.2.4): the drift events read-side now lives under the new
+  `flow drift` group namespace as `flow drift events {list,tail,stats}`,
+  sharing the same parent group as `flow drift run <change>`. Mirrors
+  the existing `flow metrics` / `flow prompts` group pattern.
+- `flow drift-events` 1-release DEPRECATED Click group alias: preserved
+  for backwards compatibility with v1.0 / v1.1 operators that have
+  shell aliases / cron jobs / docs pointing at the hyphenated name.
+  Emits a `DeprecationWarning` to stderr on every invocation and
+  delegates to the canonical subcommands via `ctx.forward()`. Removed
+  in v1.3.
+
+### Migration
+- Shell aliases / cron jobs / docs pointing at the pre-v1.2 surface
+  `flow drift-events {list,tail,stats}` will emit a `DeprecationWarning`
+  but continue to work through v1.2. To opt into the new canonical
+  surface, replace `flow drift-events` with `flow drift events` in
+  scripts and aliases. The detection subcommand `flow drift <change>`
+  becomes `flow drift run <change>` (no backwards-compat shim — the
+  positional change_name is the most semantically distinct command in
+  the group; explicit form is unambiguous).
+- The full v1.2 release (BREAKING) closes the 4 carry-forwards from
+  v1.1: REQ-44 metrics.jsonl rotation (PR#2a), REQ-48 golden
+  regression tests (PR#2b), REQ-54 `min_sdd_skill_versions` gate
+  (PR#2c), and Path A subcommand group rename (PR#2d).
+
 ## [1.2.0c] - 2026-06-28
 
 ### Added
