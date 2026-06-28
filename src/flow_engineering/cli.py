@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -2030,6 +2031,97 @@ def drift_events_tail(
     click.echo(
         json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2)
     )
+
+
+@drift_events_group.command(name="stats")
+@click.option("--change", default=None,
+              help="Filter stats to a specific change name.")
+@click.option("--since", default=None,
+              help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None,
+              help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Alternative drift event log path "
+                   "(default: ~/.flow-engineering/drift_events.jsonl).")
+@click.option("--format", "fmt", default="text",
+              type=click.Choice(["text", "json"]),
+              help="Output format (default: text).")
+@click.option("--top-n", "top_n", type=int, default=5,
+              help="Top-N decision_ids by frequency (default: 5).")
+def drift_events_stats(
+    change: str | None,
+    since: str | None,
+    until: str | None,
+    log_path: Path | None,
+    fmt: str,
+    top_n: int,
+) -> None:
+    """Per-event-class + per-change + per-decision-id counts (REQ-V1.0.3).
+
+    Renders an aligned text table with 3 sections (or a JSON envelope
+    with ``by_event_class``, ``by_change``, ``by_decision_id`` keys).
+    The ``by_decision_id`` array is sorted by frequency descending and
+    capped at ``--top-n`` (default 5).
+    """
+    try:
+        since_ts, until_ts = _parse_since_until(since, until)
+    except ValueError as exc:
+        click.echo(f"Error: invalid --since/--until: {exc}", err=True)
+        sys.exit(observability.EXIT_INVALID_VALUE)
+
+    log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
+    events = log.read_all()
+    events = _filter_drift_events(
+        events,
+        since_ts=since_ts,
+        until_ts=until_ts,
+        change=change,
+        event_class=None,
+        limit=None,
+    )
+
+    by_event_class: dict[str, int] = {}
+    by_change: dict[str, int] = {}
+    by_decision_id: dict[int, int] = {}
+    for ev in events:
+        by_event_class[ev.event_class] = by_event_class.get(ev.event_class, 0) + 1
+        by_change[ev.change] = by_change.get(ev.change, 0) + 1
+        by_decision_id[ev.decision_id] = by_decision_id.get(ev.decision_id, 0) + 1
+    top_decision_ids = Counter(by_decision_id).most_common(top_n)
+
+    if fmt == "json":
+        payload = {
+            "by_event_class": by_event_class,
+            "by_change": by_change,
+            "by_decision_id": [
+                {"decision_id": did, "count": n} for did, n in top_decision_ids
+            ],
+        }
+        click.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    sections = [
+        ("Event class", by_event_class),
+        ("Change", by_change),
+    ]
+    lines: list[str] = []
+    for header_label, counts in sections:
+        lines.append(f"## {header_label}")
+        if counts:
+            w = max(len(k) for k in counts)
+            for k in sorted(counts):
+                lines.append(f"  {k.ljust(w)}  {counts[k]}")
+        else:
+            lines.append("  (none)")
+        lines.append("")
+    lines.append(f"## Decision ID (top {top_n})")
+    if top_decision_ids:
+        w = max(len(str(did)) for did, _ in top_decision_ids)
+        for did, n in top_decision_ids:
+            lines.append(f"  {str(did).ljust(w)}  {n}")
+    else:
+        lines.append("  (none)")
+    click.echo("\n".join(lines) + "\n")
 
 
 # ---------- REQ-24: flow projects backfill ----------
