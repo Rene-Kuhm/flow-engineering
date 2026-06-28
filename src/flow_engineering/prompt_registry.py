@@ -31,6 +31,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from jinja2 import (
@@ -135,49 +136,86 @@ class PromptDef:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
+"""Filesystem location of the canonical ``.j2`` prompt templates (REQ-46 W3).
+
+Resolved at module load as ``<repo-root>/prompts/`` (the package lives
+at ``src/flow_engineering/prompt_registry.py``; three ``parent``s walk
+up to the repo root). The directory is bundled with the project so
+``prompts/`` is always co-located with ``pyproject.toml`` regardless of
+the install layout.
+"""
+
+
+def load_template_from_file(path: Path | str) -> str:
+    """Read a Jinja2 template body from a ``.j2`` file on disk.
+
+    REQ-46 W3: the catalog's template strings live as standalone
+    ``prompts/<name>.j2`` files so editors / reviewers can view them
+    without opening Python. This helper reads the file, strips the
+    trailing newline (so the rendered output matches the inline
+    ``template=...`` argument exactly when the .j2 file ends with a
+    newline — common convention for POSIX text files), and returns
+    the body.
+
+    Args:
+        path: Filesystem path to the ``.j2`` file. May be absolute or
+            relative to the current working directory.
+
+    Returns:
+        The template body as a single string.
+
+    Raises:
+        FileNotFoundError: When ``path`` does not exist. Surfaces
+            immediately at module import if a ``PROMPT_NAMES`` entry
+            is misnamed (fail-fast beats silent fallback).
+        OSError: When the file is unreadable (permission, encoding, etc.).
+    """
+    return Path(path).read_text(encoding="utf-8").rstrip("\n")
+
+
 PROMPT_NAMES: tuple[PromptDef, ...] = (
     PromptDef(
         name="strict_tdd",
         domain=PromptDomain.OBSERVABILITY,
-        template=(
-            "STRICT TDD MODE IS ACTIVE. Test runner: {test_command}. "
-            "You MUST follow strict-tdd.md. Do NOT fall back to Standard Mode."
-        ),
+        template=load_template_from_file(_PROMPTS_DIR / "strict_tdd.j2"),
         version="1.0.0",
         metadata={
-            "source": "src/flow_engineering/strict_tdd.py:13",
+            "source": "prompts/strict_tdd.j2",
+            "template_file": "prompts/strict_tdd.j2",
             "variables": ("test_command",),
         },
     ),
     PromptDef(
         name="auto_suggest_header",
         domain=PromptDomain.BINDING,
-        template="Auto-suggested code bindings:",
+        template=load_template_from_file(_PROMPTS_DIR / "auto_suggest_header.j2"),
         version="1.0.0",
         metadata={
-            "source": "src/flow_engineering/auto_suggest_code_refs.py:48",
+            "source": "prompts/auto_suggest_header.j2",
+            "template_file": "prompts/auto_suggest_header.j2",
             "variables": (),
         },
     ),
     PromptDef(
         name="auto_suggest_footer",
         domain=PromptDomain.BINDING,
-        template=(
-            "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
-        ),
+        template=load_template_from_file(_PROMPTS_DIR / "auto_suggest_footer.j2"),
         version="1.0.0",
         metadata={
-            "source": "src/flow_engineering/auto_suggest_code_refs.py:49",
+            "source": "prompts/auto_suggest_footer.j2",
+            "template_file": "prompts/auto_suggest_footer.j2",
             "variables": (),
         },
     ),
     PromptDef(
         name="auto_suggest_empty",
         domain=PromptDomain.BINDING,
-        template="No auto-suggested bindings available.",
+        template=load_template_from_file(_PROMPTS_DIR / "auto_suggest_empty.j2"),
         version="1.0.0",
         metadata={
-            "source": "src/flow_engineering/auto_suggest_code_refs.py:47",
+            "source": "prompts/auto_suggest_empty.j2",
+            "template_file": "prompts/auto_suggest_empty.j2",
             "variables": (),
         },
     ),
@@ -190,6 +228,14 @@ Initial population mirrors the 4 existing inline constants:
 The catalog is the single source of truth; the original module-level
 constants become thin aliases that delegate to ``get_prompt_template()``
 for v0.7.0 (per D10 alias convention).
+
+REQ-46 W3: the actual template strings live on disk under
+``<repo-root>/prompts/*.j2`` so editors and reviewers can view them
+without opening Python. ``load_template_from_file()`` reads them at
+module-load time; the catalog still holds the resolved text so callers
+that need ``prompt.template`` don't have to hit the filesystem on
+every render. The ``metadata.template_file`` key records the original
+path so the future ``flow prompts list --source`` CLI can render it.
 """
 
 
@@ -560,6 +606,7 @@ __all__ = [
     "lint_prompts",
     "list_prompts",
     "list_required_vars",
+    "load_template_from_file",
     "register",
     "register_prompt",
     "render_prompt",
