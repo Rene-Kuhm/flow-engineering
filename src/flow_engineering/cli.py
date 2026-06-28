@@ -2471,13 +2471,50 @@ def prompts_group() -> None:
     default=False,
     help="Bootstrap the sidecar JSON with current on-disk state, then exit 0.",
 )
-def prompts_check(init_flag: bool) -> None:
+@click.option(
+    "--update",
+    "update_flag",
+    is_flag=True,
+    default=False,
+    help="Re-compute and overwrite sidecar JSON checksums, then exit 0.",
+)
+@click.option(
+    "--no-fail",
+    "no_fail_flag",
+    is_flag=True,
+    default=False,
+    help="Suppress exit 1 when drift is detected (CI warnings-only mode).",
+)
+@click.option(
+    "--skill",
+    "skill_name",
+    default=None,
+    help="Limit the check to the named skill (both surfaces: skill + prompt).",
+)
+def prompts_check(
+    init_flag: bool,
+    update_flag: bool,
+    no_fail_flag: bool,
+    skill_name: str | None,
+) -> None:
     """Walk SKILL_CATALOG and report drift findings (REQ-49 + REQ-50).
 
     Exit codes:
-    - 0: clean state (no drift detected) OR ``--init`` succeeded.
-    - 1: drift detected (one or more entries diverged).
-    - 2: catalog could not be resolved (reserved for future IO errors).
+    - 0: clean state (no drift detected) OR ``--init``/``--update`` succeeded
+      OR ``--no-fail`` suppressed a drift-detected run.
+    - 1: drift detected (one or more entries diverged). Suppressed by
+      ``--no-fail``.
+    - 3: usage error (e.g., ``--skill unknown`` with no matching catalog
+      entry per design D9).
+
+    Flags (per tasks-pr2.md T2.2 + verify-report-pr2a.md W1):
+    - ``--init``: bootstrap the sidecar with current on-disk state.
+    - ``--update``: re-compute and overwrite the sidecar JSON checksums
+      (functionally equivalent to ``--init``; documented separately for
+      intent: idempotent refresh vs first-run bootstrap).
+    - ``--no-fail``: suppress exit 1 on drift detection (CI compat).
+    - ``--skill <name>``: limit the catalog walk to the named skill's two
+      surfaces (skill + prompt). Unknown names exit 3.
 
     Stdout format: ``<skill_name>/<surface>: <expected_version>: <status>``
     per design §"Data Flow / flow prompts check", followed by a footer
@@ -2492,7 +2529,26 @@ def prompts_check(init_flag: bool) -> None:
         )
         return
 
-    drifts = osc.check_drift()
+    if update_flag:
+        count = osc.update_checksums()
+        click.echo(
+            f"Updated {count} checksums · sidecar: {osc.SIDECAR_PATH}"
+        )
+        return
+
+    catalog = osc.SKILL_CATALOG
+    if skill_name is not None:
+        filtered = {
+            k: v for k, v in catalog.items() if v.skill_name == skill_name
+        }
+        if not filtered:
+            click.echo(
+                f"Unknown skill: {skill_name}", err=True,
+            )
+            sys.exit(3)
+        catalog = filtered
+
+    drifts = osc.check_drift(catalog)
     for drift in drifts:
         status = _STATUS_LABELS.get(drift.drift_kind, "DRIFT")
         click.echo(
@@ -2501,12 +2557,12 @@ def prompts_check(init_flag: bool) -> None:
         )
 
     drift_count = len(drifts)
-    catalog_size = len(osc.SKILL_CATALOG)
+    catalog_size = len(catalog)
     click.echo(
         f"{catalog_size} skills verified · {drift_count} drift detected"
     )
 
-    if drift_count > 0:
+    if drift_count > 0 and not no_fail_flag:
         sys.exit(1)
 
 
