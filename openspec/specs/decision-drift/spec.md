@@ -9,9 +9,26 @@
 
 **Verdict at archive**: **PASS WITH WARNINGS — archive-ready**. Per `verify-report.md` (mirrored to `openspec/changes/drift-hardening/verify-report.md` and soon `openspec/changes/archive/2026-06-27-drift-hardening/verify-report.md` once the verify agent moves it): **0 CRITICAL findings** + **9 WARNING** (3 design deviations from D2/OQ-10, all explicitly endorsed by the orchestrator brief; 6 doc/style debt) + **5 SUGGESTION** (all non-blocking v0.9.0/v1.0 follow-ups). All 22 tasks (T1.1..T4.5) closed + 1 120/1 125 tests passing + 24 BDD scenarios in drift-related feature files pass + 108/108 drift-hardening unit tests pass + 13/13 v0.8.0 migration RED→GREEN tests pass. The 5 pre-existing pytest failures trace to changes #6 PR#2 (observability) + #7 PR#1 (prompt-registry) — NOT drift-hardening regressions — and are NOT blockers for this archive. **Archive the artifacts regardless** per orchestrator brief; W-fix commits for the 3 design deviations (W1/W2/W3) are endorsed by the brief and the capability spec's migration note.
 
-The 1-release legacy shims (`Finding.from_legacy`, `DriftReport.from_legacy`, `classify_binding_legacy`) and the new `unable_reason: str | None` field are documented below per the brief. The dataclass shape migration deviated from the original design.md (which proposed `__post_init__` coercion + `@property graph_unavailable` rename) to follow the orchestrator brief's `from_legacy()` classmethod pattern + `graph_unavailable: bool` (canonical, NOT renamed) + `unable_reason: str | None` (NEW). This spec reflects the FINAL brief-aligned shape, not the original design.md proposal.
+The v0.8.0 1-release compat shims and the new `unable_reason: str | None` field are documented below per the brief. The dataclass shape migration deviated from the original design.md (which proposed `__post_init__` coercion + `@property graph_unavailable` rename) to follow the orchestrator brief's compat-shim migration pattern + `graph_unavailable: bool` (canonical, NOT renamed) + `unable_reason: str | None` (NEW). This spec reflects the FINAL brief-aligned shape, not the original design.md proposal.
 
-## v0.8.0 migration note (REQ-56 W8 / REQ-57)
+## v0.9.0 final note (REQ-V9.1..V9.5)
+
+The 1-release compat shims introduced in v0.8.0 are **removed** in v0.9.0.
+**No migration path** — this is a hard break:
+
+- `Finding.decision_id: int` is required. `Finding(decision_id="42", ...)`
+  raises `TypeError` via `Finding.__post_init__` (no `DeprecationWarning`,
+  no `int()` coercion; `bool` is also rejected as an `int` subclass).
+- `DriftReport.scanned_at: str` ISO 8601 UTC Z-suffixed is required.
+  `DriftReport(scanned_at=0.0)` raises `TypeError` — no compat shim
+  exists in v0.9.0.
+- `classify_binding(ref, graph_nodes)` 2-arg is the only canonical entry
+  point. The 3-arg form raises `TypeError`.
+- `DriftReport.graph_unavailable: bool` stays canonical (per W2 Option
+  B resolution); `unable_reason: str | None` stays canonical (NEW in
+  v0.8.0). The `unable_to_verify` enum value + `drift_unable_to_verify_total`
+  counter name + CLI exit-code 2 wording describe the terminal STATE, not
+  the field — these stay unchanged.
 
 This capability spec was bootstrapped in v0.8.0 as part of the
 `drift-hardening` cluster. The `decision-reality-drift` change shipped the
@@ -20,25 +37,6 @@ original REQ-9..16 contract in v0.3.0 but never created a corresponding
 baseline so future deltas (e.g., per-finding graph_unavailable refinement,
 cross-project drift federation, OTel push) extend this file rather than
 forking the archived `decision-reality-drift` spec.
-
-The v0.8.0 dataclass shape migration changes the public API:
-
-- `Finding.decision_id: int` (was `str`); legacy numeric `str` callers
-  use `Finding.from_legacy()` which emits `DeprecationWarning` and coerces
-  via `int()`. Non-numeric `str` raises `ValueError`.
-- `DriftReport.scanned_at: str` ISO 8601 UTC Z-suffixed (was `float` epoch);
-  legacy `float` callers use `DriftReport.from_legacy()` which emits
-  `DeprecationWarning` and coerces via `datetime.fromtimestamp(..., tz=UTC)`.
-- `DriftReport.graph_unavailable: bool` retained as canonical; new
-  `unable_reason: str | None` for structured diagnostics; legacy
-  `unable_to_verify` kwarg mapped to `graph_unavailable` via `from_legacy`.
-- `classify_binding(ref, graph_nodes)` is now 2-arg; legacy 3-arg callers
-  use `classify_binding_legacy` which emits `DeprecationWarning`. The
-  `current_id_map` lookup is now derived internally from `graph_nodes` in
-  O(N) at function entry.
-
-The 1-release shims (`Finding.from_legacy`, `DriftReport.from_legacy`,
-`classify_binding_legacy`) are removed in v0.9.0.
 
 ## Purpose
 
@@ -210,10 +208,10 @@ API surface in scope. The hook must mention:
 - Exit codes `0/1/2` for `flow drift <change>` (REQ-11).
 - The six mutually-exclusive classes + terminal `unable_to_verify`
   (REQ-9).
-- The v0.8.0 dataclass shape (int `decision_id`, ISO 8601 `scanned_at`,
-  `graph_unavailable` + `unable_reason`, 2-arg `classify_binding`).
-- The 1-release legacy shims (`Finding.from_legacy`,
-  `DriftReport.from_legacy`, `classify_binding_legacy`).
+- The v0.9.0 final dataclass shape (int `decision_id` with
+  `__post_init__` enforcement; ISO 8601 `scanned_at`; `graph_unavailable`
+  + `unable_reason`; 2-arg `classify_binding`). v0.8.0 compat shims
+  removed — hard break, no migration path.
 
 ### REQ-55 — `DriftEventLog` JSONL writer (v0.8.0)
 
@@ -235,21 +233,23 @@ The read-side CLI (`flow drift events [--since] [--change]`) is deferred
 to a follow-up change; consumers use
 `cat ~/.flow-engineering/drift_events.jsonl | jq` in v0.8.0.
 
-### REQ-56 — Dataclass shape migration (v0.8.0)
+### REQ-56 — Dataclass shape migration (v0.8.0 + v0.9.0 hard break)
 
 The system SHALL migrate the `decision_drift` public dataclass shape:
 
-- `Finding.decision_id: int` (was `str`); legacy callers use
-  `Finding.from_legacy()` 1-release migration path.
+- `Finding.decision_id: int` (was `str`); v0.9.0 enforces this at the
+  dataclass boundary via `Finding.__post_init__` which raises
+  `TypeError` on non-`int` inputs (including `bool`).
 - `DriftReport.scanned_at: str` ISO 8601 UTC Z-suffixed (was `float`
-  epoch); legacy callers use `DriftReport.from_legacy()`.
+  epoch); v0.9.0 rejects `float` inputs (no compat shim).
 - `DriftReport.graph_unavailable: bool` (canonical) + new
-  `unable_reason: str | None`; legacy `unable_to_verify` kwarg mapped
-  via `from_legacy()`.
-- `classify_binding(ref, graph_nodes)` is 2-arg; legacy 3-arg callers
-  use `classify_binding_legacy`.
+  `unable_reason: str | None`; legacy `unable_to_verify` kwarg is no
+  longer mapped (v0.9.0).
+- `classify_binding(ref, graph_nodes)` is 2-arg; v0.9.0 rejects the
+  3-arg form.
 
-All shims emit `DeprecationWarning` and are removed in v0.9.0.
+v0.8.0 compat shims were REMOVED in v0.9.0 — hard break, no
+migration path.
 
 ### REQ-57 — BDD coverage (v0.8.0)
 
@@ -311,15 +311,18 @@ The system SHALL close the two remaining carry-forwards:
 ```python
 @dataclass(frozen=True)
 class Finding:
-    decision_id: int          # was: str
+    decision_id: int          # was: str; v0.9.0 enforces via __post_init__
     binding: CodeRef
     drift_class: DriftClass
     detail: str
 
-    @classmethod
-    def from_legacy(cls, *, decision_id, binding, drift_class, detail=""):
-        """1-release migration shim; removed in v0.9.0."""
-        ...
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision_id, int) or isinstance(
+            self.decision_id, bool
+        ):
+            raise TypeError(
+                f"Finding.decision_id must be int, got {type(self.decision_id).__name__}"
+            )
 
 @dataclass
 class DriftReport:
@@ -331,20 +334,10 @@ class DriftReport:
     class_counts: dict[DriftClass, int] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     graph_unavailable: bool = False
-    unable_reason: str | None = None    # NEW
-
-    @classmethod
-    def from_legacy(cls, *, change_name, scanned_at, graph_mtime=None,
-                    unable_to_verify=None, ...):
-        """1-release migration shim; removed in v0.9.0."""
-        ...
+    unable_reason: str | None = None    # NEW in v0.8.0; canonical in v0.9.0
 
 def classify_binding(ref, graph_nodes) -> DriftClass:
-    """2-arg primary; was 3-arg with separate current_id_map."""
-    ...
-
-def classify_binding_legacy(binding, current_nodes, current_id_map) -> DriftClass:
-    """1-release 3-arg wrapper; removed in v0.9.0."""
+    """2-arg canonical entry point (v0.9.0 final)."""
     ...
 ```
 
