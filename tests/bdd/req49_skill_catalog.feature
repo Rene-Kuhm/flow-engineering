@@ -1,7 +1,6 @@
-<!-- req49_skill_catalog.feature: REQ-49 BDD scenarios.
-     Source: openspec/changes/archive/2026-06-27-prompt-registry-pr1/spec.md
-     "REQ-49 Scenario S1 + S2" verbatim.
--->
+# req49_skill_catalog.feature: REQ-49 BDD scenarios.
+# Source: openspec/changes/archive/2026-06-27-prompt-registry-pr1/spec.md
+# "REQ-49 Scenario S1 + S2" verbatim.
 Feature: OpenCode SKILL.md mirror catalog + checksum drift detection (REQ-49)
 
   The system SHALL detect drift between on-disk SKILL.md frontmatter
