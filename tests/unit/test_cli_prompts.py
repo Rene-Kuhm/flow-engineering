@@ -337,6 +337,179 @@ class TestCheckFlags:
         )
 
 
+# ---------- T2.4 (T2.5 W2 follow-up): stderr WARN + observability counters ----------
+
+
+class _CounterCapture:
+    """Test helper that monkeypatches ``observability.increment``.
+
+    Each call to ``increment(name, **fields)`` is recorded as a tuple
+    in ``self.calls`` so tests can assert on the emitted counter names
+    and labels without touching the real JSONL sink.
+    """
+
+    def __init__(self) -> None:
+        from flow_engineering import observability
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self._original = observability.increment
+        self._module = observability
+
+    def __enter__(self) -> "_CounterCapture":
+        def _capture(name: str, **fields: Any) -> None:
+            self.calls.append((name, dict(fields)))
+        self._module.increment = _capture
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self._module.increment = self._original
+
+
+class TestCheckStderrWarn:
+    def test_writes_warn_to_stderr_on_drift(
+        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts check` writes a `[WARN]` line to stderr when drift is detected.
+
+        Per verify-report-pr2a.md WARNING W2 + tasks-pr2.md T2.4: the CLI
+        emits a single ``[WARN]`` summary line on stderr (NOT on stdout)
+        so operators get a batch-level signal of drift. The line MUST
+        include the drift count.
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", drifted_catalog)
+        result = runner.invoke(main, ["prompts", "check"])
+        assert result.exit_code == 1, (
+            f"expected exit 1 on drift; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "[WARN]" in result.stderr, (
+            f"expected '[WARN]' marker in stderr; got {result.stderr!r}"
+        )
+        assert "1 drift" in result.stderr or "drift" in result.stderr.lower(), (
+            f"expected drift count mention in stderr; got {result.stderr!r}"
+        )
+
+    def test_no_warn_on_clean_state(
+        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts check` does NOT write a `[WARN]` line on clean state.
+
+        Negative counterpart to test_writes_warn_to_stderr_on_drift:
+        the stderr MUST stay free of ``[WARN]`` markers when the
+        catalog is clean (otherwise the WARN becomes noise).
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", clean_catalog)
+        result = runner.invoke(main, ["prompts", "check"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on clean; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "[WARN]" not in result.stderr, (
+            f"unexpected '[WARN]' in stderr on clean state; "
+            f"got {result.stderr!r}"
+        )
+
+
+class TestCheckObservability:
+    def test_emits_check_total_clean(
+        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Clean state emits `prompts_check_total{result="clean"}` exactly once.
+
+        Per verify-report-pr2a.md W2: the catalog counter is the batch-
+        level signal of how many `flow prompts check` invocations were
+        clean vs drift-detected. The counter MUST carry a ``result``
+        label so the `flow metrics --domain prompts` surface can split.
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", clean_catalog)
+        with _CounterCapture() as cap:
+            result = runner.invoke(main, ["prompts", "check"])
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        clean_calls = [
+            (n, f) for (n, f) in cap.calls if n == "prompts_check_total"
+            and f.get("result") == "clean"
+        ]
+        assert len(clean_calls) == 1, (
+            f"expected exactly 1 prompts_check_total{{result=clean}} call; "
+            f"got {clean_calls!r} (all calls: {cap.calls!r})"
+        )
+
+    def test_emits_check_total_drift(
+        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Drift state emits `prompts_check_total{result="drift"}` exactly once."""
+        monkeypatch.setattr(osc, "SKILL_CATALOG", drifted_catalog)
+        with _CounterCapture() as cap:
+            result = runner.invoke(main, ["prompts", "check"])
+        assert result.exit_code == 1, (
+            f"expected exit 1 on drift; got {result.exit_code}."
+        )
+        drift_calls = [
+            (n, f) for (n, f) in cap.calls if n == "prompts_check_total"
+            and f.get("result") == "drift"
+        ]
+        assert len(drift_calls) == 1, (
+            f"expected exactly 1 prompts_check_total{{result=drift}} call; "
+            f"got {drift_calls!r} (all calls: {cap.calls!r})"
+        )
+
+    def test_emits_drift_total_per_skill(
+        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Each drift finding emits `prompts_check_drift_total{skill=<name>}`.
+
+        Per design D10 + REQ-22 prefix: the per-skill drift counter is
+        emitted ONCE per drift finding so the metrics surface can break
+        down drift counts by skill (e.g., to detect the noisiest skill).
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", drifted_catalog)
+        with _CounterCapture() as cap:
+            result = runner.invoke(main, ["prompts", "check"])
+        assert result.exit_code == 1
+        drift_total_calls = [
+            (n, f) for (n, f) in cap.calls
+            if n == "prompts_check_drift_total"
+        ]
+        assert len(drift_total_calls) >= 1, (
+            f"expected at least 1 prompts_check_drift_total call; "
+            f"got {drift_total_calls!r} (all calls: {cap.calls!r})"
+        )
+        # The drift fixture is a single-entry catalog with skill_name='sdd-test'.
+        assert any(
+            f.get("skill") == "sdd-test" for (n, f) in drift_total_calls
+        ), (
+            f"expected skill='sdd-test' label in drift_total call; "
+            f"got {drift_total_calls!r}"
+        )
+
+    def test_emits_duration_seconds(
+        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Each `flow prompts check` invocation emits `prompts_check_duration_seconds`.
+
+        Per design D10: the duration counter is a gauge-style ``_seconds``
+        suffix counter that records the elapsed wall-clock time. The
+        ``value`` field MUST be a non-negative float.
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", clean_catalog)
+        with _CounterCapture() as cap:
+            runner.invoke(main, ["prompts", "check"])
+        duration_calls = [
+            (n, f) for (n, f) in cap.calls if n == "prompts_check_duration_seconds"
+        ]
+        assert len(duration_calls) == 1, (
+            f"expected exactly 1 prompts_check_duration_seconds call; "
+            f"got {duration_calls!r} (all calls: {cap.calls!r})"
+        )
+        value = duration_calls[0][1].get("value")
+        assert isinstance(value, (int, float)) and value >= 0, (
+            f"expected non-negative numeric value in duration counter; "
+            f"got {duration_calls[0][1]!r}"
+        )
+
+
 # ---------- T2.3: flow prompts lint subcommand ----------
 
 
