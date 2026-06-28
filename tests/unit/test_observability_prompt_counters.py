@@ -191,6 +191,21 @@ class TestRenderPromptEmitsCounters:
         assert len(fail_events) >= 1
         assert fail_events[-1]["fields"].get("error") == "unknown"
 
+    def test_render_emits_real_domain_label(
+        self, metrics_sink: Path, render_sink: Path
+    ) -> None:
+        """REQ-V1.1.4 REFACTOR: domain label surfaces the prompt's
+        PromptDomain.value, not the 'unknown' fallback (T4.4)."""
+        render_prompt("strict_tdd", test_command="pytest")
+        events = observability.read_all(path=metrics_sink)
+        ok_events = [
+            e for e in events if e["name"] == "prompts_render_total"
+        ]
+        assert len(ok_events) >= 1
+        # strict_tdd is registered under PromptDomain.OBSERVABILITY.
+        assert ok_events[-1]["fields"].get("domain") == "observability"
+        assert ok_events[-1]["fields"].get("prompt_id") == "strict_tdd"
+
 
 class TestPromptDomainSummarizeIntegration:
     """The :func:`summarize` helper buckets prompt counters into the
