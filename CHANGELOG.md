@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-06-28
+
+### Added
+- REQ-50: `flow prompts list` + `flow prompts show <id>` CLI subcommands (`flow prompts list` returns a text table grouped by domain; `--json` projects each entry into `{prompt_id, domain, version, owner, variables, location}` shape; `flow prompts show <id>` renders the template with sentinel substitution, accepts repeatable `--var key=value` flags, exits 5 on unknown id with a JSON error payload on stderr).
+
+### Fixed
+- W1: lint_prompts spec-taxonomy alias map (`LINT_CATEGORY_SPEC_ALIASES` + `get_spec_category()`) so spec-mandated category names (`missing_placeholder`, `template_parse_error`) resolve to the implementation categories (`undefined_var`, `jinja_syntax`).
+- W2: `select_autoescape(default_for_string=True)` for `_safe_jinja_env()` — HTML escape blocks Jinja2 `{{ var }}` injection on untrusted input.
+- W3: `prompts/` directory + 4 `.j2` files (`strict_tdd.j2` + `auto_suggest_header.j2` + `auto_suggest_footer.j2` + `auto_suggest_empty.j2`) restored at repo root.
+- W4: `scaffold._env()` hoisted to shared `prompt_render._env()` so the scaffold render path and the prompt-render path share the same Jinja2 `Environment` configuration (including autoescape + `StrictUndefined`).
+- W7: `[tool.flow_engineering.prompts] directory = "prompts"` section added to `pyproject.toml`.
+- W8: `pyproject.toml` version bumped 0.8.0 → 0.8.1 (additive MINOR bump for REQ-50 + 8 W-fix carry-forwards).
+- W9: ruff auto-fix run on PR#2b changed files (no auto-fixable issues; the single UP042 finding for `PromptDomain(str, Enum)` requires `--unsafe-fixes` and is left as a follow-up).
+- W10: strengthened REQ-45 S1 BDD scenario with per-entry assertions for owner / variables / location (closes the REQ-45 S1 PARTIAL flag from PR#1 verify-report).
+
 ## [0.8.0] - 2026-06-27
 
 ### Added
