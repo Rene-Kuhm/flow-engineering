@@ -1,4 +1,4 @@
-.PHONY: install dev test test-bdd test-unit lint typecheck clean run
+.PHONY: install dev test test-bdd test-unit lint typecheck clean run docs
 
 install:
 	uv tool install .
@@ -27,3 +27,6 @@ clean:
 
 run:
 	uv run flow
+
+docs:
+	uv run python scripts/generate_prompts_doc.py
