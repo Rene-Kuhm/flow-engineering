@@ -61,17 +61,34 @@ class DriftClass(str, Enum):
 
 @dataclass(frozen=True)
 class Finding:
-    """One per-binding classification result (REQ-V9.1).
+    """One per-binding classification result (REQ-V9.1 + REQ-V9.4).
 
     v0.9.0 (REQ-V9.1): ``decision_id`` is hard-typed ``int``; legacy
     numeric ``str`` inputs are no longer accepted (the v0.8.0
     :meth:`from_legacy` shim was removed).
+
+    v0.9.0 (REQ-V9.4): ``__post_init__`` raises ``TypeError`` if
+    ``decision_id`` is not a real ``int``. ``bool`` is explicitly
+    rejected because Python treats ``bool`` as an ``int`` subclass — a
+    naive ``isinstance(x, int)`` check would silently accept ``True`` /
+    ``False`` as valid ``decision_id`` values, which is the kind of
+    stringy truthy/falsy coercion bug this enforcement exists to
+    prevent. Hard break — no ``DeprecationWarning``, no ``int()``
+    coercion (the W1 shim IS the soft compat; v0.9.0 removes it).
     """
 
     decision_id: int  # REQ-56 W8; hard break in v0.9.0
     binding: CodeRef
     drift_class: DriftClass
     detail: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision_id, int) or isinstance(
+            self.decision_id, bool
+        ):
+            raise TypeError(
+                f"Finding.decision_id must be int, got {type(self.decision_id).__name__}"
+            )
 
 
 @dataclass
@@ -605,7 +622,11 @@ def scan_change(
         for obs in observations:
             try:
                 content = str(obs.get("content", ""))
-                decision_id = str(obs.get("id", "unknown"))
+                raw_id = obs.get("id", "unknown")
+                try:
+                    decision_id = int(raw_id)
+                except (TypeError, ValueError):
+                    decision_id = -1
                 try:
                     refs = extract_code_refs(content)
                 except ParseError:
@@ -630,7 +651,7 @@ def scan_change(
                             )
                             findings.append(
                                 Finding(
-                                    decision_id=decision_id,  # type: ignore[arg-type]
+                                    decision_id=decision_id,
                                     binding=synthetic,
                                     drift_class=DriftClass.OBSOLETE,
                                     detail="no code_refs; graphify returned 0 candidates",
@@ -643,7 +664,7 @@ def scan_change(
                     drift_class = classify_binding(binding, current_nodes)
                     findings.append(
                         Finding(
-                            decision_id=decision_id,  # type: ignore[arg-type]
+                            decision_id=decision_id,
                             binding=binding,
                             drift_class=drift_class,
                             detail="",
@@ -660,10 +681,10 @@ def scan_change(
                     if idx in contradicted_indices:
                         conflicting = sorted(
                             set(
-                                str(other.decision_id)
+                                other.decision_id
                                 for other in findings
                                 if other.binding.id == f.binding.id
-                                and str(other.decision_id) != f.decision_id  # type: ignore[comparison-overlap]
+                                and other.decision_id != f.decision_id
                             )
                         )
                         rebuilt.append(
