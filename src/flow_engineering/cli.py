@@ -22,6 +22,7 @@ from flow_engineering.binding import (
     extract_code_refs,
 )
 from flow_engineering.daemon import start_watch
+from flow_engineering.drift_event_log import DriftEvent, DriftEventLog
 from flow_engineering.engram_io import (
     EngramBackend,
     EngramClient,
@@ -1807,6 +1808,178 @@ def drift(
         click.echo(_render_drift_table(report))
 
     sys.exit(_drift_exit_code(report))
+
+
+# ---------- REQ-V1.0.2 + REQ-V1.0.3: flow drift-events read-side CLI ----------
+
+
+@main.group(name="drift-events")
+def drift_events_group() -> None:
+    """Read drift events from ~/.flow-engineering/drift_events.jsonl (REQ-V1.0.2 + REQ-V1.0.3).
+
+    Path B (parallel command — preserves the ``flow drift <change>``
+    surface). Subcommands: ``list``, ``tail``, ``stats``. Mirrors the
+    ``flow metrics {summary,export,aggregate}`` flag set so the operator
+    mental model transfers.
+    """
+
+
+def _format_drift_events_text(events: list[DriftEvent]) -> str:
+    """Render a fixed-width text table from drift events (REQ-V1.0.2 D4).
+
+    Mirrors the ``flow metrics summary`` text-table precedent at
+    ``cli.py:999-1001`` (``name.ljust(name_width) ...``). Columns:
+    ``change``, ``decision_id``, ``binding_id``, ``class``, ``detected_at``.
+    """
+    if not events:
+        return "(no drift events)\n"
+    headers = ("change", "decision_id", "binding_id", "class", "detected_at")
+    rows: list[tuple[str, ...]] = [
+        (
+            ev.change,
+            str(ev.decision_id),
+            ev.binding_id,
+            ev.event_class,
+            f"{ev.detected_at:.0f}",
+        )
+        for ev in events
+    ]
+    widths = [
+        max(len(headers[i]), *(len(r[i]) for r in rows)) for i in range(len(headers))
+    ]
+    lines = [
+        "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)),
+        "  ".join("-" * w for w in widths),
+    ]
+    for r in rows:
+        lines.append("  ".join(r[i].ljust(widths[i]) for i in range(len(headers))))
+    return "\n".join(lines) + "\n"
+
+
+def _parse_since_until(
+    since: str | None, until: str | None,
+) -> tuple[float | None, float | None]:
+    """Parse ISO 8601 ``--since`` and ``--until`` flags into epoch seconds.
+
+    Returns ``(since_ts, until_ts)`` where ``None`` means "no bound".
+    Raises ``ValueError`` on malformed input; the CLI handler converts
+    that to ``exit 2`` per D9.
+    """
+    since_ts: float | None = None
+    until_ts: float | None = None
+    if since is not None:
+        since_ts = datetime.fromisoformat(since.replace("Z", "+00:00")).timestamp()
+    if until is not None:
+        until_ts = datetime.fromisoformat(until.replace("Z", "+00:00")).timestamp()
+    return since_ts, until_ts
+
+
+def _filter_drift_events(
+    events: list[DriftEvent],
+    *,
+    since_ts: float | None,
+    until_ts: float | None,
+    change: str | None,
+    event_class: str | None,
+    limit: int | None,
+) -> list[DriftEvent]:
+    """Apply the documented filter set to a list of drift events."""
+    out: list[DriftEvent] = []
+    for ev in events:
+        if since_ts is not None and ev.detected_at < since_ts:
+            continue
+        if until_ts is not None and ev.detected_at > until_ts:
+            continue
+        if change is not None and ev.change != change:
+            continue
+        if event_class is not None and ev.event_class != event_class:
+            continue
+        out.append(ev)
+        if limit is not None and len(out) >= limit:
+            break
+    return out
+
+
+@drift_events_group.command(name="list")
+@click.option("--since", default=None,
+              help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None,
+              help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option("--change", default=None,
+              help="Filter events for a specific change name.")
+@click.option("--event-class", default=None,
+              help="Filter events by drift class (e.g. LABEL_DRIFT).")
+@click.option("--limit", type=int, default=None,
+              help="Cap the number of returned events.")
+@click.option("--format", "fmt", default="text",
+              type=click.Choice(["text", "json", "prometheus", "csv"]),
+              help="Output format (default: text).")
+@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
+              help="Alternative drift event log path "
+                   "(default: ~/.flow-engineering/drift_events.jsonl).")
+def drift_events_list(
+    since: str | None,
+    until: str | None,
+    change: str | None,
+    event_class: str | None,
+    limit: int | None,
+    fmt: str,
+    log_path: Path | None,
+) -> None:
+    """List drift events with optional filters (REQ-V1.0.2)."""
+    try:
+        since_ts, until_ts = _parse_since_until(since, until)
+    except ValueError as exc:
+        click.echo(f"Error: invalid --since/--until: {exc}", err=True)
+        sys.exit(observability.EXIT_INVALID_VALUE)
+
+    log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
+    events = log.read_all()
+    events = _filter_drift_events(
+        events,
+        since_ts=since_ts,
+        until_ts=until_ts,
+        change=change,
+        event_class=event_class,
+        limit=limit,
+    )
+
+    if fmt == "text":
+        click.echo(_format_drift_events_text(events))
+        return
+    if fmt == "json":
+        click.echo(
+            json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2)
+        )
+        return
+    if fmt == "csv":
+        buf = _csv.StringIO()
+        writer = _csv.writer(buf)
+        writer.writerow(["change", "decision_id", "binding_id", "class", "detected_at"])
+        for ev in events:
+            writer.writerow(
+                [ev.change, ev.decision_id, ev.binding_id, ev.event_class, ev.detected_at]
+            )
+        click.echo(buf.getvalue(), nl=False)
+        return
+    if fmt == "prometheus":
+        # REQ-V1.0.2 D4: per-change + per-event-class counts as a counter.
+        lines = [
+            "# HELP flow_drift_events_total Drift events recorded.",
+            "# TYPE flow_drift_events_total counter",
+        ]
+        by_class: dict[str, int] = {}
+        by_change: dict[str, int] = {}
+        for ev in events:
+            by_class[ev.event_class] = by_class.get(ev.event_class, 0) + 1
+            by_change[ev.change] = by_change.get(ev.change, 0) + 1
+        for cls, n in sorted(by_class.items()):
+            lines.append(f'flow_drift_events_total{{event_class="{cls}"}} {n}')
+        for change_name, n in sorted(by_change.items()):
+            lines.append(f'flow_drift_events_total{{change="{change_name}"}} {n}')
+        lines.append("# EOF")
+        click.echo("\n".join(lines) + "\n")
+        return
 
 
 # ---------- REQ-24: flow projects backfill ----------
