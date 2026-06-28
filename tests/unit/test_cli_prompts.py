@@ -354,7 +354,7 @@ class _CounterCapture:
         self._original = observability.increment
         self._module = observability
 
-    def __enter__(self) -> "_CounterCapture":
+    def __enter__(self) -> _CounterCapture:
         def _capture(name: str, **fields: Any) -> None:
             self.calls.append((name, dict(fields)))
         self._module.increment = _capture

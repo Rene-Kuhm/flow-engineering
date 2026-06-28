@@ -21,7 +21,6 @@ exercise the substitution path without mutating the legacy catalog.
 from __future__ import annotations
 
 import pytest
-from jinja2 import UndefinedError
 
 from flow_engineering import prompt_registry
 from flow_engineering.prompt_registry import (

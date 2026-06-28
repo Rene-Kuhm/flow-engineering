@@ -53,7 +53,6 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
-import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -61,7 +60,6 @@ from typing import Any
 import pytest
 
 from flow_engineering.engram_io import InMemoryBackend
-
 
 # ---------- Helpers ----------
 

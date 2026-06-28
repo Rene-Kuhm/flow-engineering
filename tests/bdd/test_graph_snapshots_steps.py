@@ -48,7 +48,6 @@ from flow_engineering.snapshot_manager import (
     SnapshotManager,
 )
 
-
 # ---------- Helpers ----------
 
 
@@ -819,9 +818,9 @@ def given_n_snapshots_spanning_days(
     mgr = _get_manager(snapshot_world)
     _seed_obs(snapshot_world["backend"], count=1)
 
-    from datetime import UTC, datetime, timedelta
     import gzip as _gzip
     import hashlib as _hashlib
+    from datetime import UTC, datetime, timedelta
 
     ids: list[str] = []
     for offset in range(n):

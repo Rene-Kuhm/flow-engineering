@@ -15,7 +15,6 @@ Coverage map (REQ-25 scenarios 1-5 at the CLI unit level):
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -136,7 +135,6 @@ class TestSearchNoFederatedUnchanged:
     def test_default_search_does_not_call_mem_search_federated(
         self, multi_project_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from flow_engineering import cli as cli_mod
 
         called: dict[str, int] = {"federated": 0, "plain": 0}
         real_federated = multi_project_backend.mem_search_federated

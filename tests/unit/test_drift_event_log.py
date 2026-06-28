@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -22,7 +21,6 @@ from flow_engineering.drift_event_log import (
     DriftEvent,
     DriftEventLog,
 )
-
 
 # ---------- Fixtures ----------
 

@@ -19,9 +19,7 @@ Refs: openspec/changes/archive/2026-06-27-drift-hardening/{spec,design,tasks}.md
 from __future__ import annotations
 
 import warnings
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from flow_engineering.binding import CodeRef
 from flow_engineering.decision_drift import (
@@ -31,7 +29,6 @@ from flow_engineering.decision_drift import (
     _epoch_to_iso,
     classify_binding,
 )
-
 
 # ---- helpers -------------------------------------------------------------
 
@@ -148,7 +145,7 @@ def test_drift_report_unable_reason_default_none() -> None:
 def test_epoch_to_iso_helper_matches_datetime() -> None:
     """The internal ``_epoch_to_iso`` helper must format Z-suffixed ISO."""
     epoch = 1751000000.0
-    expected = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime(
+    expected = datetime.fromtimestamp(epoch, tz=UTC).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
     assert _epoch_to_iso(epoch) == expected

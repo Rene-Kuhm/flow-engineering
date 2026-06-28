@@ -32,9 +32,8 @@ from click.testing import CliRunner
 
 from flow_engineering import daemon, observability
 from flow_engineering.binding import CodeRef
-from flow_engineering.cli import main as cli_main
 from flow_engineering.decision_drift import DriftClass, DriftReport, Finding
-from flow_engineering.state import ChangeStatus, StateMachine
+from flow_engineering.state import StateMachine
 
 runner = CliRunner()
 
@@ -378,7 +377,6 @@ class TestDriftEventLogWiring:
     ) -> None:
         """A 2-finding report (1 STALE_ID + 1 LABEL_DRIFT) results in 2
         ``DriftEventLog.append`` calls — one per non-STILL_VALID finding."""
-        from flow_engineering.drift_event_log import DriftEventLog
 
         event_log_path = tmp_path / "drift_events.jsonl"
         appended: list[tuple[str, str, str, str, float]] = []
@@ -446,7 +444,6 @@ class TestDriftEventLogWiring:
         skipped per spec REQ-55 W5 ("only non-still-valid findings get
         persisted").
         """
-        from flow_engineering.drift_event_log import DriftEventLog
 
         appended: list[object] = []
 

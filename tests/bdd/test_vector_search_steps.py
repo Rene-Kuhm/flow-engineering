@@ -1118,7 +1118,6 @@ sqlite_vec = pytest.importorskip("sqlite_vec")
 
 
 from flow_engineering.vectors.sqlite_vec_store import (
-    BLOB_SIZE,
     VECTOR_DIM,
     SqliteVecStore,
 )

@@ -5,9 +5,7 @@ without interfering with each other.
 """
 from __future__ import annotations
 
-import asyncio
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -32,7 +30,6 @@ def test_both_plugins_export_expected_function(tmp_path: Path) -> None:
 
     Uses a small node script file with pathToFileURL to avoid Windows path issues.
     """
-    from urllib.request import pathname2url
 
     plugins_dir = Path.home() / ".opencode" / "plugins"
     cases = [
@@ -73,7 +70,6 @@ def test_plugin_file_sizes_similar() -> None:
 
 def test_both_plugins_activate_on_their_conditions(tmp_path: Path) -> None:
     """Verify activation logic: graphify needs graph.json, flow needs flow-engineering/."""
-    import json
 
     # Test flow-engineering activation: needs flow-engineering/<change>/ dir
     fe_dir = tmp_path / "flow-engineering" / "test"

@@ -68,7 +68,7 @@ class TestGetPromptMetadata:
         # REQ-46 W3: source moved from inline ``strict_tdd.py`` to the
         # ``prompts/strict_tdd.j2`` template file (templates are now
         # loaded from disk, see ``load_template_from_file``).
-        assert "prompts/strict_tdd.j2" == meta["source"]
+        assert meta["source"] == "prompts/strict_tdd.j2"
 
     def test_get_prompt_metadata_propagates_keyerror(self) -> None:
         with pytest.raises(KeyError):

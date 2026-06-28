@@ -958,7 +958,7 @@ def _seed_snapshot_with_binding_and_graph(
     backend.mem_save(
         title="vec/phase_0",
         content=content,
-        topic_key=f"sdd/vector-semantic-search/spec",
+        topic_key="sdd/vector-semantic-search/spec",
     )
 
     snaps_dir.mkdir(parents=True, exist_ok=True)
@@ -1112,8 +1112,8 @@ def when_drift_without_snapshot(
     scan has something to iterate over (D13 non-breaking: live path
     uses live backend, not snapshot's frozen one).
     """
-    from flow_engineering.binding import CodeRef, format_code_refs_block
     from flow_engineering import decision_drift
+    from flow_engineering.binding import CodeRef, format_code_refs_block
     from flow_engineering.engram_io import InMemoryBackend
 
     backend = InMemoryBackend()
