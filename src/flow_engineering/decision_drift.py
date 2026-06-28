@@ -26,13 +26,14 @@ which is the terminal signal when the graph itself is unavailable):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
 _LINE_PATTERN = re.compile(r"\d+")
 
 
-class DriftClass(str, Enum):
+class DriftClass(StrEnum):
     """Mutually-exclusive classification for a single binding."""
 
     STILL_VALID = "STILL_VALID"
@@ -336,10 +337,8 @@ def _load_graph_from_snapshot(
             try:
                 parsed = json.loads(graph_json_content)
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(tmp_path)
-                except OSError:
-                    pass
         except (OSError, json.JSONDecodeError, ValueError):
             return (None, None, None)
         if not isinstance(parsed, dict):
@@ -679,12 +678,12 @@ def scan_change(
                 for idx, f in enumerate(findings):
                     if idx in contradicted_indices:
                         conflicting = sorted(
-                            set(
+                            {
                                 other.decision_id
                                 for other in findings
                                 if other.binding.id == f.binding.id
                                 and other.decision_id != f.decision_id
-                            )
+                            }
                         )
                         rebuilt.append(
                             Finding(
