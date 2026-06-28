@@ -328,6 +328,75 @@ class TestParseFrontmatter:
         with pytest.raises(SkillVersionError):
             parse_frontmatter(ghost)
 
+    def test_parses_nested_metadata_version(self, tmp_path: Path) -> None:
+        """Real OpenCode SKILL.md files nest ``version`` under ``metadata``.
+
+        The verify report's CRITICAL C1 finding showed that
+        ``~/.config/opencode/skills/sdd-init/SKILL.md`` has
+        ``version: "3.0"`` nested under the ``metadata:`` block, NOT at
+        the top level. ``parse_frontmatter`` MUST surface a top-level
+        ``version`` key so downstream ``check_drift`` consumers see the
+        real on-disk version and don't fall back to the ``"0.0"``
+        default — which caused 20/20 false-positive DRIFT reports.
+        """
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\n"
+            "name: sdd-init\n"
+            "description: \"Trigger: sdd init\"\n"
+            "metadata:\n"
+            "  author: gentleman-programming\n"
+            "  version: \"3.0\"\n"
+            "---\n"
+            "\nBody content.\n",
+            encoding="utf-8",
+        )
+        parsed = parse_frontmatter(skill)
+        assert parsed["version"] == "3.0", (
+            f"expected top-level 'version' key '3.0' from nested "
+            f"metadata.version; got parsed={parsed!r}"
+        )
+
+    def test_top_level_version_wins_over_metadata_version(
+        self, tmp_path: Path,
+    ) -> None:
+        """When both top-level ``version`` and ``metadata.version`` are
+        present, the top-level value wins (it is the canonical location).
+        """
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\n"
+            "name: sdd-test\n"
+            "version: \"4.0\"\n"
+            "metadata:\n"
+            "  version: \"3.0\"\n"
+            "---\n"
+            "\nBody.\n",
+            encoding="utf-8",
+        )
+        parsed = parse_frontmatter(skill)
+        assert parsed["version"] == "4.0", (
+            f"expected top-level 'version' '4.0' to win; got {parsed!r}"
+        )
+
+    def test_parse_frontmatter_default_version_when_missing(
+        self, tmp_path: Path,
+    ) -> None:
+        """When no version is present at either location, the parsed
+        dict exposes the ``"0.0"`` default at top-level so consumers
+        always have a string to compare against.
+        """
+        skill = tmp_path / "SKILL.md"
+        skill.write_text(
+            "---\nname: sdd-test\ndescription: no version\n---\n",
+            encoding="utf-8",
+        )
+        parsed = parse_frontmatter(skill)
+        assert parsed["version"] == "0.0", (
+            f"expected default '0.0' when no version anywhere; "
+            f"got {parsed!r}"
+        )
+
 
 # ---------- T1.3: check_drift core ----------
 
