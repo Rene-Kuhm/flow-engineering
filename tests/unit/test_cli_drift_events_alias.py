@@ -11,10 +11,14 @@ on every invocation and delegates to the new canonical subcommands. This
 preserves backwards compatibility for v1.0 / v1.1 operators with shell
 aliases / cron jobs / docs pointing at the hyphenated name. The alias is
 REMOVED in v1.3 per the ``SnapshotGraphMissing`` v1.1 precedent.
+
+Click 8+ emits the deprecation warning to stderr as a plain text line
+(``DeprecationWarning: The command 'drift-events' is deprecated.``),
+NOT via Python's ``warnings.warn()`` machinery. The tests assert on
+``result.stderr`` accordingly.
 """
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import pytest
@@ -55,74 +59,59 @@ class TestDriftEventsAlias:
         operators do not get a hard ``No such command`` error. The
         command works AND emits a DeprecationWarning on stderr.
         """
-        with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always")
-            result = runner.invoke(
-                main,
-                [
-                    "drift-events",
-                    "list",
-                    "--format=text",
-                    "--path", str(seeded_log),
-                ],
-            )
+        result = runner.invoke(
+            main,
+            [
+                "drift-events",
+                "list",
+                "--format=text",
+                "--path", str(seeded_log),
+            ],
+        )
         assert result.exit_code == 0, result.output
         assert "change-alias" in result.output
-        # Click's deprecated=True emits a DeprecationWarning on invocation.
-        deprecation_warnings = [
-            w for w in captured if issubclass(w.category, DeprecationWarning)
-        ]
-        assert len(deprecation_warnings) >= 1, (
-            f"expected at least one DeprecationWarning; got {captured}"
+        # Click's deprecated=True emits a DeprecationWarning on stderr.
+        assert "DeprecationWarning" in result.stderr, (
+            f"expected DeprecationWarning on stderr; got {result.stderr!r}"
         )
-        # The deprecation message mentions drift-events (the deprecated name).
-        messages = " ".join(str(w.message) for w in deprecation_warnings)
-        assert "drift-events" in messages, (
-            f"expected 'drift-events' in deprecation messages; got {messages!r}"
+        assert "drift-events" in result.stderr, (
+            f"expected 'drift-events' in deprecation message; got {result.stderr!r}"
         )
 
     def test_alias_tail_still_works_with_deprecation_warning(
         self, seeded_log: Path
     ) -> None:
         """``flow drift-events tail --path=<tmp>`` exits 0 + emits DeprecationWarning."""
-        with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always")
-            result = runner.invoke(
-                main,
-                [
-                    "drift-events",
-                    "tail",
-                    "--path", str(seeded_log),
-                ],
-            )
+        result = runner.invoke(
+            main,
+            [
+                "drift-events",
+                "tail",
+                "--path", str(seeded_log),
+            ],
+        )
         assert result.exit_code == 0, result.output
         assert "change-alias" in result.output
-        deprecation_warnings = [
-            w for w in captured if issubclass(w.category, DeprecationWarning)
-        ]
-        assert len(deprecation_warnings) >= 1
+        assert "DeprecationWarning" in result.stderr
+        assert "drift-events" in result.stderr
 
     def test_alias_stats_still_works_with_deprecation_warning(
         self, seeded_log: Path
     ) -> None:
         """``flow drift-events stats --path=<tmp>`` exits 0 + emits DeprecationWarning."""
-        with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always")
-            result = runner.invoke(
-                main,
-                [
-                    "drift-events",
-                    "stats",
-                    "--path", str(seeded_log),
-                ],
-            )
+        result = runner.invoke(
+            main,
+            [
+                "drift-events",
+                "stats",
+                "--path", str(seeded_log),
+            ],
+        )
         assert result.exit_code == 0, result.output
         # Either the per-class section header or the LABEL_DRIFT key is present.
         assert "Event class" in result.output or "LABEL_DRIFT" in result.output
-        deprecation_warnings = [
-            w for w in captured if issubclass(w.category, DeprecationWarning)
-        ]
-        assert len(deprecation_warnings) >= 1
+        assert "DeprecationWarning" in result.stderr
+        assert "drift-events" in result.stderr
 
     def test_alias_dispatches_to_canonical_subcommands(
         self, seeded_log: Path
@@ -133,6 +122,10 @@ class TestDriftEventsAlias:
         subcommand via ``ctx.forward()``. The JSON envelope contract is
         the SAME between the alias and the canonical surface — verify
         both produce byte-identical structured output for the same input.
+
+        Note: Click 8+ mixes stderr into ``result.output`` by default,
+        so the JSON envelope is preceded by the deprecation warning line.
+        We strip the leading line before parsing the JSON.
         """
         result = runner.invoke(
             main,
@@ -144,8 +137,12 @@ class TestDriftEventsAlias:
             ],
         )
         assert result.exit_code == 0, result.output
+        assert "DeprecationWarning" in result.stderr
+        # Strip the deprecation warning line that CliRunner mixes into output.
         import json as _json
-        payload = _json.loads(result.output)
+        lines = result.output.splitlines()
+        json_lines = [ln for ln in lines if not ln.startswith("DeprecationWarning")]
+        payload = _json.loads("\n".join(json_lines))
         assert isinstance(payload, list)
         assert len(payload) == 1
         assert payload[0]["change"] == "change-alias"
