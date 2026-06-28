@@ -75,7 +75,7 @@ def _make_finding(
         source="manual",
     )
     return Finding(
-        decision_id=str(obs_id),
+        decision_id=obs_id,
         binding=binding,
         drift_class=drift_class,
         detail=detail,
@@ -103,8 +103,8 @@ class TestHandleApplyProgressEvent:
         emit a one-line summary mentioning the change name."""
         report = DriftReport(
             change_name="my-change",
-            scanned_at=1000.0,
-            graph_mtime=999.0,
+            scanned_at="1970-01-01T00:16:40Z",
+            graph_mtime="1970-01-01T00:16:39Z",
             decisions_total=1,
             bindings_total=2,
             class_counts={
@@ -148,7 +148,7 @@ class TestHandleApplyProgressEvent:
         def _stub(*a: Any, **kw: Any) -> DriftReport:
             called["n"] += 1
             return DriftReport(
-                change_name="my-change", scanned_at=0.0, graph_mtime=None,
+                change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime=None,
                 decisions_total=0, bindings_total=0, class_counts={}, findings=[],
             )
 
@@ -172,7 +172,7 @@ class TestHandleApplyProgressEvent:
         """A missing graph.json MUST log unable_to_verify once and return
         the report — watcher MUST stay alive (no exception)."""
         report = DriftReport(
-            change_name="my-change", scanned_at=0.0, graph_mtime=None,
+            change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime=None,
             decisions_total=0, bindings_total=0, class_counts={},
             findings=[], graph_unavailable=True,
         )
@@ -201,8 +201,8 @@ class TestHandleApplyProgressEvent:
         observability.record_drift_summary."""
         report = DriftReport(
             change_name="my-change",
-            scanned_at=0.0,
-            graph_mtime=999.0,
+            scanned_at="1970-01-01T00:00:00Z",
+            graph_mtime="1970-01-01T00:16:39Z",
             decisions_total=1,
             bindings_total=1,
             class_counts={DriftClass.STILL_VALID: 1},
@@ -249,8 +249,8 @@ class TestStillValidSilence:
         """
         report = DriftReport(
             change_name="my-change",
-            scanned_at=1000.0,
-            graph_mtime=999.0,
+            scanned_at="1970-01-01T00:16:40Z",
+            graph_mtime="1970-01-01T00:16:39Z",
             decisions_total=3,
             bindings_total=3,
             class_counts={DriftClass.STILL_VALID: 3},
@@ -286,7 +286,7 @@ class TestStillValidSilence:
         """
         report = DriftReport(
             change_name="my-change",
-            scanned_at=0.0,
+            scanned_at="1970-01-01T00:00:00Z",
             graph_mtime=None,
             decisions_total=0,
             bindings_total=0,

@@ -205,7 +205,7 @@ def test_finding_is_frozen() -> None:
 def test_drift_report_defaults() -> None:
     r = DriftReport(
         change_name="decision-reality-drift",
-        scanned_at=0.0,
+        scanned_at="1970-01-01T00:00:00Z",
         graph_mtime=None,
         decisions_total=0,
         bindings_total=0,
@@ -532,8 +532,8 @@ def test_observability_drift_counters(
 
     report = DriftReport(
         change_name="test",
-        scanned_at=0.0,
-        graph_mtime=1.0,
+        scanned_at="1970-01-01T00:00:00Z",
+        graph_mtime="1970-01-01T00:00:01Z",
         decisions_total=5,
         bindings_total=7,
         class_counts={
