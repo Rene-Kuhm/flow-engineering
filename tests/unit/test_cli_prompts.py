@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -504,9 +505,13 @@ class TestCheckObservability:
             f"got {duration_calls!r} (all calls: {cap.calls!r})"
         )
         value = duration_calls[0][1].get("value")
-        assert isinstance(value, (int, float)) and value >= 0, (
-            f"expected non-negative numeric value in duration counter; "
+        assert isinstance(value, (int, float)), (
+            f"expected numeric value in duration counter; "
             f"got {duration_calls[0][1]!r}"
+        )
+        assert value >= 0, (
+            f"expected non-negative numeric value in duration counter; "
+            f"got value={value!r} from {duration_calls[0][1]!r}"
         )
 
 
