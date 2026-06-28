@@ -124,7 +124,7 @@ def _epoch_to_iso(epoch: float | int) -> str:
 
 def classify_binding(
     ref: CodeRef,
-    graph_nodes: dict[str, dict],
+    graph_nodes: dict[str, dict],  # type: ignore[type-arg]
 ) -> DriftClass:
     """Classify a single ``CodeRef`` against the current graph state (REQ-9 + REQ-V9.3).
 
@@ -158,7 +158,7 @@ def classify_binding(
 
 def _classify_with_id_map(
     binding: CodeRef,
-    current_nodes: dict[str, dict],
+    current_nodes: dict[str, dict],  # type: ignore[type-arg]
     current_id_map: dict[str, tuple[str, int, str]],
 ) -> DriftClass:
     """Core classification algorithm shared by the 2-arg and 3-arg surfaces."""
@@ -200,7 +200,7 @@ def load_graph(
     graph_json_path: Path | None = None,
     *,
     snap_id: str | None = None,
-) -> tuple[dict | None, dict | None, float | None]:
+) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
     """Load ``graph.json`` once for a drift scan (design #123 decision 1).
 
     REQ-33 + design D13: the kwarg-only ``snap_id`` activates the
@@ -249,8 +249,8 @@ def load_graph(
 
 
 def _index_graph_payload(
-    nodes: list, mtime: float | None,
-) -> tuple[dict | None, dict | None, float | None]:
+    nodes: list, mtime: float | None,  # type: ignore[type-arg]
+) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
     """Convert a raw ``graph.json`` ``nodes`` list into the index tuple.
 
     Shared between the live and snapshot-pinned branches so the binding
@@ -259,7 +259,7 @@ def _index_graph_payload(
     """
     if not isinstance(nodes, list):
         return (None, None, None)
-    current_nodes: dict[str, dict] = {}
+    current_nodes: dict[str, dict] = {}  # type: ignore[type-arg]
     current_id_map: dict[str, tuple[str, int, str]] = {}
     for n in nodes:
         if not isinstance(n, dict) or "id" not in n:
@@ -275,7 +275,7 @@ def _index_graph_payload(
 
 def _load_graph_from_snapshot(
     snap_id: str,
-) -> tuple[dict | None, dict | None, float | None]:
+) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
     """Load the frozen ``graph_state.graph_json`` from the snapshot envelope.
 
     Reads from ``~/.flow-engineering/snapshots/<snap_id>.json.gz``. The
@@ -307,7 +307,7 @@ def _load_graph_from_snapshot(
     # Honour the FLOW_SNAPSHOTS_DIR / test override pattern via the env
     # variable so the production default is consistent with the CLI.
     snapshots_dir = _resolve_snapshots_dir()
-    manager = SnapshotManager(snapshots_dir=snapshots_dir, backend=_DummyBackend())
+    manager = SnapshotManager(snapshots_dir=snapshots_dir, backend=_DummyBackend())  # type: ignore[arg-type]
     try:
         envelope = manager.show(snap_id)
     except SnapshotEnvelopeError:
@@ -369,10 +369,10 @@ class _DummyBackend:
     constructor signature without exposing any real data.
     """
 
-    def iter_observations(self, *, project=None):  # pragma: no cover - unreachable
+    def iter_observations(self, *, project=None):  # type: ignore[no-untyped-def]  # pragma: no cover - unreachable
         return []
 
-    def mem_search(self, *args, **kwargs):  # pragma: no cover - unreachable
+    def mem_search(self, *args, **kwargs):  # type: ignore[no-untyped-def]  # pragma: no cover - unreachable
         return []
 
 
@@ -408,7 +408,7 @@ def _snapshot_has_graph(snap_id: str) -> bool:
     )
     manager = SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
-        backend=_DummyBackend(),
+        backend=_DummyBackend(),  # type: ignore[arg-type]
     )
     try:
         envelope = manager.show(snap_id)
@@ -436,7 +436,7 @@ def _frozen_backend_from_snapshot(snap_id: str) -> EngramBackend:
 
     manager = SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
-        backend=_DummyBackend(),
+        backend=_DummyBackend(),  # type: ignore[arg-type]
     )
     try:
         envelope = manager.show(snap_id)
