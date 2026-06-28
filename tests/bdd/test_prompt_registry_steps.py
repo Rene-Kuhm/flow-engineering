@@ -28,25 +28,23 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
-from flow_engineering.prompt_registry import PromptRenderError
 from pytest_bdd import given, parsers, scenario, then, when
 
 from flow_engineering import prompt_registry
+from flow_engineering.opencode_skill_catalog import (
+    SkillEntry,
+    check_drift,
+    compute_frontmatter_sha256,
+)
 from flow_engineering.prompt_registry import (
     PromptDomain,
+    PromptRenderError,
     get_prompt,
     lint_prompts,
     register,
     render_prompt,
     unregister_prompt,
 )
-from flow_engineering.opencode_skill_catalog import (
-    SKILL_CATALOG,
-    SkillEntry,
-    check_drift,
-    compute_frontmatter_sha256,
-)
-
 
 runner = CliRunner()
 
@@ -78,11 +76,10 @@ def prompt_world() -> dict[str, Any]:
 def _cleanup_registered_prompts(prompt_world: dict[str, Any]) -> Any:
     """Auto-unregister any prompts added during the scenario."""
     yield
+    import contextlib
     for name in prompt_world.get("registered", []):
-        try:
+        with contextlib.suppress(Exception):
             unregister_prompt(name)
-        except Exception:
-            pass
 
 
 # ---------- Scenario bindings: REQ-45 ----------
