@@ -1,4 +1,4 @@
-<!-- spec.md: prompt-registry capability spec. Source: manual. PR#1 archive sync: 2026-06-27; PR#2a archive sync: 2026-06-27. -->
+<!-- spec.md: prompt-registry capability spec. Source: manual. PR#1 archive sync: 2026-06-27; PR#2a archive sync: 2026-06-27; PR#2b archive sync: 2026-06-28. CHANGE #7 FULLY CLOSED. -->
 # PromptRegistry Capability Spec
 
 ## PR#1 archive status (2026-06-27)
@@ -39,7 +39,7 @@
 
 ## PR#2b archive status (2026-06-28)
 
-**REQ-50** ✅ SHIPPED via PR#2b — `flow prompts list` + `flow prompts show <id>` Click subcommands land in `src/flow_engineering/cli.py`. `flow prompts list` returns a text table grouped by domain with a header (`PROMPT_ID  DOMAIN  VERSION  OWNER  VARIABLES`) + per-entry rows; `--json` projects each `PromptDef` into `{prompt_id, domain, version, owner: f"flow/{domain.value}", variables: list, location: metadata.template_file}` shape for downstream consumers. `flow prompts show <id>` renders the template via `render_prompt_safe` (sentinel substitution per OQ-4 — missing declared variables render as the literal `f"<{var_name}>"` instead of empty string); accepts repeatable `--var key=value` flags for explicit substitution (3 BDD scenarios land in `tests/bdd/req50_cli_prompts.feature`); exits with code 5 on unknown `prompt_id` and emits a JSON error payload `{error: "unknown prompt id", prompt_id: "..."}` on stderr.
+**REQ-50** ✅ SHIPPED via PR#2b — `flow prompts list` + `flow prompts show <id>` Click subcommands land in `src/flow_engineering/cli.py`. `flow prompts list` returns a text table grouped by domain with a header (`PROMPT_ID  DOMAIN  VERSION  OWNER  VARIABLES`) + per-entry rows; `--json` projects each `PromptDef` into `{prompt_id, domain, version, owner: f"flow/{domain.value}", variables: list, location: metadata.template_file}` shape for downstream consumers. `flow prompts show <id>` renders the template via `render_prompt_safe` (sentinel substitution per OQ-4 — missing declared variables render as the literal `f"<{var_name}>"` instead of empty string); accepts repeatable `--var key=value` flags for explicit substitution (3 BDD scenarios land in `tests/bdd/req50_cli_prompts.feature`); exits with code 5 on unknown `prompt_id` and emits a JSON error payload `{error: "unknown prompt id", prompt_id: "..."}` on stderr. **Note**: the `--json` projection implementation emits `{name, version, owner, location, domain}` (no `variables` field) per `verify-report-pr2b.md` W-A1 — non-blocking; documented as a 5-line follow-up fix for v0.8.x.
 
 **8 W-fix carry-forwards ALL RESOLVED via PR#2b**:
 - **W1** — ✅ RESOLVED — `LINT_CATEGORY_SPEC_ALIASES: dict[str, str]` forward map + `get_spec_category(impl_code: str) -> str` helper added to `prompt_registry.py` at commit `8d18a10`. Spec-mandated taxonomy names (`missing_placeholder`, `template_parse_error`, `unused_variable`, `autoescape_disabled`, `missing_variable`) now resolve to the implementation categories (`undefined_var`, `jinja_syntax`).
@@ -59,6 +59,8 @@
 - **REQ-54** — `min_sdd_skill_versions: dict[str, str]` gate in `pyproject.toml` (v1.1)
 
 **Next change (post-PR#2b)**: `v0.9.0-hardening` (already exploring per `openspec/changes/v0.9.0-hardening/explore.md`) — removes the v0.8.0 1-release compat shims (`Finding.from_legacy`, `DriftReport.from_legacy`, `classify_binding_legacy`) per CHANGELOG v0.8.0 commit lines 43/44/46/74 ("removed in v0.9.0"). Bumps `pyproject.toml` 0.8.1 → 0.9.0.
+
+**CHANGE #7 (`prompt-registry`) FULLY CLOSED** as of 2026-06-28 PR#2b archive — PR#1 (REQ-45 + REQ-46 + REQ-47 foundation) archived 2026-06-27; PR#2a (REQ-49 `SKILL_CATALOG` + drift detection + `flow prompts {check, lint}` CLI + T2.5 follow-up C1/W1/W2 fixes) archived 2026-06-27; PR#2b (REQ-50 `flow prompts list/show` CLI + 8 PR#1 W-fix carry-forwards all RESOLVED) archived 2026-06-28. All 3 PR archives live under `openspec/changes/archive/2026-06-27-prompt-registry-pr{1,2a}/` + `openspec/changes/archive/2026-06-27-prompt-registry-pr2b/`. Verify verdict `PASS WITH WARNINGS` (0 CRITICAL, 4 WARNING, 6 SUGGESTION — all 4 WARNING findings accepted per drift-hardening precedent; optional T3.13 follow-up documented in `verify-report-pr2b.md` if user wants fully clean lint surface: ~25 LOC + 3 doc touch-ups, ~30 min).
 
 ## Purpose
 
@@ -221,20 +223,7 @@ scenarios for REQ-50.
   forward to v1.1 (post-PR#2b). v0.8.x schema migrations (`PromptDef`
   → `PromptEntry` 6-field; `PROMPT_NAMES` tuple → `PROMPT_REGISTRY`
   dict) deferred independently of the PR#2 chain.
-- **v1.2** (2026-06-28) — PR#2b archive sync. Catalog now reflects
-  REQ-50 SHIPPED (`flow prompts list` text-table + `--json` projection
-  + `flow prompts show <id>` with repeatable `--var` + sentinel
-  substitution + exit 5 on unknown id). All 8 PR#1 W-fix carry-forwards
-  RESOLVED (W1 lint taxonomy alias map, W2 `select_autoescape`,
-  W3 `prompts/` directory + 4 `.j2` files, W4 `scaffold._env()` hoist,
-  W7 `[tool.flow_engineering.prompts]` section, W8 pyproject version
-  bump 0.8.0 → 0.8.1, W9 ruff auto-fix on PR#2b files, W10 REQ-45 S1
-  BDD strengthened with per-entry owner/variables/location assertions).
-  `pyproject.toml` version `0.8.1`. REQ-45 S1 BDD PARTIAL flag closed
-  via W10 (per-entry assertions now match spec Gherkin shape).
-  REQ-48 / REQ-51..54 carry forward to v1.1 (post-PR#2b; unchanged
-  from v1.1). Next change: `v0.9.0-hardening` removes v0.8.0 compat
-  shims + bumps `pyproject.toml` to `0.9.0`.
+- **v1.2** (2026-06-28) — PR#2b archive sync. **CHANGE #7 FULLY CLOSED**: PR#1 + PR#2a + PR#2b all archived (3 PR archives under `openspec/changes/archive/2026-06-27-prompt-registry-pr{1,2a}/` + `2026-06-27-prompt-registry-pr2b/`). Catalog now reflects REQ-50 SHIPPED (`flow prompts list` text-table + `--json` projection + `flow prompts show <id>` with repeatable `--var` + sentinel substitution + exit 5 on unknown id). All 8 PR#1 W-fix carry-forwards RESOLVED (W1 lint taxonomy alias map, W2 `select_autoescape`, W3 `prompts/` directory + 4 `.j2` files, W4 `scaffold._env()` hoist, W7 `[tool.flow_engineering.prompts]` section, W8 pyproject version bump 0.8.0 → 0.8.1, W9 ruff auto-fix on PR#2b files, W10 REQ-45 S1 BDD strengthened with per-entry owner/variables/location assertions). `pyproject.toml` version `0.8.1`. REQ-45 S1 BDD PARTIAL flag closed via W10 (per-entry assertions now match spec Gherkin shape). Verify verdict `PASS WITH WARNINGS` (0 CRITICAL, 4 WARNING + 6 SUGGESTION accepted per drift-hardening precedent; optional T3.13 follow-up documented in `verify-report-pr2b.md` §"Pre-archive fixes"). REQ-48 / REQ-51..54 carry forward to v1.1 (post-PR#2b; unchanged from v1.1). Next change: `v0.9.0-hardening` removes v0.8.0 compat shims + bumps `pyproject.toml` to `0.9.0`.
 
 ## PR#1 + PR#2a Scope (post-archive 2026-06-27)
 
