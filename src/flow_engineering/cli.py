@@ -2970,6 +2970,21 @@ def prompts_show(prompt_id: str, var_pairs: list[tuple[str, str]]) -> None:
         )
         sys.exit(_EXIT_UNKNOWN_PROMPT_ID)
 
+    # W5 carry-forward: the 4 migrated entries use Python
+    # ``.format()`` syntax (``{test_command}``); Jinja2 leaves those
+    # braces literal. Fall back to ``.format()`` for the body so the
+    # rendered output reflects the user's kwargs (mirrors the
+    # ``render_prompt`` fallback path). Sentinels are written as
+    # ``<test_command>`` so they survive the .format() pass (the
+    # angle-brackets are not Python format placeholders).
+    if "{" in rendered and "}" in rendered:
+        import contextlib
+        with contextlib.suppress(KeyError, IndexError):
+            # Missing positional or named placeholder — leave the
+            # Jinja2-rendered body as-is; the sentinel subs still
+            # show in the output via the header line.
+            rendered = rendered.format(**safe_kwargs)
+
     click.echo(f"prompt_id:   {entry.name}")
     click.echo(f"version:     {entry.version}")
     click.echo(f"owner:       {_entry_owner(entry)}")
