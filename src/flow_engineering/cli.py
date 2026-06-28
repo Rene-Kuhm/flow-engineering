@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -2424,6 +2425,67 @@ _STATUS_LABELS = {
     "missing_file": "MISSING",
     "frontmatter_parse_error": "PARSE_ERROR",
 }
+
+
+@dataclass(frozen=True)
+class CheckAction:
+    """Resolved action for ``flow prompts check`` based on flag combinations.
+
+    Attributes:
+        catalog: The catalog dict to walk (filtered when ``--skill`` was
+            passed; the full :data:`SKILL_CATALOG` otherwise).
+        init_or_update: ``"init"`` for ``--init`` (bootstrap), ``"update"``
+            for ``--update`` (refresh), ``None`` for the normal drift-check
+            path. When set, the CLI side-steps ``check_drift`` and emits
+            the init/update confirmation line.
+        suppress_drift_exit: ``True`` when ``--no-fail`` was passed; the CLI
+            keeps emitting drift lines but exits 0 instead of 1.
+        unknown_skill: When ``--skill <name>`` did not match any catalog
+            entry, this is the requested name; the CLI exits 3 with an
+            error message and does NOT walk the catalog.
+    """
+
+    catalog: dict[str, Any]
+    init_or_update: str | None
+    suppress_drift_exit: bool
+    unknown_skill: str | None
+
+
+def _resolve_check_action(
+    *,
+    init_flag: bool,
+    update_flag: bool,
+    no_fail_flag: bool,
+    skill_name: str | None,
+    full_catalog: dict[str, Any],
+) -> CheckAction:
+    """Resolve the action implied by the flag combination.
+
+    Pure function: takes the 4 flag values + the full catalog and returns
+    a :class:`CheckAction` describing what the CLI should do. The caller
+    (``prompts_check``) is responsible for emitting output and exit codes.
+
+    Flag precedence:
+    - ``--init`` wins over ``--update`` (first-write semantics).
+    - ``--skill`` is applied to the normal drift-check path only; on
+      ``--init`` / ``--update`` the full catalog is walked.
+    - ``--no-fail`` only affects the drift-check path.
+    """
+    if init_flag:
+        return CheckAction(full_catalog, "init", no_fail_flag, None)
+    if update_flag:
+        return CheckAction(full_catalog, "update", no_fail_flag, None)
+    catalog = full_catalog
+    unknown: str | None = None
+    if skill_name is not None:
+        filtered = {
+            k: v for k, v in full_catalog.items() if v.skill_name == skill_name
+        }
+        if not filtered:
+            unknown = skill_name
+        else:
+            catalog = filtered
+    return CheckAction(catalog, None, no_fail_flag, unknown)
 """Map :class:`SkillDrift.drift_kind` to the CLI's short status label.
 
 Drift kinds that imply a real divergence (``checksum_mismatch`` and
@@ -2522,33 +2584,32 @@ def prompts_check(
     """
     from flow_engineering import opencode_skill_catalog as osc
 
-    if init_flag:
+    action = _resolve_check_action(
+        init_flag=init_flag,
+        update_flag=update_flag,
+        no_fail_flag=no_fail_flag,
+        skill_name=skill_name,
+        full_catalog=osc.SKILL_CATALOG,
+    )
+
+    if action.init_or_update == "init":
         count = osc.init_checksums()
         click.echo(
             f"Initialized {count} checksums · sidecar: {osc.SIDECAR_PATH}"
         )
         return
-
-    if update_flag:
+    if action.init_or_update == "update":
         count = osc.update_checksums()
         click.echo(
             f"Updated {count} checksums · sidecar: {osc.SIDECAR_PATH}"
         )
         return
 
-    catalog = osc.SKILL_CATALOG
-    if skill_name is not None:
-        filtered = {
-            k: v for k, v in catalog.items() if v.skill_name == skill_name
-        }
-        if not filtered:
-            click.echo(
-                f"Unknown skill: {skill_name}", err=True,
-            )
-            sys.exit(3)
-        catalog = filtered
+    if action.unknown_skill is not None:
+        click.echo(f"Unknown skill: {action.unknown_skill}", err=True)
+        sys.exit(3)
 
-    drifts = osc.check_drift(catalog)
+    drifts = osc.check_drift(action.catalog)
     for drift in drifts:
         status = _STATUS_LABELS.get(drift.drift_kind, "DRIFT")
         click.echo(
@@ -2557,12 +2618,12 @@ def prompts_check(
         )
 
     drift_count = len(drifts)
-    catalog_size = len(catalog)
+    catalog_size = len(action.catalog)
     click.echo(
         f"{catalog_size} skills verified · {drift_count} drift detected"
     )
 
-    if drift_count > 0 and not no_fail_flag:
+    if drift_count > 0 and not action.suppress_drift_exit:
         sys.exit(1)
 
 
