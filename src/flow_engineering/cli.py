@@ -2415,5 +2415,130 @@ def snapshot_prune(
     click.echo(f"kept: {len(result.would_keep)}")
 
 
+# ---------- REQ-49 + REQ-50: flow prompts subcommand group (T2.1) ----------
+
+
+_STATUS_LABELS = {
+    "checksum_mismatch": "DRIFT",
+    "version_mismatch": "DRIFT",
+    "missing_file": "MISSING",
+    "frontmatter_parse_error": "PARSE_ERROR",
+}
+"""Map :class:`SkillDrift.drift_kind` to the CLI's short status label.
+
+Drift kinds that imply a real divergence (``checksum_mismatch`` and
+``version_mismatch``) collapse to ``"DRIFT"``; the parse-error and
+missing-file kinds keep their distinct labels so the CLI footer can
+report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
+"""
+
+
+@main.group(name="prompts")
+def prompts_group() -> None:
+    """Inspect and validate prompt registry + SKILL catalog (REQ-49 + REQ-50).
+
+    Subcommands:
+    - ``check`` — walk the SKILL_CATALOG and report drift findings.
+    - ``lint``  — lint the inline prompt registry (REQ-47 surface).
+    """
+
+
+@prompts_group.command(name="check")
+@click.option(
+    "--init",
+    "init_flag",
+    is_flag=True,
+    default=False,
+    help="Bootstrap the sidecar JSON with current on-disk state, then exit 0.",
+)
+def prompts_check(init_flag: bool) -> None:
+    """Walk SKILL_CATALOG and report drift findings (REQ-49 + REQ-50).
+
+    Exit codes:
+    - 0: clean state (no drift detected) OR ``--init`` succeeded.
+    - 1: drift detected (one or more entries diverged).
+    - 2: catalog could not be resolved (reserved for future IO errors).
+
+    Stdout format: ``<skill_name>/<surface>: <expected_version>: <status>``
+    per design §"Data Flow / flow prompts check", followed by a footer
+    ``N skills verified · M drift detected``.
+    """
+    from flow_engineering import opencode_skill_catalog as osc
+
+    if init_flag:
+        count = osc.init_checksums()
+        click.echo(
+            f"Initialized {count} checksums · sidecar: {osc.SIDECAR_PATH}"
+        )
+        return
+
+    drifts = osc.check_drift()
+    for drift in drifts:
+        status = _STATUS_LABELS.get(drift.drift_kind, "DRIFT")
+        click.echo(
+            f"{drift.skill_name}/{drift.surface}: "
+            f"{drift.expected_version}: {status}"
+        )
+
+    drift_count = len(drifts)
+    catalog_size = len(osc.SKILL_CATALOG)
+    click.echo(
+        f"{catalog_size} skills verified · {drift_count} drift detected"
+    )
+
+    if drift_count > 0:
+        sys.exit(1)
+
+
+@prompts_group.command(name="lint")
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit the lint report as a JSON object on stdout.",
+)
+def prompts_lint(json_flag: bool) -> None:
+    """Lint the inline prompt registry (REQ-47 surface, REQ-50 wrapper).
+
+    Exit codes:
+    - 0: clean registry (no warnings, no errors).
+    - 1: warnings only (no errors).
+    - 2: errors detected.
+
+    Stdout default format: ``<prompt_id>: <error_code>: <message>`` lines
+    followed by a footer ``N prompts linted · M warnings · K errors``.
+    With ``--json``, the full :class:`LintReport.to_dict()` shape is
+    emitted instead (machine-readable; mirrors REQ-8 ``flow metrics --json``).
+    """
+    from flow_engineering import prompt_registry
+
+    report = prompt_registry.lint_prompts()
+
+    if json_flag:
+        click.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        for err in report.errors:
+            click.echo(
+                f"{err.prompt_name}: {err.error_code}: {err.message}"
+            )
+        catalog_size = len(report.catalog)
+        warning_count = sum(
+            1 for e in report.errors if e.error_code != "invalid_version"
+        )
+        error_count = sum(
+            1 for e in report.errors if e.error_code == "invalid_version"
+        )
+        click.echo(
+            f"{catalog_size} prompts linted · "
+            f"{warning_count} warnings · {error_count} errors"
+        )
+
+    if report.error_count > 0:
+        sys.exit(2)
+    if report.error_count == 0 and report.errors:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
