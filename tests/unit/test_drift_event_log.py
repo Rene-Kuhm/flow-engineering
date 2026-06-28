@@ -52,6 +52,51 @@ def _make_event(
 # ---------- append() creates + writes a file ----------
 
 
+class TestDriftEvent:
+    """REQ-V1.0.1: DriftEvent.decision_id is int (was str).
+
+    v1.0 hard-break: DriftEvent.__post_init__ mirrors the v0.9.0 Finding
+    pattern at ``decision_drift.py:84-90`` and raises TypeError on non-int
+    decision_id (including ``bool``, which is an int subclass).
+    """
+
+    def test_decision_id_rejects_str(self) -> None:
+        """Constructing DriftEvent with a str decision_id raises TypeError (REQ-V1.0.1)."""
+        with pytest.raises(TypeError) as exc_info:
+            DriftEvent(
+                decision_id="42",  # type: ignore[arg-type]
+                change="x",
+                binding_id="y",
+                event_class="z",
+                detected_at=0.0,
+            )
+        assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value)
+
+    def test_decision_id_rejects_bool(self) -> None:
+        """Constructing DriftEvent with a bool decision_id raises TypeError (bool is int subclass)."""
+        with pytest.raises(TypeError) as exc_info:
+            DriftEvent(
+                decision_id=True,  # type: ignore[arg-type]
+                change="x",
+                binding_id="y",
+                event_class="z",
+                detected_at=0.0,
+            )
+        assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value)
+
+    def test_decision_id_accepts_int(self) -> None:
+        """Constructing DriftEvent with an int decision_id succeeds (REQ-V1.0.1 happy path)."""
+        ev = DriftEvent(
+            decision_id=42,
+            change="x",
+            binding_id="y",
+            event_class="z",
+            detected_at=0.0,
+        )
+        assert ev.decision_id == 42
+        assert isinstance(ev.decision_id, int)
+
+
 class TestAppendCreatesFile:
     """The append writer MUST create parent dirs + the JSONL file."""
 
