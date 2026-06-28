@@ -76,82 +76,22 @@ class Finding:
 
 @dataclass
 class DriftReport:
-    """Aggregate result for a full scan of one change.
+    """Aggregate result for a full scan of one change (REQ-V9.2).
 
-    v0.8.0 migration (REQ-56 W8 / REQ-57):
-    - ``scanned_at`` is now ``str`` ISO 8601 UTC ``Z``-suffixed (was
-      ``float`` epoch). Legacy ``float`` epoch inputs are accepted via
-      :meth:`from_legacy` which coerces to ISO via the internal
-      ``_epoch_to_iso`` helper. Hard break in v0.9.0.
-    - Added ``unable_reason: str | None`` for structured ``unable_to_verify``
-      diagnostics (e.g. ``graph_json_missing``).
+    v0.9.0 (REQ-V9.2): ``scanned_at`` is hard-typed ``str`` ISO 8601 UTC
+    ``Z``-suffixed; legacy ``float`` epoch inputs are no longer accepted
+    (the v0.8.0 :meth:`from_legacy` shim was removed).
     """
 
     change_name: str
-    scanned_at: str  # was: float  (REQ-56 W8) — ISO 8601 UTC Z-suffixed
-    graph_mtime: str | None  # was: float | None  (REQ-56 W8)
+    scanned_at: str  # REQ-56 W8; ISO 8601 UTC Z-suffixed; hard break in v0.9.0
+    graph_mtime: str | None  # REQ-56 W8
     decisions_total: int
     bindings_total: int
     class_counts: dict[DriftClass, int] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     graph_unavailable: bool = False
     unable_reason: str | None = None  # REQ-56 W8 NEW field
-
-    @classmethod
-    def from_legacy(
-        cls,
-        *,
-        change_name: str,
-        scanned_at: Any,
-        graph_mtime: Any = None,
-        decisions_total: int = 0,
-        bindings_total: int = 0,
-        class_counts: dict[DriftClass, int] | None = None,
-        findings: list[Finding] | None = None,
-        graph_unavailable: bool = False,
-        unable_to_verify: bool | None = None,
-        unable_reason: str | None = None,
-        **kwargs: Any,
-    ) -> DriftReport:
-        """Backward-compat factory for v0.7.x callers.
-
-        Emits ``DeprecationWarning`` and coerces legacy ``float`` epoch
-        inputs (for both ``scanned_at`` and ``graph_mtime``) to ISO 8601
-        ``str`` via :func:`_epoch_to_iso`. Also maps the legacy
-        ``unable_to_verify: bool`` kwarg to ``graph_unavailable: bool``
-        when supplied. Removed in v0.9.0.
-        """
-        warnings.warn(
-            "DriftReport constructed with legacy float scanned_at; "
-            "str (ISO 8601) required in v0.9.0 (REQ-56 W8)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        scanned_iso = (
-            _epoch_to_iso(scanned_at)
-            if isinstance(scanned_at, (int, float))
-            else scanned_at
-        )
-        mtime_iso = (
-            _epoch_to_iso(graph_mtime)
-            if isinstance(graph_mtime, (int, float))
-            else graph_mtime
-        )
-        resolved_graph_unavailable = (
-            bool(unable_to_verify) if unable_to_verify is not None else graph_unavailable
-        )
-        return cls(
-            change_name=change_name,
-            scanned_at=scanned_iso,
-            graph_mtime=mtime_iso,
-            decisions_total=decisions_total,
-            bindings_total=bindings_total,
-            class_counts=class_counts if class_counts is not None else {},
-            findings=findings if findings is not None else [],
-            graph_unavailable=resolved_graph_unavailable,
-            unable_reason=unable_reason,
-            **kwargs,
-        )
 
 
 def _epoch_to_iso(epoch: float | int) -> str:
