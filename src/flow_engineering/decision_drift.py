@@ -61,60 +61,17 @@ class DriftClass(str, Enum):
 
 @dataclass(frozen=True)
 class Finding:
-    """One per-binding classification result.
+    """One per-binding classification result (REQ-V9.1).
 
-    v0.8.0 migration (REQ-56 W8 / REQ-57):
-    - ``decision_id`` is now ``int`` (was ``str``). Legacy numeric ``str``
-      inputs are accepted via :meth:`from_legacy` which emits
-      ``DeprecationWarning`` and coerces via ``int()``. Hard break in v0.9.0.
+    v0.9.0 (REQ-V9.1): ``decision_id`` is hard-typed ``int``; legacy
+    numeric ``str`` inputs are no longer accepted (the v0.8.0
+    :meth:`from_legacy` shim was removed).
     """
 
-    decision_id: int  # was: str  (REQ-56 W8)
+    decision_id: int  # REQ-56 W8; hard break in v0.9.0
     binding: CodeRef
     drift_class: DriftClass
     detail: str
-
-    @classmethod
-    def from_legacy(
-        cls,
-        *,
-        decision_id: Any,
-        binding: CodeRef,
-        drift_class: Any,
-        detail: str = "",
-        **kwargs: Any,
-    ) -> Finding:
-        """Backward-compat factory for v0.7.x callers.
-
-        Emits ``DeprecationWarning`` and coerces legacy ``str`` decision_id
-        values to ``int`` via ``int()``. Non-numeric ``str`` values raise
-        :class:`ValueError` so callers see the migration signal rather than
-        a silent ``0`` coercion. Removed in v0.9.0.
-        """
-        if isinstance(decision_id, str):
-            warnings.warn(
-                f"Finding.decision_id constructed with str {decision_id!r}; "
-                "int required in v0.9.0 (REQ-56 W8)",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            try:
-                decision_id = int(decision_id)
-            except ValueError as exc:
-                raise ValueError(
-                    f"decision_id must be int or numeric str, got {decision_id!r}"
-                ) from exc
-        elif not isinstance(decision_id, int):
-            raise ValueError(
-                f"decision_id must be int, got {type(decision_id).__name__}"
-            )
-        return cls(
-            decision_id=decision_id,
-            binding=binding,
-            drift_class=drift_class,
-            detail=detail,
-            **kwargs,
-        )
 
 
 @dataclass
