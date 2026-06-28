@@ -19,14 +19,19 @@ import pytest
 
 from flow_engineering.opencode_skill_catalog import (
     FRONTMATTER_PATTERN,
-    SIDECAR_PATH,
     SKILL_CATALOG,
+    SIDECAR_PATH,
     SkillDrift,
     SkillEntry,
     SkillVersionError,
+    _read_sidecar,
+    _sidecar_path,
+    _write_sidecar,
     check_drift,
     compute_frontmatter_sha256,
+    init_checksums,
     parse_frontmatter,
+    update_checksums,
 )
 
 # ---------- Fixtures ----------
@@ -477,3 +482,191 @@ class TestCheckDrift:
         assert drifts[0].drift_kind == "version_mismatch"
         assert drifts[0].expected_version == "3.0"
         assert drifts[0].on_disk_version == "2.0"
+
+
+# ---------- T1.4: sidecar JSON I/O ----------
+
+
+@pytest.fixture
+def tmp_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Monkeypatch ``_sidecar_path`` to write under ``tmp_path``.
+
+    Tests that exercise real filesystem I/O use this fixture so the
+    sidecar JSON never touches the user's ``~/.flow-engineering/`` directory.
+    """
+    sidecar = tmp_path / ".flow-engineering" / "prompt_checksums.json"
+    monkeypatch.setattr(
+        "flow_engineering.opencode_skill_catalog._sidecar_path",
+        lambda: sidecar,
+    )
+    return sidecar
+
+
+class TestSidecarPath:
+    def test_sidecar_path_lazily_creates_parent_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        nested = tmp_path / "deep" / "nested" / "prompt_checksums.json"
+        monkeypatch.setattr(
+            "flow_engineering.opencode_skill_catalog._sidecar_path",
+            lambda: nested,
+        )
+        result = _sidecar_path()
+        assert result == nested
+        assert result.parent.exists()
+        assert result.parent.is_dir()
+
+
+class TestReadSidecar:
+    def test_read_sidecar_returns_empty_when_file_missing(
+        self, tmp_sidecar: Path,
+    ) -> None:
+        assert _read_sidecar() == {}
+
+    def test_read_sidecar_round_trips(
+        self, tmp_sidecar: Path,
+    ) -> None:
+        _write_sidecar({"foo/skill": {"version": "1.0", "checksum": "abc"}})
+        loaded = _read_sidecar()
+        assert loaded == {"foo/skill": {"version": "1.0", "checksum": "abc"}}
+
+
+class TestWriteSidecarAtomic:
+    def test_write_sidecar_creates_file(self, tmp_sidecar: Path) -> None:
+        _write_sidecar({"foo/skill": {"version": "1.0", "checksum": "abc"}})
+        assert tmp_sidecar.exists()
+
+    def test_write_sidecar_overwrites_existing(self, tmp_sidecar: Path) -> None:
+        _write_sidecar({"foo/skill": {"version": "1.0", "checksum": "abc"}})
+        _write_sidecar({"bar/prompt": {"version": "2.0", "checksum": "def"}})
+        loaded = _read_sidecar()
+        assert "foo/skill" not in loaded
+        assert loaded["bar/prompt"]["version"] == "2.0"
+
+    def test_write_sidecar_uses_indent_for_grep(
+        self, tmp_sidecar: Path,
+    ) -> None:
+        _write_sidecar({"foo/skill": {"version": "1.0", "checksum": "abc"}})
+        text = tmp_sidecar.read_text(encoding="utf-8")
+        assert "\n  " in text  # indent=2
+
+
+class TestInitChecksums:
+    def test_init_checksums_writes_count_of_entries_returned(
+        self, tmp_sidecar: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        path = _make_mock_skill(tmp_path := tmp_sidecar.parent.parent)
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(path),
+                last_verified_checksum="0" * 64,
+                owner="test-owner",
+            ),
+        }
+        count = init_checksums(catalog)
+        assert count == 1
+        loaded = _read_sidecar()
+        assert "sdd-test/skill" in loaded
+        assert loaded["sdd-test/skill"]["version"] == "3.0"
+        assert loaded["sdd-test/skill"]["checksum"] == compute_frontmatter_sha256(path)
+        assert "last_verified_at" in loaded["sdd-test/skill"]
+
+    def test_init_checksums_last_verified_at_is_iso_8601_utc_z(
+        self, tmp_sidecar: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        path = _make_mock_skill(tmp_sidecar.parent.parent)
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(path),
+                last_verified_checksum="0" * 64,
+                owner="test-owner",
+            ),
+        }
+        init_checksums(catalog)
+        loaded = _read_sidecar()
+        ts = loaded["sdd-test/skill"]["last_verified_at"]
+        assert ts.endswith("Z")
+        assert "T" in ts
+        # Verify it parses as ISO 8601.
+        from datetime import datetime
+        datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+
+    def test_init_checksums_walks_full_skill_catalog(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_sidecar: Path,
+    ) -> None:
+        """init_checksums(SKILL_CATALOG) writes all 20 entries.
+
+        The real SKILL_CATALOG paths point to ~/.config/opencode/... which
+        exist on the test machine. We monkeypatch _read_sidecar to return
+        {} so check_drift doesn't fire, but init_checksums walks the real
+        catalog and reads each file's frontmatter.
+        """
+        count = init_checksums(SKILL_CATALOG)
+        assert count == 20
+        loaded = _read_sidecar()
+        assert len(loaded) == 20
+        # Both surfaces for sdd-apply should be present.
+        assert "sdd-apply/skill" in loaded
+        assert "sdd-apply/prompt" in loaded
+
+    def test_init_checksums_handles_missing_file_gracefully(
+        self, tmp_sidecar: Path,
+    ) -> None:
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(tmp_sidecar.parent / "ghost.md"),
+                last_verified_checksum="0" * 64,
+                owner="test-owner",
+            ),
+        }
+        count = init_checksums(catalog)
+        assert count == 1
+        loaded = _read_sidecar()
+        assert loaded["sdd-test/skill"]["checksum"] == ""
+        assert loaded["sdd-test/skill"]["version"] == "3.0"
+
+
+class TestUpdateChecksums:
+    def test_update_checksums_refreshes_stale_entry(
+        self, tmp_sidecar: Path,
+    ) -> None:
+        """After init_checksums writes the sidecar, update_checksums
+        must overwrite with fresh on-disk values."""
+        path = _make_mock_skill(tmp_sidecar.parent.parent)
+        catalog = {
+            "sdd-test/skill": SkillEntry(
+                skill_name="sdd-test",
+                surface="skill",
+                expected_version="3.0",
+                expected_path=str(path),
+                last_verified_checksum="0" * 64,
+                owner="test-owner",
+            ),
+        }
+        init_checksums(catalog)
+        loaded_before = _read_sidecar()
+        ts_before = loaded_before["sdd-test/skill"]["last_verified_at"]
+        # Mutate the file so the checksum changes.
+        path.write_text(
+            path.read_text(encoding="utf-8") + "\nMore body lines.\n",
+            encoding="utf-8",
+        )
+        count = update_checksums(catalog)
+        assert count == 1
+        loaded_after = _read_sidecar()
+        ts_after = loaded_after["sdd-test/skill"]["last_verified_at"]
+        # Frontmatter checksum is unchanged (only body changed) so the
+        # 'checksum' field stays the same; but last_verified_at updates.
+        assert ts_after != ts_before
+        assert loaded_after["sdd-test/skill"]["checksum"] == loaded_before["sdd-test/skill"]["checksum"]
