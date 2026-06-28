@@ -9,20 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
-from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from flow_engineering.engram_io import EngramBackend, EngramClient
+from flow_engineering.prompt_registry import _env
 from flow_engineering.state import StateMachine
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
-
-
-def _env() -> Environment:
-    return Environment(
-        loader=FileSystemLoader(str(_TEMPLATE_DIR)),
-        autoescape=select_autoescape(),
-        keep_trailing_newline=True,
-    )
 
 
 def render_new_change(
@@ -39,7 +31,7 @@ def render_new_change(
     change_dir = target_dir / "flow-engineering" / change
     change_dir.mkdir(parents=True, exist_ok=True)
 
-    env = _env()
+    env = _env(loader_path=_TEMPLATE_DIR)
 
     # change.yaml
     (change_dir / "change.yaml").write_text(
@@ -74,7 +66,7 @@ def render_new_project(project_name: str, target_dir: Path, version: str = "0.1.
     """
     project_dir = target_dir / project_name
     project_dir.mkdir(parents=True, exist_ok=True)
-    env = _env()
+    env = _env(loader_path=_TEMPLATE_DIR)
     (project_dir / "README.md").write_text(
         env.get_template("new-project/README.md.j2").render(project_name=project_name),
         encoding="utf-8",
