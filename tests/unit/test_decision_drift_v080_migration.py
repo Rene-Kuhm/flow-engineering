@@ -121,48 +121,17 @@ def test_drift_report_scanned_at_is_str_iso() -> None:
     assert isinstance(r.scanned_at, str)
 
 
-def test_drift_report_from_legacy_emits_deprecation_warning() -> None:
-    """v0.7.x callers using ``DriftReport.from_legacy(scanned_at=0.0, ...)``
-    must see a DeprecationWarning.
-    """
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        r = DriftReport.from_legacy(
-            change_name="obs",
-            scanned_at=0.0,
-        )
-    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert deprecations, "from_legacy(float) must emit DeprecationWarning"
-    assert "scanned_at" in str(deprecations[0].message)
-
-
-def test_drift_report_from_legacy_converts_epoch_to_iso() -> None:
-    """v0.7.x float epoch must coerce to ISO 8601 str via from_legacy."""
-    epoch = 1751000000.0
-    r = DriftReport.from_legacy(
-        change_name="obs",
-        scanned_at=epoch,
-    )
-    # ISO format expected: datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    expected = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    assert r.scanned_at == expected
-    assert isinstance(r.scanned_at, str)
-
-
-def test_drift_report_from_legacy_handles_unable_to_verify_alias() -> None:
-    """v0.7.x callers using ``unable_to_verify=True`` kwarg must map to
-    the v0.8.0 ``graph_unavailable`` field.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        r = DriftReport.from_legacy(
-            change_name="obs",
-            scanned_at=0.0,
-            unable_to_verify=True,
-        )
-    assert r.graph_unavailable is True
+# v0.9.0 (REQ-V9.2): DriftReport.from_legacy compat shim was removed in v0.9.0.
+# The 3 v0.8.0 fixtures that exercised the shim
+# (test_drift_report_from_legacy_emits_deprecation_warning,
+# test_drift_report_from_legacy_converts_epoch_to_iso,
+# test_drift_report_from_legacy_handles_unable_to_verify_alias)
+# are deleted; the canonical type-contract smokes remain
+# (test_drift_report_scanned_at_is_str_iso at line 111 +
+# test_drift_report_unable_reason_default_none at line 168 + the
+# test_epoch_to_iso_helper_matches_datetime at line 179).
+# See tests/unit/test_decision_drift_v090_hardening.py for the v0.9.0
+# assertion that ``DriftReport.from_legacy`` no longer exists.
 
 
 def test_drift_report_unable_reason_default_none() -> None:

@@ -197,7 +197,7 @@ class TestDriftCounters:
         _patch_observer(monkeypatch)
 
         report = DriftReport(
-            change_name="my-change", scanned_at=0.0, graph_mtime=999.0,
+            change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime="1970-01-01T00:16:39Z",
             decisions_total=1, bindings_total=1,
             class_counts={DriftClass.STILL_VALID: 1},
             findings=[_make_finding(drift_class=DriftClass.STILL_VALID)],
@@ -250,7 +250,7 @@ class TestStdoutSummary:
         _patch_observer(monkeypatch)
 
         report = DriftReport(
-            change_name="my-change", scanned_at=0.0, graph_mtime=999.0,
+            change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime="1970-01-01T00:16:39Z",
             decisions_total=2, bindings_total=3,
             class_counts={
                 DriftClass.STILL_VALID: 1,
