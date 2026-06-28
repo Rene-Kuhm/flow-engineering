@@ -28,6 +28,7 @@ Public surface:
 from __future__ import annotations
 
 import re
+import time as _time
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
@@ -800,15 +801,31 @@ def render_prompt(name: str, **kwargs: Any) -> str:
         >>> render_prompt("strict_tdd", test_command="pytest")
         'STRICT TDD MODE IS ACTIVE. Test runner: pytest. ...'
     """
+    _render_started_monotonic = _time.monotonic()
+    var_keys = tuple(kwargs.keys())
     try:
         prompt = get_prompt(name)
     except KeyError as exc:
+        _emit_render_record(
+            name=name,
+            start_monotonic=_render_started_monotonic,
+            ok=False,
+            error="unknown",
+            var_keys=var_keys,
+        )
         raise PromptNotFoundError(name) from exc
     env = _strict_jinja_env()
     template = env.from_string(prompt.template)
     try:
         rendered = template.render(**kwargs)
     except UndefinedError as exc:
+        _emit_render_record(
+            name=name,
+            start_monotonic=_render_started_monotonic,
+            ok=False,
+            error="missing_var",
+            var_keys=var_keys,
+        )
         raise PromptRenderError(
             {
                 "prompt": name,
@@ -821,6 +838,13 @@ def render_prompt(name: str, **kwargs: Any) -> str:
             }
         ) from exc
     except TemplateError as exc:
+        _emit_render_record(
+            name=name,
+            start_monotonic=_render_started_monotonic,
+            ok=False,
+            error="template_error",
+            var_keys=var_keys,
+        )
         raise PromptRenderError(
             {
                 "prompt": name,
@@ -839,9 +863,16 @@ def render_prompt(name: str, **kwargs: Any) -> str:
         ast = env.parse(prompt.template)
         if not meta.find_undeclared_variables(ast):
             try:
-                return prompt.template.format(**kwargs)
+                formatted = prompt.template.format(**kwargs)
             except KeyError as exc:
                 var = exc.args[0]
+                _emit_render_record(
+                    name=name,
+                    start_monotonic=_render_started_monotonic,
+                    ok=False,
+                    error="missing_var",
+                    var_keys=var_keys,
+                )
                 raise PromptRenderError(
                     {
                         "prompt": name,
@@ -853,7 +884,51 @@ def render_prompt(name: str, **kwargs: Any) -> str:
                         ),
                     }
                 ) from exc
+            else:
+                _emit_render_record(
+                    name=name,
+                    start_monotonic=_render_started_monotonic,
+                    ok=True,
+                    error=None,
+                    var_keys=var_keys,
+                )
+                return formatted
+    _emit_render_record(
+        name=name,
+        start_monotonic=_render_started_monotonic,
+        ok=True,
+        error=None,
+        var_keys=var_keys,
+    )
     return rendered
+
+
+def _emit_render_record(
+    *,
+    name: str,
+    start_monotonic: float,
+    ok: bool,
+    error: str | None,
+    var_keys: tuple[str, ...],
+) -> None:
+    """Emit one JSONL line to the prompt render sink (REQ-V1.1.3).
+
+    Best-effort: failures are swallowed at the :func:`record_prompt_render`
+    boundary so a missing dir / full disk never crashes the render path.
+    The sink is opt-in via ``FLOW_PROMPT_LOG=1`` (default OFF) so write-free
+    agent flows are untouched.
+    """
+    from flow_engineering.prompt_render_log import record_prompt_render
+
+    elapsed_ms = (_time.monotonic() - start_monotonic) * 1000.0
+    record_prompt_render(
+        prompt_id=name,
+        rendered_at=_time.time(),
+        elapsed_ms=elapsed_ms,
+        ok=ok,
+        error=error,
+        var_keys=var_keys,
+    )
 
 
 def render_prompt_safe(name: str, **kwargs: Any) -> str:

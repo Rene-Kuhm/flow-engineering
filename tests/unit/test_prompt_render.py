@@ -20,6 +20,8 @@ exercise the substitution path without mutating the legacy catalog.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from flow_engineering import prompt_registry
@@ -338,3 +340,82 @@ class TestPromptRenderErrorException:
         with pytest.raises(PromptRenderError) as excinfo:
             render_prompt("strict_tdd")  # test_command missing
         assert "test_command" in str(excinfo.value)
+
+
+class TestRenderPromptWritesToSinkWhenEnabled:
+    """REQ-V1.1.3 T3.3 — ``render_prompt`` writes one JSONL line to the
+    prompt render sink when ``FLOW_PROMPT_LOG=1``.
+
+    The sink is opt-in: default OFF keeps write-free agent flows
+    untouched. When ON, every successful AND failed render is recorded
+    with the var_keys tuple (no values — only names for privacy + size).
+    """
+
+    def test_successful_render_writes_event_when_enabled(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        log_path = tmp_path / "prompt_renders.jsonl"
+        from flow_engineering import prompt_render_log as log_mod
+
+        monkeypatch.setattr(log_mod, "DEFAULT_PROMPT_RENDER_LOG_PATH", log_path)
+        monkeypatch.setenv("FLOW_PROMPT_LOG", "1")
+
+        render_prompt("strict_tdd", test_command="pytest")
+
+        raw = log_path.read_text(encoding="utf-8").strip()
+        assert raw
+        import json as _json
+
+        data = _json.loads(raw)
+        assert data["prompt_id"] == "strict_tdd"
+        assert data["ok"] is True
+        assert data["error"] is None
+        assert data["var_keys"] == ["test_command"]
+        assert data["elapsed_ms"] >= 0.0
+
+    def test_failed_render_writes_failure_event_when_enabled(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        log_path = tmp_path / "prompt_renders.jsonl"
+        from flow_engineering import prompt_render_log as log_mod
+
+        monkeypatch.setattr(log_mod, "DEFAULT_PROMPT_RENDER_LOG_PATH", log_path)
+        monkeypatch.setenv("FLOW_PROMPT_LOG", "1")
+        monkeypatch.setattr(
+            "flow_engineering.prompt_registry.render_prompt_safe",
+            None,  # placeholder
+            raising=False,
+        )
+
+        with pytest.raises(Exception):
+            render_prompt("definitely_not_in_catalog_xyz")
+
+        # Unknown prompt_id still records a failure event.
+        raw = log_path.read_text(encoding="utf-8").strip()
+        assert raw
+        import json as _json
+
+        data = _json.loads(raw)
+        assert data["prompt_id"] == "definitely_not_in_catalog_xyz"
+        assert data["ok"] is False
+        assert data["error"] == "unknown"
+
+    def test_no_write_when_log_disabled(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        log_path = tmp_path / "prompt_renders.jsonl"
+        from flow_engineering import prompt_render_log as log_mod
+
+        monkeypatch.setattr(log_mod, "DEFAULT_PROMPT_RENDER_LOG_PATH", log_path)
+        monkeypatch.delenv("FLOW_PROMPT_LOG", raising=False)
+
+        render_prompt("strict_tdd", test_command="pytest")
+
+        # Default OFF → no file.
+        assert not log_path.exists()
