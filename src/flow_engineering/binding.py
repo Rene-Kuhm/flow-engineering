@@ -116,7 +116,7 @@ def _coerce_node(node: Any) -> CodeRef:
     )
 
 
-def _parse_nodes(payload: dict) -> list[CodeRef]:
+def _parse_nodes(payload: dict[str, Any]) -> list[CodeRef]:
     if not isinstance(payload, dict):
         raise ParseError("code_refs block must be a JSON object", offset=0)
     nodes = payload.get("nodes", [])

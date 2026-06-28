@@ -19,7 +19,7 @@ import shutil
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Final
+from typing import Any, Final, cast
 
 from flow_engineering.binding import ALLOWED_SOURCES, CodeRef
 
@@ -57,17 +57,17 @@ def _cache_path(cache_dir: Path) -> Path:
     return cache_dir / DEFAULT_CACHE_FILE
 
 
-def _load_cache(cache_dir: Path) -> dict[str, dict]:
+def _load_cache(cache_dir: Path) -> dict[str, dict[str, Any]]:
     path = _cache_path(cache_dir)
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(dict[str, dict[str, Any]], json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {}
 
 
-def _save_cache(cache_dir: Path, cache: dict[str, dict]) -> None:
+def _save_cache(cache_dir: Path, cache: dict[str, dict[str, Any]]) -> None:
     """Persist the cache, trimming to the last CACHE_MAX_ENTRIES entries."""
     if len(cache) > _CACHE_MAX_ENTRIES:
         # Drop the oldest entries by insertion order (Python dicts preserve it).
@@ -123,7 +123,7 @@ def _refs_from_cli_payload(payload: str) -> list[CodeRef]:
                     file=str(n.get("file", "")),
                     line=int(n.get("line", 0)),
                     confidence=float(n.get("confidence", 0.0)),
-                    source=source,  # type: ignore[arg-type]
+                    source=source,
                 )
             )
         except (KeyError, ValueError, TypeError):
@@ -202,7 +202,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return intersection / union if union else 0.0
 
 
-def _node_tokens(node: dict) -> set[str]:
+def _node_tokens(node: dict[str, Any]) -> set[str]:
     parts: list[str] = []
     for key in ("label", "source_file", "community_name"):
         value = node.get(key)

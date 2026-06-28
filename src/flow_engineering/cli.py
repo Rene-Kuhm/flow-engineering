@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv as _csv
+import io
 import json
 import os
 import sys
@@ -50,8 +51,10 @@ from flow_engineering.snapshot_manager import (
     PruneSafetyGateError,
     RollbackConflictError,
     RollbackRefusedError,
+    SnapshotDiff,
     SnapshotEnvelopeError,
     SnapshotManager,
+    SnapshotMeta,
 )
 from flow_engineering.state import StateMachine
 
@@ -564,7 +567,7 @@ def _format_search_row(rank: int, obs_id: int, title: str, score: float) -> str:
     return f"{rank:<3}  obs {obs_id:<6}  {score:.4f}  {title}"
 
 
-def _render_search_table(rows: list[dict]) -> str:
+def _render_search_table(rows: list[dict[str, Any]]) -> str:
     """Pretty-print search hits as a fixed-width text table.
 
     Adds a ``PROJECT`` column when any row carries a ``project`` field
@@ -574,6 +577,7 @@ def _render_search_table(rows: list[dict]) -> str:
     if not rows:
         return "(no results)"
     show_project = any("project" in r for r in rows)
+    headers: tuple[str, ...]
     if show_project:
         headers = ("rank", "id", "score", "project", "title")
         sep = "-" * 88
@@ -602,7 +606,7 @@ def _render_search_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _search_results_to_rows(results: list[dict]) -> list[dict]:
+def _search_results_to_rows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Project ``mem_search*`` results to the JSON/table shape.
 
     The vector methods return ``observation_id`` + ``score`` + ``rank`` per
@@ -612,7 +616,7 @@ def _search_results_to_rows(results: list[dict]) -> list[dict]:
     federated multi-project search; rows with a ``project`` field carry
     it through so the renderer can prepend the PROJECT column.
     """
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for rank, r in enumerate(results):
         obs_id = r.get("observation_id", r.get("id"))
         row: dict[str, Any] = {
@@ -800,7 +804,7 @@ def _resolve_reindex_provider() -> Any:
 
 
 def _perform_reindex_batch(
-    observations: list[dict],
+    observations: list[dict[str, Any]],
     store: Any,
     provider: Any,
     *,
@@ -936,7 +940,7 @@ def _format_binding_line(ref: CodeRef) -> str:
     )
 
 
-def _render_inspect_row(obs: dict) -> dict:
+def _render_inspect_row(obs: dict[str, Any]) -> dict[str, Any]:
     """Build one inspect row from a raw observation dict.
 
     Returns a dict with keys ``decision_id``, ``decision`` (title),
@@ -966,7 +970,7 @@ def _render_inspect_row(obs: dict) -> dict:
     }
 
 
-def _render_inspect_table(rows: list[dict]) -> str:
+def _render_inspect_table(rows: list[dict[str, Any]]) -> str:
     """Render the inspect rows as a fixed-width text table."""
     headers = ("decision", "code_refs", "freshness")
     lines: list[str] = []
@@ -989,9 +993,9 @@ def _render_inspect_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _serialize_inspect_rows(rows: list[dict]) -> list[dict]:
+def _serialize_inspect_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert CodeRef objects in ``code_refs`` to dicts for JSON output."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for row in rows:
         out.append(
             {
@@ -1043,7 +1047,7 @@ def inspect(change: str, json_flag: bool) -> None:
 # ---------- REQ-8 close: flow metrics ----------
 
 
-def _summarize_metrics(events: list[dict]) -> dict[str, int]:
+def _summarize_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
     """Collapse a list of increment events into ``{name: count}``."""
     summary: dict[str, int] = {}
     for ev in events:
@@ -1575,7 +1579,7 @@ def metrics_aggregate(
 
     result = observability.aggregate_percentile(
         filtered,
-        percentiles=tuple(pct_ints),  # type: ignore[arg-type]
+        percentiles=tuple(pct_ints),
         reservoir_size=reservoir_size,
     )
 
@@ -2096,7 +2100,7 @@ def drift_events_list(
         )
         return
     if fmt == "csv":
-        buf = _csv.StringIO()
+        buf = io.StringIO()
         writer = _csv.writer(buf)
         writer.writerow(["change", "decision_id", "binding_id", "class", "detected_at"])
         for ev in events:
@@ -2661,7 +2665,7 @@ def _build_snapshot_manager() -> SnapshotManager:
     )
 
 
-def _serialize_snapshot_meta(meta) -> dict:
+def _serialize_snapshot_meta(meta: SnapshotMeta) -> dict[str, Any]:
     """Project a ``SnapshotMeta`` dataclass into the REQ-29 JSON shape.
 
     REQ-29 scenario 1 requires exactly six keys: ``snap_id``,
@@ -2682,7 +2686,7 @@ def _serialize_snapshot_meta(meta) -> dict:
     }
 
 
-def _snapshot_diff_to_dict(diff) -> dict:
+def _snapshot_diff_to_dict(diff: SnapshotDiff) -> dict[str, Any]:
     """Project a ``SnapshotDiff`` dataclass into the REQ-31 JSON shape."""
     return diff.to_dict()
 

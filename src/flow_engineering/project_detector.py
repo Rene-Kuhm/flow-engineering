@@ -141,7 +141,7 @@ def apply_tag(
     project: str,
     *,
     backend: EngramBackend,
-) -> bool:
+) -> dict[str, object]:
     """Re-tag a single observation's ``project`` field.
 
     Returns ``True`` after a successful mutation; ``False`` when the
