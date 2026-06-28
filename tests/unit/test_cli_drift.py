@@ -103,7 +103,11 @@ def _build_finding(
     file: str = "src/x.py", line: int = 1, source: str = "manual",
     drift_class: DriftClass = DriftClass.STILL_VALID, detail: str = "",
 ) -> Finding:
-    """Build a Finding with a CodeRef-style binding for CLI tests."""
+    """Build a Finding with a CodeRef-style binding for CLI tests.
+
+    v0.9.0 (REQ-V9.4): ``decision_id`` must be ``int``; the v0.8.0
+    shim that accepted str and coerced via ``int()`` is gone.
+    """
     from flow_engineering.binding import CodeRef
 
     binding = CodeRef(
@@ -111,7 +115,7 @@ def _build_finding(
         confidence=0.9, source=source,
     )
     return Finding(
-        decision_id=str(obs_id), binding=binding,
+        decision_id=int(obs_id), binding=binding,
         drift_class=drift_class, detail=detail,
     )
 
@@ -318,7 +322,8 @@ class TestJsonOutput:
         assert payload["bindings_total"] == 1
         assert len(payload["findings"]) == 1
         f0 = payload["findings"][0]
-        assert f0["decision_id"] == "42"
+        assert f0["decision_id"] == 42
+        assert isinstance(f0["decision_id"], int)
         assert f0["drift_class"] == "STALE_ID"
         assert f0["binding"]["id"] == "missing_node"
 
@@ -604,74 +609,29 @@ class TestWriteBackSkipWarn:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A batch with 5 skipped rows and the default threshold (3)
-        MUST emit exactly ONE stderr WARN line containing the skipped count.
+        """v0.9.0 (REQ-V9.4): constructing a Finding with non-int decision_id
+        raises TypeError at the dataclass boundary.
+
+        The legacy v0.7.x soft-compat shim was removed in v0.9.0; the
+        construction-time TypeError IS the new signal (no separate stderr
+        WARN path is reachable via normal Finding construction). The
+        skip path inside ``_write_back_findings`` is retained as
+        defensive coding for any future caller that bypasses the
+        dataclass.
         """
-        from flow_engineering import cli as cli_mod
+        from flow_engineering.binding import CodeRef as _CodeRef
 
-        # 5 findings, all with non-int decision_ids → 5 skipped, 0 written.
-        # The legacy v0.7.x Finding dataclass accepts any str; ``int()``
-        # fails on the synthetic ``"non-int-N"`` ids, exercising the skip path.
-        findings = [
-            _build_finding(
-                obs_id=f"non-int-{i}",
-                ref_id=f"ref_{i}",
+        with pytest.raises(TypeError) as exc_info:
+            Finding(
+                decision_id="non-int-0",  # type: ignore[arg-type]
+                binding=_CodeRef(
+                    project="insyd", id="r", label="L",
+                    file="src/x.py", line=1, confidence=0.9, source="manual",
+                ),
                 drift_class=DriftClass.STALE_ID,
+                detail="",
             )
-            for i in range(5)
-        ]
-        report = DriftReport(
-            change_name="my-change",
-            scanned_at=1000.0,
-            graph_mtime=999.0,
-            decisions_total=5,
-            bindings_total=5,
-            class_counts={DriftClass.STALE_ID: 5},
-            findings=findings,
-        )
-
-        # Patch scan_change to return the report; no env var override so
-        # the default threshold (3) is in effect.
-        monkeypatch.delenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", raising=False)
-        _patch_scan(monkeypatch, report=report)
-
-        # Patch the EngramClient — update_observation_metadata MUST NOT be
-        # invoked for non-int decision_ids, so this should never trigger.
-        update_calls: list[int] = []
-
-        class _FakeClient:
-            def __init__(self, change: str, backend: Any) -> None:
-                pass
-
-            def update_observation_metadata(
-                self, observation_id: int, metadata: dict[str, Any]
-            ) -> None:
-                update_calls.append(observation_id)
-
-        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
-
-        result = runner.invoke(
-            main,
-            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
-        )
-        assert result.exit_code == 1, result.output
-        # No rows were written (all skipped).
-        assert update_calls == []
-
-        # Exactly one WARN line on stderr, with the skipped count.
-        # The CliRunner captures stderr separately (mix_stderr=False default),
-        # so check both CliRunner output and capsys (defense in depth).
-        stderr_text = (result.stderr or "") + capsys.readouterr().err
-        warn_lines = [
-            ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln
-        ]
-        assert len(warn_lines) == 1, (
-            f"expected exactly 1 stderr WARN; got {len(warn_lines)}: "
-            f"stderr={stderr_text!r}"
-        )
-        assert "5" in warn_lines[0], (
-            f"WARN line must include skipped count 5; got {warn_lines[0]!r}"
-        )
+        assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value)
 
     def test_write_back_no_warn_when_all_decision_ids_valid(
         self,
@@ -740,48 +700,28 @@ class TestWriteBackSkipWarn:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A batch with 4 skipped rows MUST emit one WARN with ``4`` in the message."""
-        from flow_engineering import cli as cli_mod
+        """v0.9.0 (REQ-V9.4): the v0.7.x "non-int decision_id → skipped →
+        WARN" scenario is structurally unreachable. ``Finding.decision_id``
+        is hard-typed ``int`` (via :meth:`Finding.__post_init__`), so the
+        ``int(finding.decision_id)`` cast inside ``_write_back_findings``
+        never raises — the skip path is dead code in v0.9.0.
 
-        findings = [
-            _build_finding(
-                obs_id=f"non-int-{i}",
-                ref_id=f"ref_{i}",
+        This fixture is kept for documentation parity with the v0.8.0
+        contract surface; the body validates the strict construction-time
+        rejection (the dataclass boundary IS the new signal). See
+        ``test_write_back_emits_stderr_warn_on_non_int_decision_id`` for
+        the primary coverage of the TypeError contract.
+        """
+        from flow_engineering.binding import CodeRef as _CodeRef
+
+        with pytest.raises(TypeError) as exc_info:
+            Finding(
+                decision_id="non-int-0",  # type: ignore[arg-type]
+                binding=_CodeRef(
+                    project="insyd", id="r", label="L",
+                    file="src/x.py", line=1, confidence=0.9, source="manual",
+                ),
                 drift_class=DriftClass.STALE_ID,
+                detail="",
             )
-            for i in range(4)
-        ]
-        report = DriftReport(
-            change_name="my-change",
-            scanned_at=1000.0,
-            graph_mtime=999.0,
-            decisions_total=4,
-            bindings_total=4,
-            class_counts={DriftClass.STALE_ID: 4},
-            findings=findings,
-        )
-        monkeypatch.delenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", raising=False)
-        _patch_scan(monkeypatch, report=report)
-
-        class _FakeClient:
-            def __init__(self, change: str, backend: Any) -> None:
-                pass
-
-            def update_observation_metadata(
-                self, observation_id: int, metadata: dict[str, Any]
-            ) -> None:
-                pass
-
-        monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)
-
-        result = runner.invoke(
-            main,
-            ["drift", "my-change", "--graph-json", str(graph_path), "--write-back"],
-        )
-
-        stderr_text = (result.stderr or "") + capsys.readouterr().err
-        warn_lines = [
-            ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln
-        ]
-        assert len(warn_lines) == 1
-        assert "4" in warn_lines[0] 
+        assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value) 
