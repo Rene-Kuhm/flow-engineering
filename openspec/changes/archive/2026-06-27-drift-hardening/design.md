@@ -490,6 +490,25 @@ See the archived `verify-report.md` for full evidence + impact analysis.
   `classify_binding_legacy` wrapper (soft compat instead of clean
   `TypeError` break per OQ-10 / `batch-d.md` Deviation #4).
 
+### v0.9.0 resolution (REQ-V9.5)
+
+W2 deviation officially closed. `graph_unavailable: bool` stays canonical
+(impl chose opposite of design D2). `unable_reason: str | None` stays
+canonical (NEW in v0.8.0). No rename to `unable_to_verify` field per
+CHANGELOG v0.8.0 step 3 (`graph_unavailable: bool` retained as the
+canonical field name). The `unable_to_verify` enum value +
+`drift_unable_to_verify_total` counter name + CLI exit-code 2 wording
+all describe the terminal STATE, not the field — these stay unchanged.
+See `openspec/changes/v0.9.0-hardening/proposal.md` §"Open Questions
+OQ-1" for full rationale. W1 + W3 are also resolved: v0.9.0 deletes
+the `from_legacy()` classmethod (T1.2, T1.5) and the
+`classify_binding_legacy` wrapper (T2.2), replacing them with the
+strict `Finding.__post_init__` enforcement (T2.5) that raises
+`TypeError` on non-`int` `decision_id` and the 2-arg-only canonical
+`classify_binding`. v0.9.0 is the hard break originally proposed in
+OQ-10 — W1 + W3 are no longer deviations; they are the implemented
+contract.
+
 ---
 
 ## Architecture Decisions (D1..D12)
