@@ -16,6 +16,7 @@ command) until the GREEN commit lands.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -167,4 +168,40 @@ class TestFlowPromptsGroup:
         assert "sdd-test" in result.stdout or "drift" in result.stdout.lower(), (
             f"expected skill name or drift marker in stdout; "
             f"got {result.stdout!r}"
+        )
+
+
+# ---------- T2.2: flow prompts check --init flag ----------
+
+
+class TestPromptsCheckInit:
+    def test_prompts_check_init_writes_sidecar(
+        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts check --init` writes the sidecar JSON and exits 0.
+
+        The ``--init`` flag bootstraps the sidecar at
+        ``~/.flow-engineering/prompt_checksums.json`` with current on-disk
+        state via ``osc.init_checksums()``. After the call the sidecar
+        file MUST exist on disk and contain an entry for each catalog
+        row (1 in this fixture).
+        """
+        monkeypatch.setattr(osc, "SKILL_CATALOG", clean_catalog)
+        result = runner.invoke(main, ["prompts", "check", "--init"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on --init; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        # Sidecar path mirrors the SKILL.md location: same parent dir.
+        skill_path = Path(clean_catalog["sdd-test/skill"].expected_path)
+        sidecar_file = skill_path.parent / ".flow-engineering" / "prompt_checksums.json"
+        assert sidecar_file.exists(), (
+            f"expected sidecar JSON at {sidecar_file}; file not found"
+        )
+        loaded = json.loads(sidecar_file.read_text(encoding="utf-8"))
+        assert "sdd-test/skill" in loaded, (
+            f"expected 'sdd-test/skill' key in sidecar; got keys {list(loaded)!r}"
+        )
+        assert "Initialized" in result.stdout, (
+            f"expected 'Initialized' marker in stdout; got {result.stdout!r}"
         )
