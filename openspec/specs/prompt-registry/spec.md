@@ -1,4 +1,4 @@
-<!-- spec.md: prompt-registry capability spec. Source: manual. PR#1 archive sync: 2026-06-27. -->
+<!-- spec.md: prompt-registry capability spec. Source: manual. PR#1 archive sync: 2026-06-27; PR#2a archive sync: 2026-06-27. -->
 # PromptRegistry Capability Spec
 
 ## PR#1 archive status (2026-06-27)
@@ -9,7 +9,33 @@
 
 **REQ-47** ✅ COMPLIANT — `lint_prompts() -> LintReport` ships with 5 impl-taxonomy error codes (`duplicate_name`, `invalid_domain`, `jinja_syntax`, `undefined_var`, `invalid_version`). W1 lint category name mismatch (impl taxonomy ≠ spec taxonomy `missing_placeholder`/`unused_variable`/`template_parse_error`/`autoescape_disabled`/`missing_variable`) is PARTIAL — downstream consumers querying for spec-mandated category names need a mapping shim (deferred to v0.8.x). S1/S2 BDD scenarios pass.
 
-**REQ-49 / REQ-50 (PR#2)** — NOT YET SHIPPED. Deferred to `prompt-registry` PR#2 (sdd-tasks to launch from existing proposal REQ-49/50 scope; SKILL_CATALOG mirror + `flow prompts` CLI group + 5 BDD scenarios).
+## PR#2a archive status (2026-06-27)
+
+**REQ-49** ✅ SHIPPED via PR#2a (chained PR strategy; PR#2b still pending for REQ-50). The `SKILL_CATALOG: dict[str, SkillEntry]` mirror catalog (20 entries — 10 `sdd-*` agents × 2 surfaces `skill` + `prompt`) + SHA-256 frontmatter drift detection + `check_drift()` walker (4 `drift_kind` categories: `version_mismatch`, `checksum_mismatch`, `missing_file`, `frontmatter_parse_error`) + sidecar JSON I/O at `~/.flow-engineering/prompt_checksums.json` (atomic write via `tempfile + os.replace + os.fsync`) all ship in `src/flow_engineering/opencode_skill_catalog.py`. CLI surface wired in `src/flow_engineering/cli.py` as `flow prompts {check, lint}` Click subcommands (group + `check --init/--update/--no-fail/--skill` 4-flag matrix + `lint --strict --json` with 0/1/2 exit codes). PR#2a also resolved T2.5 follow-up findings from the initial verify cycle: **C1** (nested `metadata.version` fallback in `parse_frontmatter` via `_extract_version` helper — fixes 20/20 false-positive DRIFT on the real OpenCode SKILL.md corpus), **W1** (the 3 missing `--update`/`--no-fail`/`--skill` flags + `_resolve_check_action` helper + `CheckAction` dataclass), **W2** (stderr WARN summary when drift detected + 4 observability counters via `observability.increment()` / `observability.observe()`). 60 NEW unit tests + 2 NEW REQ-49 BDD scenarios pass; 1199/1199 full suite green; ruff + mypy clean on changed files. Full evidence at `verify-report-pr2a.md` + `apply-progress-pr2a.md`. The `## PR#1 Scope` table below now marks REQ-49 as ✅ SHIPPED (was 🔲).
+
+**W-fix carry-forwards still deferred to PR#2b** (from PR#1 verify-report — bundled with REQ-50):
+- **W1** — `lint_prompts` spec-taxonomy alias map (`LINT_CATEGORY_SPEC_ALIASES` mapping shim — W1 of PR#1, distinct from W1 of T2.2 which is now RESOLVED in PR#2a)
+- **W2** — `select_autoescape(default_for_string=True)` for `_safe_jinja_env()` (W2 of PR#1 — HTML escape blocks Jinja2 `{{ var }}` injection; distinct from W2 of T2.4 which is now RESOLVED in PR#2a)
+- **W3** — restore `prompts/` directory + 4 `.j2` files at repo root (per D1 + D2)
+- **W4** — hoist `scaffold._env()` to shared `prompt_render._env()` (per D3)
+- **W7** — `[tool.flow_engineering.prompts] directory = "prompts"` in `pyproject.toml`
+- **W8** — bump `pyproject.toml` version to `0.8.0` (CHANGELOG already claims `0.8.0`)
+- **W9** — `uv run ruff check --fix` on changed files (3 of 5 auto-fixable)
+- **W10** — strengthen BDD scenarios for REQ-45 S1/S2 to match spec Gherkin shape
+
+**REQ-50 (PR#2b pending)** — NOT YET SHIPPED. Deferred to `prompt-registry` PR#2b (`flow prompts list --json` + `flow prompts show <id> --var key=value` repeatable + sentinel substitution per OQ-4 + exit 5 on unknown id). PR#2b bundles the 8 W-fix carry-forwards listed above.
+
+**REQ-48 / REQ-51..54 (v1.1 deferred)** — NOT SHIPPED. Carried forward beyond PR#2b:
+- **REQ-48** — golden regression tests via `tests/golden/prompts/<prompt_id>.txt` snapshots (v1.1)
+- **REQ-51** — `prompt_renders.jsonl` append-only sink (v1.1; `FLOW_PROMPT_LOG=1` gate)
+- **REQ-52** — `prompts_render_total{...}` / `prompts_render_ms` / `prompts_render_failed_total{...}` counters (v1.1; lands in `observability.py` per D10)
+- **REQ-53** — generated `docs/prompts.md` from `PROMPT_REGISTRY` (v1.1)
+- **REQ-54** — `min_sdd_skill_versions: dict[str, str]` gate in `pyproject.toml` (v1.1)
+
+**v0.8.x schema migrations still deferred** (NOT PR#2 — independent of the PR#2 chain):
+- `PromptDef` → `PromptEntry` (5 fields → 6 fields: add `template_id` + `location` + `schema_version` as separate fields)
+- `PROMPT_NAMES: tuple` → `PROMPT_REGISTRY: dict` shape migration
+- `LINT_CATEGORY_SPEC_ALIASES` mapping shim (W1 of PR#1 verify) — also covers this gap until the schema migration lands
 
 ## Purpose
 
@@ -111,9 +137,10 @@ decide how to surface the result.
 
 ## BDD scenarios
 
-The 7 PR#1 scenarios (in `tests/bdd/`) cover REQ-45/46/47. PR#2
-extends the `test_prompt_registry_steps.py` glue file with 5 more
-scenarios for REQ-49 + REQ-50.
+The 7 PR#1 scenarios (in `tests/bdd/`) cover REQ-45/46/47. PR#2a
+extends the `test_prompt_registry_steps.py` glue file with 2 NEW
+scenarios for REQ-49 (both passing post-T2.5). PR#2b will add 3 more
+scenarios for REQ-50.
 
 ### REQ-45
 
@@ -132,16 +159,19 @@ scenarios for REQ-49 + REQ-50.
   prompt catalog" + "lint fails for prompt with undefined placeholder
   variable".
 
-### REQ-49 (PR#2)
+### REQ-49 (PR#2a — SHIPPED 2026-06-27)
 
 - `tests/bdd/req49_skill_catalog.feature` — "check-drift detects when
   SKILL.md checksums don't match catalog" + "check-drift passes when all
-  SKILL.md checksums match".
+  SKILL.md checksums match". **Both scenarios PASS** post-T2.5
+  (after the nested `metadata.version` fallback fix in
+  `opencode_skill_catalog.py:_extract_version` per `verify-report-pr2a.md` §"Re-verify").
 
-### REQ-50 (PR#2)
+### REQ-50 (PR#2b — pending)
 
 - `tests/bdd/req50_cli_prompts.feature` — `flow prompts list` +
   `flow prompts show <name>` + `flow prompts lint` (3 scenarios).
+  **Deferred to PR#2b** (chained PR strategy).
 
 ## Versioning
 
@@ -152,8 +182,24 @@ scenarios for REQ-49 + REQ-50.
   `observability` capability spec pattern. PR#2 extends this baseline
   with REQ-49 (`SKILL_CATALOG` 20-entry mirror + sidecar JSON) and
   REQ-50 (`flow prompts` CLI subcommand + 7 flags).
+- **v1.1** (2026-06-27) — PR#2a archive sync. Catalog now reflects
+  REQ-49 SHIPPED (`SKILL_CATALOG: dict[str, SkillEntry]` 20-entry
+  mirror + `SkillEntry`/`SkillDrift`/`SkillVersionError` dataclasses +
+  `check_drift()` walker with 4 `drift_kind` categories + sidecar JSON
+  at `~/.flow-engineering/prompt_checksums.json` + `flow prompts {check, lint}`
+  Click subcommands). T2.5 follow-up fixed 3 verify findings (C1
+  nested `metadata.version` fallback, W1 4-flag matrix, W2 stderr WARN
+  + 4 observability counters). REQ-50 (`flow prompts list --json` +
+  `flow prompts show <id>`) and 8 PR#1 W-fix carry-forwards (W1 lint
+  taxonomy alias, W2 autoescape, W3 `prompts/` directory, W4
+  `scaffold._env()` hoist, W7 `[tool.flow_engineering.prompts]`
+  section, W8 `pyproject.toml` version bump, W9 ruff auto-fix, W10 BDD
+  coverage gap) remain deferred to PR#2b. REQ-48 / REQ-51..54 carry
+  forward to v1.1 (post-PR#2b). v0.8.x schema migrations (`PromptDef`
+  → `PromptEntry` 6-field; `PROMPT_NAMES` tuple → `PROMPT_REGISTRY`
+  dict) deferred independently of the PR#2 chain.
 
-## PR#1 Scope (archived 2026-06-27)
+## PR#1 + PR#2a Scope (post-archive 2026-06-27)
 
 | REQ | Status | Notes |
 |-----|--------|-------|
@@ -161,6 +207,6 @@ scenarios for REQ-49 + REQ-50.
 | **REQ-46** — `render_prompt` + helpers | ✅ RESOLVED post-`613f716` | `.format()` fallback path (W5) + `PromptRenderError` / `PromptNotFoundError` exception class (W6) land at commit `613f716`. The 4 migrated Python-`.format()` entries now render correctly via `render_prompt("strict_tdd", test_command="pytest")`. Autoescape NOT enabled (W2; spec OQ-2 violation; deferred to v0.8.x). |
 | **REQ-47** — `lint_prompts` validator | ⚠️ PARTIAL | Ships 5 impl-taxonomy error codes (`duplicate_name`, `invalid_domain`, `jinja_syntax`, `undefined_var`, `invalid_version`). ZERO name overlap with spec-locked taxonomy (`missing_placeholder`, `unused_variable`, `template_parse_error`, `autoescape_disabled`, `missing_variable`) — W1 lint category name mismatch. Mapping shim deferred to v0.8.x. |
 | **REQ-48** — golden regression tests | 🔲 NOT SHIPPED (PR#2 deferred) | Out of PR#1 scope per proposal. |
-| **REQ-49** — `SKILL_CATALOG` + drift detection | 🔲 NOT SHIPPED (PR#2 deferred) | PR#2 sdd-tasks. |
-| **REQ-50** — `flow prompts` CLI subcommand | 🔲 NOT SHIPPED (PR#2 deferred) | PR#2 sdd-tasks. |
+| **REQ-49** — `SKILL_CATALOG` + drift detection | ✅ SHIPPED via PR#2a (2026-06-27) | 20-entry catalog + SHA-256 frontmatter drift detection + sidecar JSON I/O + `flow prompts {check,lint}` Click subcommands. T2.5 follow-up fixed C1 (nested `metadata.version` fallback), W1 (4-flag matrix `--update`/`--no-fail`/`--skill` + `--init`), W2 (stderr WARN + 4 observability counters). Full evidence at `openspec/changes/archive/2026-06-27-prompt-registry-pr2a/verify-report-pr2a.md`. |
+| **REQ-50** — `flow prompts` CLI subcommand | 🔲 NOT SHIPPED (PR#2b deferred) | PR#2b sdd-tasks T3.1 + T3.2 — `flow prompts list --json` + `flow prompts show <id> --var key=value`. Bundles 8 W-fix carry-forwards from PR#1 verify-report (W1 lint taxonomy alias, W2 autoescape, W3 `prompts/` directory, W4 `scaffold._env()` hoist, W7 `[tool.flow_engineering.prompts]` section, W8 `pyproject.toml` version bump, W9 ruff auto-fix, W10 BDD coverage gap). |
 | **REQ-51..54** — counters + sidecar + docs | 🔲 NOT SHIPPED (v1.1 deferred) | Future change beyond PR#2. |
