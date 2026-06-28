@@ -3,6 +3,25 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
+## [1.2.0b] - 2026-06-28
+
+### Added
+- Golden regression tests for the prompt registry (REQ-V1.2.2 / REQ-48):
+  the 4 `PROMPT_NAMES` entries (`strict_tdd`, `auto_suggest_header`,
+  `auto_suggest_footer`, `auto_suggest_empty`) each get a byte-identical
+  snapshot under `tests/golden/prompts/`. Unintentional template edits
+  (whitespace, punctuation, escape chars) fail CI with a precise drift
+  message instead of passing the 21 happy-path render tests. New
+  `prompt_registry.render_prompt_canonical(prompt_id, **overrides)`
+  helper injects canonical sentinel values (`test_command="TEST_COMMAND"`
+  for `strict_tdd`; `{}` for the others) so the snapshot does NOT
+  depend on caller kwargs. New CLI flags on `flow prompts show <id>`:
+  - `--update-goldens` — regenerate the snapshot file with the canonical
+    render. Use after an intentional template change.
+  - `--check-snapshot` — compare the canonical render against the
+    snapshot file; exit 3 + emit `snapshot drift detected` to stderr on
+    mismatch; exit 0 on match. Use in CI to gate merges.
+
 ## [1.2.0a] - 2026-06-28
 
 ### Added
