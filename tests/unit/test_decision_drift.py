@@ -23,7 +23,6 @@ from flow_engineering.decision_drift import (
     DriftReport,
     Finding,
     classify_binding,
-    classify_binding_legacy,
     load_graph,
     scan_change,
 )
@@ -58,29 +57,19 @@ def _nodes(*pairs: tuple[str, str]) -> dict[str, dict]:
     }
 
 
-def _id_map(*entries: tuple[str, str, int, str]) -> dict[str, tuple[str, int, str]]:
-    return {pid: (file, line, label) for pid, file, line, label in entries}
-
-
 # --- STILL_VALID -----------------------------------------------------------
 
 
 def test_classify_still_valid_basic() -> None:
     binding = _ref()
     nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STILL_VALID
+    assert classify_binding(binding, nodes) is DriftClass.STILL_VALID
 
 
 def test_classify_still_valid_source_and_confidence_dont_affect_class() -> None:
     binding = _ref(source="backfill", confidence=0.3)
     nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STILL_VALID
+    assert classify_binding(binding, nodes) is DriftClass.STILL_VALID
 
 
 # --- LABEL_DRIFT -----------------------------------------------------------
@@ -89,19 +78,13 @@ def test_classify_still_valid_source_and_confidence_dont_affect_class() -> None:
 def test_classify_label_drift_when_label_differs() -> None:
     binding = _ref(label="JWTTokenManager")
     nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.LABEL_DRIFT
+    assert classify_binding(binding, nodes) is DriftClass.LABEL_DRIFT
 
 
 def test_classify_label_drift_case_only_still_flags() -> None:
     binding = _ref(label="jwtTokenManager")
     nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JwtTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JwtTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.LABEL_DRIFT
+    assert classify_binding(binding, nodes) is DriftClass.LABEL_DRIFT
 
 
 # --- STALE_LOCATION --------------------------------------------------------
@@ -109,37 +92,43 @@ def test_classify_label_drift_case_only_still_flags() -> None:
 
 def test_classify_stale_location_when_file_moved() -> None:
     binding = _ref(file="src/old.py", line=10)
-    nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/new.py", 42, "JWTTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_LOCATION
+    nodes = {
+        "src_auth_jwt_jwttokenmanager": {
+            "id": "src_auth_jwt_jwttokenmanager",
+            "label": "JWTTokenManager",
+            "file": "src/new.py",
+            "line": 42,
+        }
+    }
+    assert classify_binding(binding, nodes) is DriftClass.STALE_LOCATION
 
 
 def test_classify_stale_location_when_line_shifted_same_file() -> None:
     binding = _ref(file="src/foo.py", line=10)
-    nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/foo.py", 15, "JWTTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_LOCATION
+    nodes = {
+        "src_auth_jwt_jwttokenmanager": {
+            "id": "src_auth_jwt_jwttokenmanager",
+            "label": "JWTTokenManager",
+            "file": "src/foo.py",
+            "line": 15,
+        }
+    }
+    assert classify_binding(binding, nodes) is DriftClass.STALE_LOCATION
 
 
 # --- STALE_ID --------------------------------------------------------------
 
 
-def test_classify_stale_id_when_id_absent_from_id_map() -> None:
+def test_classify_stale_id_when_id_absent_from_graph() -> None:
     binding = _ref(id="deleted_class_hash")
     nodes = _nodes(("other_node", "Other"))
-    id_map = _id_map(("other_node", "src/other.py", 1, "Other"))
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_ID
+    assert classify_binding(binding, nodes) is DriftClass.STALE_ID
 
 
 def test_classify_stale_id_when_id_renamed_with_no_alias() -> None:
     binding = _ref(id="old_class_hash")
     nodes = _nodes(("new_class_hash", "NewClass"))
-    id_map = _id_map(("new_class_hash", "src/foo.py", 1, "NewClass"))
-    assert classify_binding_legacy(binding, nodes, id_map) is DriftClass.STALE_ID
+    assert classify_binding(binding, nodes) is DriftClass.STALE_ID
 
 
 # --- UNABLE_TO_VERIFY (terminal) -------------------------------------------
@@ -167,10 +156,7 @@ def test_classify_binding_never_returns_obsolete_for_resolvable_id() -> None:
     """
     binding = _ref(source="unbound", confidence=0.0)
     nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is not DriftClass.OBSOLETE
+    assert classify_binding(binding, nodes) is not DriftClass.OBSOLETE
 
 
 def test_classify_binding_never_returns_contradicted() -> None:
@@ -182,10 +168,7 @@ def test_classify_binding_never_returns_contradicted() -> None:
     """
     binding = _ref(source="manual", confidence=0.9)
     nodes = _nodes(("src_auth_jwt_jwttokenmanager", "JWTTokenManager"))
-    id_map = _id_map(
-        ("src_auth_jwt_jwttokenmanager", "src/auth/jwt.py", 42, "JWTTokenManager")
-    )
-    assert classify_binding_legacy(binding, nodes, id_map) is not DriftClass.CONTRADICTED
+    assert classify_binding(binding, nodes) is not DriftClass.CONTRADICTED
 
 
 # --- Dataclass shape (smoke) ----------------------------------------------

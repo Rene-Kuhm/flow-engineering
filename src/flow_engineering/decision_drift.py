@@ -113,8 +113,7 @@ def classify_binding(
     """Classify a single ``CodeRef`` against the current graph state (REQ-9 + REQ-V9.3).
 
     v0.9.0 signature (REQ-V9.3): 2-arg ``(ref, graph_nodes)`` is the ONLY
-    entry point. The v0.8.0 3-arg signature was retained as
-    :func:`classify_binding_legacy` for one release with a
+    entry point. The v0.8.0 3-arg signature was retained as a 1-release
     ``DeprecationWarning`` shim; it is removed in v0.9.0.
 
     Algorithm (REQ-9):
