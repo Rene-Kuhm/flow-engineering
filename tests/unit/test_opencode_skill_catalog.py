@@ -5,6 +5,9 @@ frozen dataclass schema for ``SkillEntry`` (6 fields) + ``SkillDrift`` (7 fields
 ``SkillVersionError`` exception, and a ``SIDECAR_PATH`` constant at
 ``~/.flow-engineering/prompt_checksums.json``.
 
+REQ-V1.2.3 (PR#2c, T3.1): ``enforce_min_skill_versions`` helper added at
+module scope; see ``TestEnforceMinSkillVersions`` below.
+
 These tests are written BEFORE the implementation per strict TDD (RED).
 They MUST fail with ``ImportError`` or ``AttributeError`` until the
 GREEN commit lands.
@@ -28,6 +31,7 @@ from flow_engineering.opencode_skill_catalog import (
     _write_sidecar,
     check_drift,
     compute_frontmatter_sha256,
+    enforce_min_skill_versions,
     init_checksums,
     parse_frontmatter,
     update_checksums,
@@ -752,3 +756,199 @@ class TestUpdateChecksums:
         # 'checksum' field stays the same; but last_verified_at updates.
         assert ts_after != ts_before
         assert loaded_after["sdd-test/skill"]["checksum"] == loaded_before["sdd-test/skill"]["checksum"]
+
+
+# ---------- T3.1: enforce_min_skill_versions ----------
+
+
+def _mock_skill_layout(
+    tmp_path: Path, skills_root: Path, *,
+    skills: dict[str, str] | None = None,
+) -> Path:
+    """Lay down ``~/.config/opencode/skills/<name>/SKILL.md`` files.
+
+    Args:
+        tmp_path: pytest tmp_path fixture root.
+        skills_root: Directory that will receive ``<name>/SKILL.md`` files.
+        skills: Mapping of ``skill_name -> version string``. Defaults to
+            3.0 for the 8 orchestrator-dispatched sdd-* agents.
+
+    Returns:
+        The skills_root path (for downstream ``monkeypatch.setenv`` use).
+    """
+    if skills is None:
+        skills = {
+            "sdd-explore": "3.0",
+            "sdd-propose": "3.0",
+            "sdd-spec": "3.0",
+            "sdd-design": "3.0",
+            "sdd-tasks": "3.0",
+            "sdd-apply": "3.0",
+            "sdd-verify": "3.0",
+            "sdd-archive": "3.0",
+        }
+    skills_root.mkdir(parents=True, exist_ok=True)
+    for name, version in skills.items():
+        skill_dir = skills_root / name
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: mock\nversion: \"{version}\"\n---\n\n",
+            encoding="utf-8",
+        )
+    return skills_root
+
+
+@pytest.fixture
+def skills_root(tmp_path: Path) -> Path:
+    """Return a tmp_path-derived skills root for SKILL.md mocking."""
+    return tmp_path / ".config" / "opencode" / "skills"
+
+
+class TestEnforceMinSkillVersions:
+    """T3.1 RED tests for ``enforce_min_skill_versions(min_versions)``.
+
+    The helper enforces a ``[tool.flow_engineering] min_sdd_skill_versions``
+    dict by parsing each on-disk SKILL.md ``version`` frontmatter field
+    and comparing as ``(MAJOR, MINOR)`` tuples. On downgrade it raises
+    the existing ``SkillVersionError`` with remediation message.
+    """
+
+    def test_passes_when_all_skills_meet_minimum(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """8 SKILL.md files with version 3.0 + min dict {*: 3.0} returns None."""
+        skills_root = tmp_path / ".config" / "opencode" / "skills"
+        _mock_skill_layout(tmp_path, skills_root)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        min_versions = {
+            "sdd-explore": "3.0",
+            "sdd-propose": "3.0",
+            "sdd-spec": "3.0",
+            "sdd-design": "3.0",
+            "sdd-tasks": "3.0",
+            "sdd-apply": "3.0",
+            "sdd-verify": "3.0",
+            "sdd-archive": "3.0",
+        }
+        result = enforce_min_skill_versions(min_versions)
+        assert result is None
+
+    def test_raises_skill_version_error_on_downgrade(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """sdd-apply on disk at 2.5 + min dict {sdd-apply: 3.0} raises."""
+        skills_root = tmp_path / ".config" / "opencode" / "skills"
+        _mock_skill_layout(
+            tmp_path, skills_root,
+            skills={"sdd-apply": "2.5"},
+        )
+        monkeypatch.setenv("HOME", str(tmp_path))
+        with pytest.raises(SkillVersionError) as excinfo:
+            enforce_min_skill_versions({"sdd-apply": "3.0"})
+        msg = str(excinfo.value)
+        assert "sdd-apply" in msg
+        assert "3.0" in msg
+        assert "2.5" in msg
+
+    def test_skips_missing_skill(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """min dict references nonexistent skill name -> no error."""
+        skills_root = tmp_path / ".config" / "opencode" / "skills"
+        _mock_skill_layout(tmp_path, skills_root)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        # Skill not in the layout; helper must skip silently.
+        result = enforce_min_skill_versions({"nonexistent-skill": "3.0"})
+        assert result is None
+
+    def test_skips_non_sdd_skill(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """min dict references non-sdd-prefixed key -> no error.
+
+        The 8 orchestrator-dispatched sdd-* agents are the gate's only
+        concern; any other key (e.g., a third-party tool name) is a
+        no-op pass-through to keep the gate scoped tight.
+        """
+        skills_root = tmp_path / ".config" / "opencode" / "skills"
+        _mock_skill_layout(tmp_path, skills_root)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        result = enforce_min_skill_versions({"some-other-tool": "3.0"})
+        assert result is None
+
+    def test_handles_non_numeric_version_gracefully(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SKILL.md with version '3.0-beta' parses via safe fallback.
+
+        Either the helper successfully parses the pre-release string OR
+        the safe-fallback path returns '0.0' which triggers the gate
+        correctly (any minimum version > 0.0 is satisfied after the
+        fallback inverts the comparison).
+        """
+        skills_root = tmp_path / ".config" / "opencode" / "skills"
+        _mock_skill_layout(
+            tmp_path, skills_root,
+            skills={"sdd-apply": "3.0-beta"},
+        )
+        monkeypatch.setenv("HOME", str(tmp_path))
+        # Pass-through case: helper must not raise for a non-SDD-style
+        # version; it may parse, fall back, or warn — but no crash.
+        result = enforce_min_skill_versions({"sdd-apply": "3.0"})
+        assert result is None
+
+
+# ---------- T3.3: [tool.flow_engineering] min_sdd_skill_versions pyproject section ----------
+
+
+class TestPyprojectMinSkillVersionsSection:
+    """T3.3 RED tests for the pyproject.toml section parser.
+
+    The pyproject section ``[tool.flow_engineering] min_sdd_skill_versions``
+    must be parseable via stdlib ``tomllib`` (Python 3.11+) and expose
+    the 8 orchestrator-dispatched sdd-* agents, each with the
+    ``"3.0"`` minimum semver string.
+    """
+
+    def test_pyproject_min_sdd_skill_versions_parses(self) -> None:
+        """tomllib.loads(pyproject.read_text()) exposes the 8-key dict."""
+        import tomllib
+
+        from pathlib import Path as _P
+
+        data = tomllib.loads(_P("pyproject.toml").read_text(encoding="utf-8"))
+        assert "tool" in data
+        assert "flow_engineering" in data["tool"]
+        section = data["tool"]["flow_engineering"]
+        assert "min_sdd_skill_versions" in section
+        min_versions = section["min_sdd_skill_versions"]
+        expected_keys = {
+            "sdd-explore",
+            "sdd-propose",
+            "sdd-spec",
+            "sdd-design",
+            "sdd-tasks",
+            "sdd-apply",
+            "sdd-verify",
+            "sdd-archive",
+        }
+        assert set(min_versions.keys()) == expected_keys
+        for skill_name, version in min_versions.items():
+            assert version == "3.0", (
+                f"{skill_name} minimum must be '3.0', got {version!r}"
+            )
+
+    def test_pyproject_section_coexists_with_prompts_section(self) -> None:
+        """[tool.flow_engineering] + [tool.flow_engineering.prompts] coexist."""
+        import tomllib
+
+        from pathlib import Path as _P
+
+        data = tomllib.loads(_P("pyproject.toml").read_text(encoding="utf-8"))
+        fe = data["tool"]["flow_engineering"]
+        # Umbrella section: NEW [tool.flow_engineering] (this PR).
+        assert "min_sdd_skill_versions" in fe
+        # Existing nested section: [tool.flow_engineering.prompts] (carried over).
+        assert "prompts" in fe
+        assert "directory" in fe["prompts"]
+        assert fe["prompts"]["directory"] == "prompts"
