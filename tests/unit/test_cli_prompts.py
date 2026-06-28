@@ -626,3 +626,165 @@ class TestPromptsLint:
         assert loaded["is_clean"] is True, (
             f"expected is_clean=True on clean registry; got {loaded!r}"
         )
+
+
+# ---------- T3.1: flow prompts list subcommand + --json flag (REQ-50 S1) ----------
+
+
+class TestPromptsList:
+    """RED fixtures for `flow prompts list` (REQ-50 S1).
+
+    The CLI surface renders every entry in PROMPT_NAMES as a text table
+    grouped by owner (mirrors `flow metrics` table format per REQ-8).
+    ``--json`` emits the same data as a JSON dict (mirrors REQ-8
+    ``flow metrics --json`` precedent per REQ-50 design D4).
+
+    Acceptance criteria (tasks-pr2.md T3.1 + spec REQ-50 S1):
+    - Default text output: header + rows for all 4 PROMPT_NAMES entries
+      + footer ``4 prompt entries ...`` + exit 0.
+    - ``--json`` output: parseable JSON with ``prompts`` array of 4 dicts
+      + ``count: 4`` + exit 0.
+    - Owner grouping: ``strict_tdd`` has owner ``flow/observability``; the
+      3 auto-suggest entries have owner ``flow/binding`` (per spec).
+    """
+
+    def test_prompts_list_prints_all_known_entries(self) -> None:
+        """`flow prompts list` exits 0 and stdout contains all 4 prompt_ids.
+
+        The default text output is a human-readable table that lists
+        every PROMPT_NAMES entry with its version + owner + location.
+        Each of the 4 known prompt_ids MUST appear in stdout so the
+        user can discover them without invoking ``--json``.
+        """
+        result = runner.invoke(main, ["prompts", "list"])
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        for pid in ("strict_tdd", "auto_suggest_header",
+                    "auto_suggest_footer", "auto_suggest_empty"):
+            assert pid in result.stdout, (
+                f"expected prompt_id={pid!r} in stdout; got {result.stdout!r}"
+            )
+
+    def test_prompts_list_footer_reports_count(self) -> None:
+        """`flow prompts list` stdout contains the ``4 prompt entries`` footer.
+
+        The spec mandates a footer with ``4 prompt entries`` to make
+        the count discoverable at the end of the table.
+        """
+        result = runner.invoke(main, ["prompts", "list"])
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "4 prompt entries" in result.stdout, (
+            f"expected '4 prompt entries' footer in stdout; "
+            f"got {result.stdout!r}"
+        )
+
+    def test_prompts_list_owner_groups_strict_tdd_observability(self) -> None:
+        """`flow prompts list` stdout shows strict_tdd under flow/observability.
+
+        Per spec REQ-50 S1: the table is grouped by owner; the strict_tdd
+        entry's owner is ``flow/observability`` (mirrors the
+        ``PromptDomain.OBSERVABILITY`` value + the ``flow/`` prefix from
+        the observability counter catalog convention).
+        """
+        result = runner.invoke(main, ["prompts", "list"])
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r}"
+        )
+        # Find the strict_tdd row; expect owner=flow/observability on same line.
+        strict_tdd_line = next(
+            (line for line in result.stdout.splitlines() if "strict_tdd" in line),
+            None,
+        )
+        assert strict_tdd_line is not None, (
+            f"expected a row containing 'strict_tdd'; "
+            f"got lines={result.stdout.splitlines()!r}"
+        )
+        assert "flow/observability" in strict_tdd_line, (
+            f"expected strict_tdd row to carry owner=flow/observability; "
+            f"got line={strict_tdd_line!r}"
+        )
+
+    def test_prompts_list_owner_groups_auto_suggest_binding(self) -> None:
+        """`flow prompts list` stdout shows the 3 auto-suggest entries under flow/binding.
+
+        Per spec REQ-50 S1: the 3 auto-suggest entries share owner
+        ``flow/binding`` (mirrors ``PromptDomain.BINDING`` + ``flow/`` prefix).
+        """
+        result = runner.invoke(main, ["prompts", "list"])
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r}"
+        )
+        for pid in ("auto_suggest_header", "auto_suggest_footer", "auto_suggest_empty"):
+            row = next(
+                (line for line in result.stdout.splitlines() if pid in line),
+                None,
+            )
+            assert row is not None, (
+                f"expected a row for {pid!r}; "
+                f"got lines={result.stdout.splitlines()!r}"
+            )
+            assert "flow/binding" in row, (
+                f"expected {pid} row to carry owner=flow/binding; got {row!r}"
+            )
+
+    def test_prompts_list_json_emits_parseable_dict(self) -> None:
+        """`flow prompts list --json` exits 0 + emits a parseable JSON dict.
+
+        Per spec REQ-50 design D4: ``--json`` mirrors the REQ-8
+        ``flow metrics --json`` precedent (flat dict). The dict MUST
+        contain a ``prompts`` array (4 entries) + ``count: 4`` +
+        ``registry_schema_version`` per the spec's exact-string
+        acceptance criteria.
+        """
+        result = runner.invoke(main, ["prompts", "list", "--json"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on --json; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        loaded = json.loads(result.stdout)
+        assert "prompts" in loaded, (
+            f"expected 'prompts' key in JSON; got keys {list(loaded)!r}"
+        )
+        assert len(loaded["prompts"]) == 4, (
+            f"expected 4 entries in 'prompts' array; got {len(loaded['prompts'])}"
+        )
+        assert loaded["count"] == 4, (
+            f"expected count=4 in JSON; got {loaded.get('count')!r}"
+        )
+
+    def test_prompts_list_json_per_entry_has_required_fields(self) -> None:
+        """`flow prompts list --json` per-entry dict has name+version+owner+location.
+
+        Each entry MUST carry the 4 documented fields per spec REQ-50 S1
+        (mirrors the spec scenario's per-row assertion shape).
+        """
+        result = runner.invoke(main, ["prompts", "list", "--json"])
+        assert result.exit_code == 0
+        loaded = json.loads(result.stdout)
+        for entry in loaded["prompts"]:
+            assert "name" in entry, f"expected 'name' in {entry!r}"
+            assert "version" in entry, f"expected 'version' in {entry!r}"
+            assert "owner" in entry, f"expected 'owner' in {entry!r}"
+            assert "location" in entry, f"expected 'location' in {entry!r}"
+        # Spot-check the strict_tdd entry carries the right owner.
+        strict_tdd = next(
+            (e for e in loaded["prompts"] if e["name"] == "strict_tdd"),
+            None,
+        )
+        assert strict_tdd is not None, (
+            f"expected strict_tdd in JSON output; got names={[e['name'] for e in loaded['prompts']]!r}"
+        )
+        assert strict_tdd["owner"] == "flow/observability", (
+            f"expected strict_tdd owner=flow/observability; "
+            f"got {strict_tdd['owner']!r}"
+        )
+        assert strict_tdd["version"] == "1.0.0", (
+            f"expected strict_tdd version=1.0.0; got {strict_tdd['version']!r}"
+        )
