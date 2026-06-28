@@ -483,8 +483,6 @@ class TestDiffTwoArg:
 
         backend = InMemoryBackend()
         backend.mem_save(title="o1", content="v1", topic_key="sdd/x/spec")
-        snap_a = manager.create() if False else None
-        # Build a fresh manager so we don't reuse the snap_a above.
         manager = SnapshotManager(snapshots_dir=tmp_path, backend=backend)
         snap_a = manager.create(description="a")
 

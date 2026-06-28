@@ -88,6 +88,22 @@ class DriftEvent:
         }
 
 
+class DriftEventLogLegacyFormatError(ValueError):
+    """Raised when ``DriftEventLog.read_all()`` encounters a legacy ``str`` decision_id.
+
+    REQ-V1.1.2 S2 hardening: the v1.0 D2 defensive coercion shim has been
+    REMOVED. Pre-v1.0 JSONL lines with ``"decision_id": "42"`` (str) now
+    raise this exception per-line. Inherits from ``ValueError`` so any
+    external ``except ValueError:`` block continues to catch it.
+
+    The ``flow drift-events {list,tail,stats}`` CLI catches this per-line:
+    default mode skips the line + emits a stderr WARN per batch summary;
+    ``--strict`` mode aborts on first legacy line with the CHANGELOG v1.0
+    ``sed`` migration hint. Operators who already ran the CHANGELOG v1.0
+    migration are unaffected (their sinks are already int-only).
+    """
+
+
 class DriftEventLog:
     """Append-only JSONL writer with in-process thread safety (D11).
 
@@ -106,10 +122,6 @@ class DriftEventLog:
         self.path: Path = path if path is not None else DEFAULT_DRIFT_EVENT_LOG_PATH
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        # REQ-V1.0.1 D2: per-instance flag for one-time stderr WARN cadence.
-        # Per-instance (not module-global) so multi-log CLI invocations each
-        # get their own WARN (correct cadence).
-        self._legacy_warn_emitted: bool = False
 
     def append(self, event: DriftEvent) -> None:
         """Append one event as a single JSONL line under an in-process lock.
@@ -135,15 +147,17 @@ class DriftEventLog:
     def read_all(self) -> list[DriftEvent]:
         """Return all events from the JSONL file in append order.
 
-        Missing file returns ``[]``; malformed lines are silently
+        Missing file returns ``[]``; malformed JSONL lines are silently
         skipped (the sink is best-effort — partial writes on disk
         full must NOT crash the caller).
 
-        REQ-V1.0.1 D2: legacy ``decision_id: "42"`` (str) lines from
-        pre-v1.0 JSONL files are coerced to ``int`` with a one-time
-        stderr WARN per log-path (per-instance flag; not module-global).
-        Operators may run the CHANGELOG v1.0 ``sed`` migration to
-        convert in place and silence the WARN.
+        REQ-V1.1.2 S2 hardening: legacy ``decision_id: "42"`` (str) lines
+        from pre-v1.0 JSONL files now raise
+        :class:`DriftEventLogLegacyFormatError`. The v1.0 D2 defensive
+        coercion shim has been REMOVED. The ``flow drift-events``
+        read-side CLI catches the exception per-line and either skips +
+        WARNs (default mode) or aborts with the CHANGELOG v1.0 ``sed``
+        migration hint (``--strict`` mode).
         """
         if not self.path.exists():
             return []
@@ -159,19 +173,13 @@ class DriftEventLog:
                 # the reserved word. Remap on read.
                 if "class" in data and "event_class" not in data:
                     data["event_class"] = data.pop("class")
-                # REQ-V1.0.1 D2: defensive coercion for legacy str decision_id.
                 if isinstance(data.get("decision_id"), str):
-                    data["decision_id"] = int(data["decision_id"])
-                    if not self._legacy_warn_emitted:
-                        print(
-                            f"warning: legacy str decision_id in {self.path}; "
-                            "coercing to int. Run the CHANGELOG v1.0 sed "
-                            "migration to silence.",
-                            file=sys.stderr,
-                        )
-                        self._legacy_warn_emitted = True
+                    raise DriftEventLogLegacyFormatError(
+                        f"legacy str decision_id in {self.path}; "
+                        "run the CHANGELOG v1.0 sed migration to convert in place."
+                    )
                 events.append(DriftEvent(**data))
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except json.JSONDecodeError:
                 continue
         return events
 
@@ -180,6 +188,7 @@ __all__ = [
     "DEFAULT_DRIFT_EVENT_LOG_PATH",
     "DriftEvent",
     "DriftEventLog",
+    "DriftEventLogLegacyFormatError",
     "ROTATE_AGE_DAYS_DEFAULT",
     "ROTATE_BYTES_DEFAULT",
 ]

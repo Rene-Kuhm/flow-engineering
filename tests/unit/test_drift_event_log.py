@@ -199,21 +199,28 @@ class TestAppendMultipleEvents:
         assert log.read_all() == []
 
 
-# ---------- REQ-V1.0.1 D2: defensive coercion of legacy str lines ----------
+# ---------- REQ-V1.1.2: legacy coercion shim REMOVED ----------
 
 
 class TestReadAllLegacyCoercion:
-    """REQ-V1.0.1 D2: legacy ``decision_id: "42"`` (str) JSONL lines from
-    pre-v1.0 files are defensively coerced to ``int`` on read with a
-    one-time stderr WARN per log-path.
+    """REQ-V1.1.2 S2 hardening: the v1.0 D2 defensive coercion shim was
+    REMOVED. Legacy ``decision_id: "42"`` (str) lines now raise
+    :class:`DriftEventLogLegacyFormatError`. The CLI catches per-line.
+
+    The v1.0 tests that asserted silent coercion are REPLACED with v1.1
+    tests asserting the new error semantics. See TestReadAllLegacyFormat
+    above for the comprehensive 4-test class.
     """
 
-    def test_read_all_coerces_legacy_str_decision_id(
+    def test_read_all_no_longer_coerces_legacy_str_silently(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """A legacy JSONL line with str decision_id reads back as int + emits WARN."""
+        """A legacy JSONL line with str decision_id RAISES (was: silent coercion)."""
+        from flow_engineering.drift_event_log import (
+            DriftEventLogLegacyFormatError,
+        )
+
         log_path = tmp_path / "drift_events.jsonl"
-        # Hand-write a legacy-format JSONL line (str decision_id).
         legacy_line = json.dumps({
             "change": "x",
             "decision_id": "42",
@@ -224,21 +231,20 @@ class TestReadAllLegacyCoercion:
         log_path.write_text(legacy_line + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
-        events = log.read_all()
-
-        # Exactly one event read back.
-        assert len(events) == 1
-        # decision_id was coerced from str "42" to int 42.
-        assert events[0].decision_id == 42
-        assert isinstance(events[0].decision_id, int)
-        # One-time stderr WARN was emitted with the legacy marker.
+        with pytest.raises(DriftEventLogLegacyFormatError):
+            log.read_all()
+        # No stderr WARN emitted (the v1.0 one-time WARN cadence is gone).
         stderr = capsys.readouterr().err
-        assert "legacy str decision_id" in stderr
+        assert "legacy str decision_id" not in stderr
 
-    def test_read_all_skips_legacy_str_non_numeric_decision_id(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    def test_read_all_non_numeric_legacy_str_also_raises(
+        self, tmp_path: Path
     ) -> None:
-        """A legacy str decision_id that can't parse to int is silently skipped."""
+        """A non-numeric legacy str decision_id RAISES too (v1.0 silently skipped)."""
+        from flow_engineering.drift_event_log import (
+            DriftEventLogLegacyFormatError,
+        )
+
         log_path = tmp_path / "drift_events.jsonl"
         legacy_line = json.dumps({
             "change": "x",
@@ -250,23 +256,19 @@ class TestReadAllLegacyCoercion:
         log_path.write_text(legacy_line + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
-        events = log.read_all()
+        with pytest.raises(DriftEventLogLegacyFormatError):
+            log.read_all()
 
-        # Non-numeric legacy str lines are silently skipped (mirrors the
-        # malformed-line silent-skip behavior; operator should re-migrate
-        # via the CHANGELOG v1.0 sed).
-        assert events == []
-
-    def test_read_all_one_time_warn_cadence(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    def test_read_all_v10_int_lines_still_parse(
+        self, tmp_path: Path
     ) -> None:
-        """Multiple legacy str lines in one read_all() call emit ONE WARN (per-instance flag)."""
+        """v1.0-compliant int decision_id lines continue to parse unchanged."""
         log_path = tmp_path / "drift_events.jsonl"
         lines = []
         for i in range(3):
             lines.append(json.dumps({
                 "change": "x",
-                "decision_id": str(i + 100),
+                "decision_id": i + 100,
                 "binding_id": f"y{i}",
                 "class": "z",
                 "detected_at": 1_710_000_000.0 + i,
@@ -276,15 +278,9 @@ class TestReadAllLegacyCoercion:
 
         events = log.read_all()
 
-        # All 3 events read back as int.
+        # All 3 events read back as int — no regression for v1.0 sinks.
         assert len(events) == 3
         assert [ev.decision_id for ev in events] == [100, 101, 102]
-        # Exactly ONE stderr WARN was emitted (per-instance flag works).
-        stderr = capsys.readouterr().err
-        warn_lines = [ln for ln in stderr.splitlines() if "legacy str decision_id" in ln]
-        assert len(warn_lines) == 1, (
-            f"expected 1 WARN line; got {len(warn_lines)}: {warn_lines}"
-        )
 
 
 # ---------- thread safety via portable file lock ----------
@@ -394,7 +390,7 @@ class TestReadAllLegacyFormat:
         self, tmp_path: Path
     ) -> None:
         """Read-side callers can ``except DriftEventLogLegacyFormatError``
-        per-line to keep the best-effort sink ethos (T2.4 contract)."""
+        to keep the best-effort sink ethos (T2.4 contract)."""
         from flow_engineering.drift_event_log import (
             DriftEventLogLegacyFormatError,
         )
@@ -410,15 +406,13 @@ class TestReadAllLegacyFormat:
         log_path.write_text(legacy + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
-        skipped = 0
-        with pytest.raises(DriftEventLogLegacyFormatError):
-            for _raw in log_path.read_text(encoding="utf-8").splitlines():
-                try:
-                    log.read_all()
-                except DriftEventLogLegacyFormatError:
-                    skipped += 1
-                    break
-        assert skipped == 1
+        caught: list[DriftEventLogLegacyFormatError] = []
+        try:
+            log.read_all()
+        except DriftEventLogLegacyFormatError as exc:
+            caught.append(exc)
+        assert len(caught) == 1
+        assert "sed migration" in str(caught[0]) or "legacy" in str(caught[0])
 
     def test_legacy_warn_emitted_flag_removed(self) -> None:
         """The v1.0 per-instance ``_legacy_warn_emitted`` flag is REMOVED."""
