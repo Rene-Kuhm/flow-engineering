@@ -410,12 +410,22 @@ def parse_frontmatter(path: Path) -> dict[str, Any]:
     :class:`SkillVersionError` so the caller can surface a uniform
     ``frontmatter_parse_error`` drift signal.
 
+    Per verify-report C1: the returned dict always exposes a top-level
+    ``version`` key (added in-place if absent). Real OpenCode SKILL.md
+    files nest ``version`` under ``metadata.version``, so without this
+    fallback downstream consumers (e.g., :func:`check_drift`) silently
+    compare against ``"0.0"`` and report 20/20 false-positive DRIFT
+    findings even after ``--init``. The top-level location wins when
+    both are present; when neither is set, ``"0.0"`` is the default
+    sentinel (matching the historical fallback).
+
     Args:
         path: The on-disk file to parse.
 
     Returns:
         The parsed YAML mapping as a plain ``dict``. UTF-8 unicode is
-        preserved (no normalization).
+        preserved (no normalization). A ``version`` key is always
+        present at the top level.
 
     Raises:
         SkillVersionError: When the file is missing, has no YAML frontmatter,
@@ -434,6 +444,9 @@ def parse_frontmatter(path: Path) -> dict[str, Any]:
         raise SkillVersionError(f"{path}: YAML parse failed: {exc}") from exc
     if not isinstance(parsed, dict):
         raise SkillVersionError(f"{path}: frontmatter is not a YAML dict")
+    if "version" not in parsed:
+        nested_version = parsed.get("metadata", {}).get("version")
+        parsed["version"] = str(nested_version) if nested_version else "0.0"
     return parsed
 
 
