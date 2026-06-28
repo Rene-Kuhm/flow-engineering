@@ -84,7 +84,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
             ],
@@ -100,7 +100,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
             ],
@@ -114,7 +114,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
             ],
@@ -129,7 +129,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
                 "--format", "json",
@@ -157,7 +157,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
                 "--change", "change-foo",
@@ -178,7 +178,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(log_path),
                 "--format", "json",
@@ -195,7 +195,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(tmp_path / "nope.jsonl"),
             ],
@@ -207,7 +207,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
                 "--since", "yesterday",
@@ -220,7 +220,7 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "stats",
                 "--path", str(stats_log),
                 "--format", "invalid",

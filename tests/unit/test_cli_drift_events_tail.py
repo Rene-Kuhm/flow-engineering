@@ -58,7 +58,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
             ],
@@ -73,7 +73,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
                 "--limit", "3",
@@ -88,7 +88,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
                 "--limit", "5",
@@ -105,7 +105,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
                 "--change", "change-0",
@@ -122,7 +122,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
                 "--event-class", "LABEL_DRIFT",
@@ -140,7 +140,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
                 "--limit", "3",
@@ -161,7 +161,7 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tail_log),
                 "--format", "invalid",
@@ -184,7 +184,7 @@ class TestTailEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(log_path),
             ],
@@ -196,7 +196,7 @@ class TestTailEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift-events",
+                "drift", "events",
                 "tail",
                 "--path", str(tmp_path / "nope.jsonl"),
             ],

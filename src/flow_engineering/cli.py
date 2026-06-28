@@ -1795,7 +1795,20 @@ def _get_skip_warn_threshold() -> int:
         return 3
 
 
-@main.command()
+@main.group("drift", invoke_without_command=True)
+@click.pass_context
+def drift_group(ctx: click.Context) -> None:
+    """Drift detection + read-side CLI namespace (REQ-10/11/14 + REQ-V1.2.4).
+
+    Path A rename (v1.2.0d): the drift detection subcommand is exposed
+    as ``flow drift run <change>`` (the explicit canonical form) and
+    the drift events read-side lives under ``flow drift events
+    {list,tail,stats}``. ``invoke_without_command=True`` keeps the
+    bare ``flow drift --help`` flow working (shows subcommand list).
+    """
+
+
+@drift_group.command("run")
 @click.argument("change_name")
 @click.option("--json", "as_json", is_flag=True, default=False,
               help="Emit machine-readable JSON instead of a text table.")
@@ -1816,7 +1829,7 @@ def _get_skip_warn_threshold() -> int:
     help="REQ-33: drift-pinned scan via a stored snapshot. "
          "Reads frozen observations + graph.json from the envelope instead of live disk.",
 )
-def drift(
+def drift_run(
     change_name: str,
     as_json: bool,
     include_obsolete: bool,
@@ -1895,17 +1908,20 @@ def drift(
     sys.exit(_drift_exit_code(report))
 
 
-# ---------- REQ-V1.0.2 + REQ-V1.0.3: flow drift-events read-side CLI ----------
+# ---------- REQ-V1.0.2 + REQ-V1.0.3: flow drift events read-side CLI (Path A nested) ----------
 
 
-@main.group(name="drift-events")
+@drift_group.group("events")
 def drift_events_group() -> None:
-    """Read drift events from ~/.flow-engineering/drift_events.jsonl (REQ-V1.0.2 + REQ-V1.0.3).
+    """Read drift events from ~/.flow-engineering/drift_events.jsonl (REQ-V1.0.2 + REQ-V1.0.3 + REQ-V1.2.4).
 
-    Path B (parallel command — preserves the ``flow drift <change>``
-    surface). Subcommands: ``list``, ``tail``, ``stats``. Mirrors the
-    ``flow metrics {summary,export,aggregate}`` flag set so the operator
-    mental model transfers.
+    Path A rename (v1.2.0d): the read-side now lives at
+    ``flow drift events {list,tail,stats}`` instead of the pre-v1.2
+    top-level ``flow drift-events {list,tail,stats}``. The hyphenated
+    form is preserved for one release cycle as a 1-release
+    ``deprecated=True`` Click group alias (see ``drift_events_alias``
+    below). Mirrors the ``flow metrics {summary,export,aggregate}``
+    group pattern so the operator mental model transfers.
     """
 
 

@@ -393,6 +393,7 @@ def _invoke_drift_cli(
     """Shared CLI invocation helper for both When step variants."""
     args = [
         "drift",
+        "run",
         change,
         "--graph-json",
         str(drift_world["graph_path"]),
@@ -1762,7 +1763,7 @@ def given_custom_graph_at_tmp(drift_cli_world: dict, tmp_path: Path) -> None:
 def when_run_drift_json(drift_cli_world: dict) -> None:
     """Invoke ``flow drift <change> --graph-json <tmp> --json`` via CliRunner."""
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
         "--json",
     ]
@@ -1776,7 +1777,7 @@ def when_run_drift_json(drift_cli_world: dict) -> None:
 def when_run_drift_include_obsolete(drift_cli_world: dict) -> None:
     """Invoke ``flow drift <change> --graph-json <tmp> --include-obsolete``."""
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
         "--include-obsolete",
     ]
@@ -1793,7 +1794,7 @@ def when_run_drift_since(drift_cli_world: dict, ts: str) -> None:
     The ``--since`` value is passed verbatim so the CLI's
     ``_parse_since`` parses it (or raises ValueError -> exit 2)."""
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
         "--since", ts,
     ]
@@ -1814,7 +1815,7 @@ def when_run_drift_write_back(drift_cli_world: dict, monkeypatch: pytest.MonkeyP
     which only happens when the threshold is 0 or 1."""
     monkeypatch.setenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", "0")
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
         "--write-back",
     ]
@@ -1835,7 +1836,7 @@ def when_run_drift_custom_graph(drift_cli_world: dict, path: str) -> None:
     if "custom_graph_path" in drift_cli_world:
         actual_path = str(drift_cli_world["custom_graph_path"])
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", actual_path,
     ]
     res = runner.invoke(cli_main, args)
@@ -1851,7 +1852,7 @@ def when_run_drift_no_flags(drift_cli_world: dict) -> None:
     output. Used by REQ-10 #6 + REQ-14 #3 (read-only default) + REQ-11
     exit-code scenarios."""
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
     ]
     res = runner.invoke(cli_main, args)
@@ -1865,7 +1866,7 @@ def when_run_drift_bad_since(drift_cli_world: dict, bad_ts: str) -> None:
     """Invoke ``flow drift <change> --since=<bad_ts>`` so ``_parse_since``
     raises ValueError and the CLI exits 2 (REQ-11 priority)."""
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
         "--since", bad_ts,
     ]
@@ -1883,7 +1884,7 @@ def when_run_drift_malformed_graph(drift_cli_world: dict) -> None:
         "{this is not valid json", encoding="utf-8"
     )
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
     ]
     res = runner.invoke(cli_main, args)
@@ -1898,7 +1899,7 @@ def when_run_drift_write_back_twice(drift_cli_world: dict, monkeypatch: pytest.M
     duplicate metadata entries (idempotent)."""
     monkeypatch.setenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", "0")
     args = [
-        "drift", drift_cli_world["change"],
+        "drift", "run", drift_cli_world["change"],
         "--graph-json", str(drift_cli_world["graph_path"]),
         "--write-back",
     ]

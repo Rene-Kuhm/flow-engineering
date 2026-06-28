@@ -809,7 +809,7 @@ class TestDriftSnapshotFlag:
 
         result = runner.invoke(
             main,
-            ["drift", "vector-semantic-search", "--snapshot", "snap_abc"],
+            ["drift", "run", "vector-semantic-search", "--snapshot", "snap_abc"],
         )
         assert result.exit_code == 0, result.output
         assert captured["snap_id"] == "snap_abc"
@@ -839,7 +839,7 @@ class TestDriftSnapshotFlag:
 
         monkeypatch.setattr(cli_mod.decision_drift, "scan_change", _stub)
 
-        result = runner.invoke(main, ["drift", "vector-semantic-search"])
+        result = runner.invoke(main, ["drift", "run", "vector-semantic-search"])
         assert result.exit_code == 0, result.output
         # snap_id MUST be None when flag absent (D13 non-breaking).
         assert captured["snap_id"] is None
