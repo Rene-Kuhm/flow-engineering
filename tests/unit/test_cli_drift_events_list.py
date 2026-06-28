@@ -267,16 +267,22 @@ class TestListErrorExitCodes:
         assert result.exit_code == 2, result.output
 
 
-# ---------- REQ-V1.0.2: legacy str line compatibility (defensive coercion) ----------
+# ---------- REQ-V1.1.2: legacy str line compatibility (S2 hardening closeout) ----------
 
 
 class TestListLegacyCompat:
-    """--path=<legacy log with str decision_id> reads back as int (D2)."""
+    """REQ-V1.1.2 S2 hardening: the v1.0 D2 defensive coercion was REMOVED.
 
-    def test_drift_events_list_reads_legacy_str_as_int(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    The read-side CLI now catches ``DriftEventLogLegacyFormatError`` per
+    line. Default mode (no ``--strict``) skips legacy lines + emits a
+    stderr WARN per batch. ``--strict`` mode aborts on first legacy line
+    with exit code 4 + CHANGELOG v1.0 ``sed`` migration hint.
+    """
+
+    def test_drift_events_list_default_mode_skips_legacy_lines_with_warn(
+        self, tmp_path: Path
     ) -> None:
-        """Legacy pre-v1.0 str decision_id is read back as int (REQ-V1.0.1 D2)."""
+        """Default mode skips legacy lines + emits stderr WARN (REQ-V1.1.2)."""
         log_path = _seed_legacy_str_line(tmp_path)
 
         result = runner.invoke(
@@ -288,14 +294,38 @@ class TestListLegacyCompat:
                 "--path", str(log_path),
             ],
         )
+        # Exit 0: legacy line was skipped, no events returned.
         assert result.exit_code == 0, result.output
-        # The one-time WARN goes to stderr; stdout is the JSON envelope.
-        # Parse stdout only (skip the stderr WARN prefix if mixed).
         stdout = result.stdout if hasattr(result, "stdout") else result.output
         payload = json.loads(stdout)
-        assert len(payload) == 1
-        assert payload[0]["decision_id"] == 42
-        assert isinstance(payload[0]["decision_id"], int)
+        assert payload == [], "legacy line should have been skipped in default mode"
+        stderr = (getattr(result, "stderr", "") or "")
+        assert "legacy" in stderr.lower() or "skipped" in stderr.lower(), (
+            f"expected stderr to mention legacy/skip; got: {stderr!r}"
+        )
+
+    def test_drift_events_list_strict_mode_aborts_on_legacy_line(
+        self, tmp_path: Path
+    ) -> None:
+        """``--strict`` mode aborts on first legacy line with exit code 4 (REQ-V1.1.2)."""
+        log_path = _seed_legacy_str_line(tmp_path)
+
+        result = runner.invoke(
+            main,
+            [
+                "drift-events",
+                "list",
+                "--strict",
+                "--format=json",
+                "--path", str(log_path),
+            ],
+        )
+        # Exit 4 = malformed input / migration needed.
+        assert result.exit_code == 4, result.output
+        stderr = (getattr(result, "stderr", "") or "")
+        assert "sed" in stderr.lower() or "changelog" in stderr.lower(), (
+            f"expected stderr to mention sed/changelog; got: {stderr!r}"
+        )
 
 
 # ---------- REQ-V1.0.2: empty log returns 0 ----------
