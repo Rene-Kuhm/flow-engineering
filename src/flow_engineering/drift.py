@@ -8,11 +8,11 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 
-class FailureClass(str, Enum):
+class FailureClass(StrEnum):
     """Classification of test failures for retry routing."""
 
     TRANSIENT = "TRANSIENT"  # retry up to 2 times

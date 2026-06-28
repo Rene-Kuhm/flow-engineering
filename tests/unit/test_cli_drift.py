@@ -585,7 +585,9 @@ class TestHelpText:
         result = runner.invoke(main, ["drift", "--help"])
         assert result.exit_code == 0, result.output
         # Exit codes are part of the contract — they MUST appear in --help.
-        assert "0" in result.output and "1" in result.output and "2" in result.output
+        assert "0" in result.output
+        assert "1" in result.output
+        assert "2" in result.output
 
 
 # ---------- REQ-59 S2: _write_back_findings stderr WARN (D8) ----------

@@ -252,7 +252,7 @@ class TestAddAlias:
         add_alias("a", "b", path=path)
         # REQ-27 scenario 3: re-invoking with the same ``old`` and a
         # DIFFERENT ``new`` MUST error to prevent silent history loss.
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:  # noqa: PT011
             add_alias("a", "DIFFERENT", path=path)
         msg = str(exc_info.value)
         assert "a" in msg
@@ -289,7 +289,7 @@ class TestModuleSurface:
     def test_default_aliases_path_is_under_flow_engineering_config(
         self,
     ) -> None:
-        from pathlib import Path as _P
+        from pathlib import Path as _P  # noqa: N814
 
         assert (
             _P.home() / ".config" / "flow-engineering" / "project-aliases.json"

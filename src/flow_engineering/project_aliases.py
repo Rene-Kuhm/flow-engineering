@@ -44,6 +44,7 @@ use the canonical name when an alias exists for the queried project.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -187,10 +188,8 @@ def save_aliases(
         Path(tmp_path_str).replace(target)
     except Exception:
         # Best-effort cleanup of the temp file on failure.
-        try:
+        with contextlib.suppress(OSError):
             Path(tmp_path_str).unlink()
-        except OSError:
-            pass
         raise
 
 

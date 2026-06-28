@@ -127,7 +127,7 @@ class TestAggregateMany:
 
     def test_aggregate_many_invalid_percentile_raises(self) -> None:
         """``aggregate_many(values, [50, 95, 999])`` raises ``ValueError`` on invalid pct."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             observability.aggregate_many([1.0, 2.0], [999])
 
 

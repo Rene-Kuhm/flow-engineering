@@ -439,7 +439,8 @@ def then_list_excludes_t1_t2(snapshot_world: dict[str, Any]) -> None:
     ids = {e.id for e in snapshot_world["list_result"]}
     t1 = snapshot_world["snap_ids"][0]
     t2 = snapshot_world["snap_ids"][1]
-    assert t1 not in ids and t2 not in ids
+    assert t1 not in ids
+    assert t2 not in ids
 
 
 @then("combining --since and --limit=2 returns the 2 newest within the filter")
@@ -734,7 +735,7 @@ def then_rollback_conflict(
     snapshot_world: dict[str, Any], n: int
 ) -> None:
     exc = snapshot_world["rollback_exception"]
-    assert exc is not None and isinstance(exc, RollbackConflictError), (
+    assert exc is not None and isinstance(exc, RollbackConflictError), (  # noqa: PT018
         f"expected RollbackConflictError; got {exc!r}"
     )
     payload = exc.payload

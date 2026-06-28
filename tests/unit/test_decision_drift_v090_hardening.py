@@ -31,7 +31,7 @@ from flow_engineering.decision_drift import (
 def _ref(
     *,
     project: str = "insyd",
-    id: str = "src_auth_jwt_jwttokenmanager",
+    id: str = "src_auth_jwt_jwttokenmanager",  # noqa: A002
     label: str = "JWTTokenManager",
     file: str = "src/auth/jwt.py",
     line: int = 42,
@@ -150,7 +150,8 @@ def test_finding_constructor_accepts_int_decision_id() -> None:
         detail="ok",
     )
     assert f.decision_id == 42
-    assert isinstance(f.decision_id, int) and not isinstance(f.decision_id, bool)
+    assert isinstance(f.decision_id, int)
+    assert not isinstance(f.decision_id, bool)
 
 
 # ---- T1.5/T2.2 sanity — confirm canonical 2-arg classify_binding works ---

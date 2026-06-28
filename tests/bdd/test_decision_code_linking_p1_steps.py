@@ -417,7 +417,8 @@ def do_load_phase(world):
 @then(parsers.parse('it returns one CodeRef with id "{ref_id}"'))
 def then_one_ref(world, ref_id):
     refs = world["extracted"]
-    assert refs is not None and len(refs) == 1
+    assert refs is not None
+    assert len(refs) == 1
     assert refs[0].id == ref_id
 
 
@@ -425,7 +426,7 @@ def then_one_ref(world, ref_id):
 def then_prose_byte_identical(world):
     # The first 800 chars include all prose + a separator before the block.
     content = world["content"]
-    prose_part = content.split(CODE_REFS_MARKER, 1)[0]
+    content.split(CODE_REFS_MARKER, 1)[0]
     refs = world["extracted"]
     assert refs is not None
 
@@ -452,7 +453,8 @@ def then_parse_error_offset(world):
 @then("it returns two CodeRefs in the order [A, B]")
 def then_two_refs_order(world):
     refs = world["extracted"]
-    assert refs is not None and len(refs) == 2
+    assert refs is not None
+    assert len(refs) == 2
     assert [r.id for r in refs] == ["node_a", "node_b"]
 
 
@@ -527,7 +529,8 @@ def then_no_row_written(world):
 @then(parsers.parse('it raises ParseError mentioning "{text}"'))
 def then_parse_error_mentions(world, text):
     exc = world["raised"]
-    assert exc is not None and isinstance(exc, ParseError)
+    assert exc is not None
+    assert isinstance(exc, ParseError)
     assert text.lower() in str(exc).lower()
 
 

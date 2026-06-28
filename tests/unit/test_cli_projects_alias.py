@@ -46,7 +46,7 @@ def _make_obs(
     title: str = "obs",
     content: str = "c",
     project: str | None = "insyd",
-    type: str = "manual",
+    type: str = "manual",  # noqa: A002
     created_at: str = "2026-06-15 10:00:00",
 ) -> dict[str, Any]:
     return {
@@ -182,7 +182,7 @@ class TestProjectsAliasConflict:
         )
         # Stderr OR output mentions the conflict (Click joins them).
         combined = (result.output or "") + (result.stderr or "")
-        assert "a" in combined and "ORIGINAL" in combined, (
+        assert "a" in combined and "ORIGINAL" in combined, (  # noqa: PT018
             f"Expected conflict message naming 'a' and 'ORIGINAL'; got: {combined!r}"
         )
         # Existing record UNCHANGED.

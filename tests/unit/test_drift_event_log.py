@@ -151,7 +151,7 @@ class TestAppendMultipleEvents:
         content = log_path.read_text(encoding="utf-8")
         lines = content.splitlines()
         assert len(lines) == 3
-        for ev, raw in zip(events, lines):
+        for ev, raw in zip(events, lines, strict=False):
             assert json.loads(raw) == ev.to_json_dict()
 
     def test_drift_event_log_read_all_returns_events_in_order(
@@ -170,7 +170,7 @@ class TestAppendMultipleEvents:
         result = log.read_all()
 
         assert len(result) == 3
-        for got, want in zip(result, events):
+        for got, want in zip(result, events, strict=False):
             assert got == want
 
     def test_drift_event_log_read_all_skips_malformed_lines(

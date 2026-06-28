@@ -63,8 +63,10 @@ class TestEngramClientSaveLoad:
         client_b.save_phase("explore", "B explore content")
         loaded_a = client_a.load_phase("explore")
         loaded_b = client_b.load_phase("explore")
-        assert loaded_a is not None and "A explore content" in loaded_a
-        assert loaded_b is not None and "B explore content" in loaded_b
+        assert loaded_a is not None
+        assert "A explore content" in loaded_a
+        assert loaded_b is not None
+        assert "B explore content" in loaded_b
 
 
 class TestApplyProgress:
@@ -288,7 +290,7 @@ class TestFederatedSearch:
             content="drift detection strategy",
             topic_key="sdd/x/spec",
         )
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:  # noqa: PT011
             backend.mem_search_federated("drift", projects=[])
         assert "projects" in str(exc_info.value).lower()
 
@@ -314,13 +316,13 @@ class TestFederatedSearch:
         # REQ-23 scenario: third-party subclass without override raises at call time.
 
         class PlainBackend(EngramBackend):
-            def mem_save(self, title, content, topic_key, type="manual", scope="project"):
+            def mem_save(self, title, content, topic_key, type="manual", scope="project"):  # noqa: A002
                 return {"id": 1, "title": title, "content": content}
 
             def mem_search(self, query, topic_key=None, limit=10, scope="project"):
                 return []
 
-            def mem_get_observation(self, id):
+            def mem_get_observation(self, id):  # noqa: A002
                 return {"id": id}
 
         with pytest.raises(NotImplementedError) as exc_info:
@@ -332,7 +334,7 @@ class TestFederatedSearch:
     def test_abc_default_import_unchanged(self) -> None:
         # Third-party code that never calls the new method is unaffected.
         # Importing EngramBackend must succeed without raising.
-        from flow_engineering.engram_io import EngramBackend as EBB
+        from flow_engineering.engram_io import EngramBackend as EBB  # noqa: N814
 
         assert hasattr(EBB, "mem_search_federated")
         assert EBB.mem_search_federated is not None

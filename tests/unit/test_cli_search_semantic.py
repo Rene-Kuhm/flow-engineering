@@ -322,7 +322,8 @@ class TestSearchHybrid:
 
         result = runner.invoke(main, ["search", "--hybrid", "--alpha", "1.5", "drift"])
         assert result.exit_code == 2, result.output
-        assert "alpha" in result.output.lower() and "[0.0, 1.0]" in result.output
+        assert "alpha" in result.output.lower()
+        assert "[0.0, 1.0]" in result.output
 
     def test_hybrid_alpha_below_range_exits_nonzero(
         self,

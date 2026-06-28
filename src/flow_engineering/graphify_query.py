@@ -73,7 +73,7 @@ def _save_cache(cache_dir: Path, cache: dict[str, dict]) -> None:
         # Drop the oldest entries by insertion order (Python dicts preserve it).
         keep = list(cache.items())[-_CACHE_MAX_ENTRIES:]
         cache = dict(keep)
-    try:
+    try:  # noqa: SIM105
         _cache_path(cache_dir).write_text(
             json.dumps(cache, ensure_ascii=False, separators=(",", ":")),
             encoding="utf-8",

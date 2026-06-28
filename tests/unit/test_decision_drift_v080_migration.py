@@ -36,7 +36,7 @@ from flow_engineering.decision_drift import (
 def _ref(
     *,
     project: str = "insyd",
-    id: str = "src_auth_jwt_jwttokenmanager",
+    id: str = "src_auth_jwt_jwttokenmanager",  # noqa: A002
     label: str = "JWTTokenManager",
     file: str = "src/auth/jwt.py",
     line: int = 42,

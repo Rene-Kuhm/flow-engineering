@@ -40,7 +40,7 @@ def _make_obs(
     title: str = "obs",
     content: str = "c",
     project: str | None = "insyd",
-    type: str = "manual",
+    type: str = "manual",  # noqa: A002
     created_at: str = "2026-06-15 10:00:00",
 ) -> dict[str, Any]:
     return {

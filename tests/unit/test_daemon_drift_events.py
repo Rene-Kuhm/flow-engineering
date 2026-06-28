@@ -378,7 +378,7 @@ class TestDriftEventLogWiring:
         """A 2-finding report (1 STALE_ID + 1 LABEL_DRIFT) results in 2
         ``DriftEventLog.append`` calls — one per non-STILL_VALID finding."""
 
-        event_log_path = tmp_path / "drift_events.jsonl"
+        tmp_path / "drift_events.jsonl"
         appended: list[tuple[str, str, str, str, float]] = []
 
         class _FakeLog:
