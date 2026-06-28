@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
+## [1.2.0a] - 2026-06-28
+
+### Added
+- `metrics.jsonl` rotation hardening (REQ-V1.2.1 / REQ-44): the metrics
+  sink at `~/.flow-engineering/metrics.jsonl` now auto-rotates when the
+  size threshold (`FLOW_METRICS_LOG_MAX_BYTES`, default 10 MB) is
+  exceeded, mirroring the `DriftEventLog` rotation pattern shipped in
+  v1.1.0 (REQ-V1.1.1). Sibling files older than the age threshold
+  (`FLOW_METRICS_LOG_MAX_AGE_DAYS`, default 30 days) are deleted
+  best-effort. All filesystem operations are wrapped in
+  `try/except OSError` so a slow FS never crashes `increment()`.
+
 ## [1.1.0] - 2026-06-28
 
 ### Added
