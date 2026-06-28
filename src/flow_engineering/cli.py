@@ -2433,6 +2433,26 @@ report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
 """
 
 
+_LINT_ERROR_CODES = frozenset({"jinja_syntax", "invalid_version"})
+"""Validation codes that map to "error" severity (CLI exit 2).
+
+``jinja_syntax`` breaks render_prompt outright; ``invalid_version``
+breaks the SemVer contract used by ``flow prompts show --version``.
+Both are blocking and warrant the strict exit code per REQ-47 + REQ-50.
+"""
+
+
+_LINT_WARNING_CODES = frozenset(
+    {"duplicate_name", "invalid_domain", "undefined_var"}
+)
+"""Validation codes that map to "warning" severity (CLI exit 1).
+
+These are quality issues that don't break rendering but signal catalog
+hygiene problems. Mirrors the ``drift-hardening`` precedent of using a
+warning tier distinct from the error tier.
+"""
+
+
 @main.group(name="prompts")
 def prompts_group() -> None:
     """Inspect and validate prompt registry + SKILL catalog (REQ-49 + REQ-50).
@@ -2514,6 +2534,12 @@ def prompts_lint(json_flag: bool) -> None:
     from flow_engineering import prompt_registry
 
     report = prompt_registry.lint_prompts()
+    warning_count = sum(
+        1 for e in report.errors if e.error_code in _LINT_WARNING_CODES
+    )
+    error_count = sum(
+        1 for e in report.errors if e.error_code in _LINT_ERROR_CODES
+    )
 
     if json_flag:
         click.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
@@ -2523,20 +2549,14 @@ def prompts_lint(json_flag: bool) -> None:
                 f"{err.prompt_name}: {err.error_code}: {err.message}"
             )
         catalog_size = len(report.catalog)
-        warning_count = sum(
-            1 for e in report.errors if e.error_code != "invalid_version"
-        )
-        error_count = sum(
-            1 for e in report.errors if e.error_code == "invalid_version"
-        )
         click.echo(
             f"{catalog_size} prompts linted · "
             f"{warning_count} warnings · {error_count} errors"
         )
 
-    if report.error_count > 0:
+    if error_count > 0:
         sys.exit(2)
-    if report.error_count == 0 and report.errors:
+    if warning_count > 0:
         sys.exit(1)
 
 

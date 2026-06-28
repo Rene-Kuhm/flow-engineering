@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -26,7 +25,6 @@ from click.testing import CliRunner
 from flow_engineering import opencode_skill_catalog as osc
 from flow_engineering.cli import main
 from flow_engineering.opencode_skill_catalog import SkillEntry
-
 
 runner = CliRunner()
 
@@ -204,4 +202,122 @@ class TestPromptsCheckInit:
         )
         assert "Initialized" in result.stdout, (
             f"expected 'Initialized' marker in stdout; got {result.stdout!r}"
+        )
+
+
+# ---------- T2.3: flow prompts lint subcommand ----------
+
+
+class TestPromptsLint:
+    def test_prompts_lint_clean_registry_exits_zero(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts lint` exits 0 when the registry is clean.
+
+        With a freshly imported (untouched) registry, ``lint_prompts()``
+        returns an empty errors list and the CLI exits 0. The footer
+        MUST include ``0 warnings`` and ``0 errors``.
+        """
+        result = runner.invoke(main, ["prompts", "lint"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 on clean registry; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "0 warnings" in result.stdout, (
+            f"expected '0 warnings' in footer; got {result.stdout!r}"
+        )
+        assert "0 errors" in result.stdout, (
+            f"expected '0 errors' in footer; got {result.stdout!r}"
+        )
+
+    def test_prompts_lint_warnings_only_exits_one(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts lint` exits 1 when only warnings are present.
+
+        Registering a prompt with an undefined Jinja2 placeholder (and no
+        ``required_vars`` declaration) triggers the ``undefined_var``
+        validation code, which maps to "warning" severity. The CLI exits
+        1 (warning, not error) and the footer MUST show at least 1
+        warning + 0 errors.
+        """
+        from flow_engineering import prompt_registry
+
+        prompt_registry.register(
+            name="bdd_test_warning",
+            template="Hello {{ undeclared }}",
+            domain=prompt_registry.PromptDomain.OBSERVABILITY,
+            version="1.0.0",
+        )
+        try:
+            result = runner.invoke(main, ["prompts", "lint"])
+            assert result.exit_code == 1, (
+                f"expected exit 1 on warnings-only; got {result.exit_code}. "
+                f"stdout={result.stdout!r} stderr={result.stderr!r}"
+            )
+            assert "0 errors" in result.stdout, (
+                f"expected '0 errors' in footer; got {result.stdout!r}"
+            )
+            assert "1 warnings" in result.stdout, (
+                f"expected '1 warnings' in footer; got {result.stdout!r}"
+            )
+        finally:
+            prompt_registry.unregister_prompt("bdd_test_warning")
+
+    def test_prompts_lint_jinja_syntax_error_exits_two(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts lint` exits 2 on jinja_syntax validation errors.
+
+        Registering a prompt with a broken Jinja2 template triggers the
+        ``jinja_syntax`` validation code, which maps to "error" severity.
+        The CLI exits 2 and the footer MUST show at least 1 error.
+        """
+        from flow_engineering import prompt_registry
+
+        prompt_registry.register(
+            name="bdd_test_jinja_error",
+            template="Hello {{ unclosed",
+            domain=prompt_registry.PromptDomain.OBSERVABILITY,
+            version="1.0.0",
+        )
+        try:
+            result = runner.invoke(main, ["prompts", "lint"])
+            assert result.exit_code == 2, (
+                f"expected exit 2 on jinja_syntax error; got {result.exit_code}. "
+                f"stdout={result.stdout!r} stderr={result.stderr!r}"
+            )
+            assert "jinja_syntax" in result.stdout, (
+                f"expected 'jinja_syntax' code in stdout; got {result.stdout!r}"
+            )
+        finally:
+            prompt_registry.unregister_prompt("bdd_test_jinja_error")
+
+    def test_prompts_lint_json_flag_emits_json(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`flow prompts lint --json` emits a structured JSON report.
+
+        With ``--json``, the CLI prints ``LintReport.to_dict()`` shape on
+        stdout instead of the human-readable line format. The JSON MUST
+        parse without error and contain the expected top-level keys
+        (``is_clean``, ``error_count``, ``errors_by_code``, ``errors``).
+        """
+        result = runner.invoke(main, ["prompts", "lint", "--json"])
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        loaded = json.loads(result.stdout)
+        assert "is_clean" in loaded, (
+            f"expected 'is_clean' key in JSON; got keys {list(loaded)!r}"
+        )
+        assert "error_count" in loaded, (
+            f"expected 'error_count' key in JSON; got keys {list(loaded)!r}"
+        )
+        assert "errors" in loaded, (
+            f"expected 'errors' key in JSON; got keys {list(loaded)!r}"
+        )
+        assert loaded["is_clean"] is True, (
+            f"expected is_clean=True on clean registry; got {loaded!r}"
         )
