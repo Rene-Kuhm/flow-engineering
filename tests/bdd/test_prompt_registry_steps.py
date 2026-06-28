@@ -88,7 +88,7 @@ def _cleanup_registered_prompts(prompt_world: dict[str, Any]) -> Any:
 
 @scenario(
     "../bdd/req45_prompt_registry.feature",
-    "Registry lists all known prompts by domain",
+    "Registry lists all known prompts with per-entry owner/variables/location",
 )
 def test_req45_lists_all_known_prompts(prompt_world: dict[str, Any]) -> None:
     pass
@@ -218,6 +218,146 @@ def then_exit_code_zero(prompt_world: dict[str, Any]) -> None:
     assert prompt_world["exit_code"] == 0, (
         f"expected exit 0; got {prompt_world['exit_code']}. "
         f"stdout={prompt_world['stdout']!r} stderr={prompt_world['stderr']!r}"
+    )
+
+
+@when("I inspect the PROMPT_NAMES catalog")
+def when_inspect_prompt_names(prompt_world: dict[str, Any]) -> None:
+    """Capture the live PROMPT_NAMES catalog for per-entry assertions.
+
+    W10 (REQ-45 S1 PARTIAL closeout): the original BDD scenario only
+    asserted ``len >= 4`` via subprocess. The strengthened scenario
+    needs in-process access to inspect ``domain``, ``metadata.variables``,
+    and ``metadata.template_file`` per-entry. Store the snapshot on
+    ``prompt_world`` so subsequent ``Then`` steps can introspect it.
+    """
+    snapshot = list(prompt_registry.PROMPT_NAMES)
+    prompt_world["catalog_snapshot"] = snapshot
+    prompt_world["exit_code"] = 0
+    prompt_world["stdout"] = ""
+    prompt_world["stderr"] = ""
+
+
+@then("the catalog has 4 entries total")
+def then_catalog_has_4_entries(prompt_world: dict[str, Any]) -> None:
+    """Assert the snapshot carries exactly 4 entries (REQ-45 baseline)."""
+    snapshot = prompt_world.get("catalog_snapshot")
+    assert snapshot is not None, "catalog snapshot not initialized"
+    assert len(snapshot) == 4, (
+        f"expected 4 entries in PROMPT_NAMES; got {len(snapshot)}"
+    )
+
+
+@then("every entry has owner, variables, and location fields")
+def then_every_entry_has_owner_variables_location(
+    prompt_world: dict[str, Any],
+) -> None:
+    """Walk the snapshot and assert each entry has owner + variables + location.
+
+    Owner is derived as ``f"flow/{domain.value}"`` (per the verify-report
+    W10 example: ``flow/observability``); variables is the
+    ``metadata.variables`` tuple (may be empty); location is the
+    ``metadata.template_file`` path string.
+    """
+    snapshot = prompt_world.get("catalog_snapshot")
+    assert snapshot is not None, "catalog snapshot not initialized"
+    for entry in snapshot:
+        owner = f"flow/{entry.domain.value}"
+        variables = entry.metadata.get("variables", ())
+        location = entry.metadata.get("template_file", "")
+        assert owner.startswith("flow/"), (
+            f"expected owner=flow/... for {entry.name!r}; got {owner!r}"
+        )
+        assert isinstance(variables, tuple), (
+            f"expected variables=tuple for {entry.name!r}; "
+            f"got {type(variables).__name__}"
+        )
+        assert location, (
+            f"expected non-empty location (template_file) for {entry.name!r}; "
+            f"got empty"
+        )
+
+
+@then(parsers.parse('the entry "{name}" has owner "{owner}"'))
+def then_entry_has_owner(
+    prompt_world: dict[str, Any], name: str, owner: str,
+) -> None:
+    """Assert ``entry.domain`` derives to the expected owner string."""
+    snapshot = prompt_world.get("catalog_snapshot")
+    assert snapshot is not None, "catalog snapshot not initialized"
+    matching = [e for e in snapshot if e.name == name]
+    assert matching, (
+        f"expected entry with name={name!r}; "
+        f"got names {[e.name for e in snapshot]!r}"
+    )
+    actual_owner = f"flow/{matching[0].domain.value}"
+    assert actual_owner == owner, (
+        f"expected {name!r} owner={owner!r}; got {actual_owner!r}"
+    )
+
+
+@then(parsers.re(r'the entry "(?P<name>[^"]+)" declares variables (?P<variables>\([^)]*\))'))
+def then_entry_declares_variables(
+    prompt_world: dict[str, Any], name: str, variables: str,
+) -> None:
+    """Assert ``entry.metadata['variables']`` matches the Gherkin tuple body.
+
+    The ``variables`` capture is a BDD-style tuple body — empty ``()`` or
+    a comma-separated list like ``"test_command",``. We use
+    ``parsers.re`` so the empty-tuple case ``()`` matches (which the
+    default ``parsers.parse`` cannot because ``{variables}`` requires
+    at least one character). The regex tolerates optional surrounding
+    quotes so the scenario text stays readable.
+    """
+    snapshot = prompt_world.get("catalog_snapshot")
+    assert snapshot is not None, "catalog snapshot not initialized"
+    matching = [e for e in snapshot if e.name == name]
+    assert matching, (
+        f"expected entry with name={name!r}; "
+        f"got names {[e.name for e in snapshot]!r}"
+    )
+    declared = list(matching[0].metadata.get("variables", ()))
+    inner = variables.strip()[1:-1].strip() if len(variables) >= 2 else ""
+    if not inner:
+        expected_list: list[str] = []
+    else:
+        tokens = [t.strip() for t in inner.split(",")]
+        expected_list = [t.strip().strip('"').strip("'") for t in tokens if t.strip()]
+    assert declared == expected_list, (
+        f"expected {name!r} declared variables={expected_list!r}; "
+        f"got {declared!r}"
+    )
+
+
+@then(parsers.parse('the entry "{name}" location points to an existing file'))
+def then_entry_location_points_to_existing_file(
+    prompt_world: dict[str, Any], name: str,
+) -> None:
+    """Assert ``entry.metadata['template_file']`` resolves to an existing file.
+
+    The ``template_file`` field is stored as a repo-relative path
+    (e.g. ``prompts/strict_tdd.j2``). We resolve it relative to the
+    current working directory (which is the repo root during ``uv run
+    pytest``) and verify the file exists on disk. This is the
+    location invariant from spec REQ-45 S1.
+    """
+    snapshot = prompt_world.get("catalog_snapshot")
+    assert snapshot is not None, "catalog snapshot not initialized"
+    matching = [e for e in snapshot if e.name == name]
+    assert matching, (
+        f"expected entry with name={name!r}; "
+        f"got names {[e.name for e in snapshot]!r}"
+    )
+    location = matching[0].metadata.get("template_file", "")
+    assert location, (
+        f"expected non-empty template_file for {name!r}; got empty"
+    )
+    resolved = Path(location)
+    if not resolved.is_absolute():
+        resolved = Path.cwd() / resolved
+    assert resolved.exists(), (
+        f"expected {name!r} location {location!r} to exist on disk; "
+        f"resolved to {resolved!r}"
     )
 
 
