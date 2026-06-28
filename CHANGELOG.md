@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-06-28
+
+### Changed (BREAKING)
+- Removed v0.8.0 1-release compat shims (`Finding.from_legacy`,
+  `DriftReport.from_legacy`, `classify_binding_legacy`).
+- `Finding.__post_init__` now raises `TypeError` on non-`int`
+  `decision_id` (no `DeprecationWarning`, no `int()` coercion; `bool`
+  is also rejected as an `int` subclass).
+- `DriftReport(scanned_at=<float>)` raises `TypeError` (no compat shim
+  exists in v0.9.0).
+- `classify_binding(ref, graph_nodes, current_id_map)` 3-arg raises
+  `TypeError`.
+
+### Removed
+- v0.8.0 compat shims — `Finding.from_legacy`, `DriftReport.from_legacy`,
+  `classify_binding_legacy`. Removed per the 1-release commitment in
+  the v0.8.0 entry.
+
+### Migration
+- Replace `Finding(decision_id="42")` with `Finding(decision_id=42)`.
+- Replace `DriftReport(scanned_at=0.0)` with
+  `DriftReport(scanned_at="1970-01-01T00:00:00Z")`.
+- Replace `classify_binding_legacy(binding, nodes, id_map)` with
+  `classify_binding(binding, nodes)`.
+
+No automatic migration — v0.9.0 is a hard break.
+
 ## [0.8.1] - 2026-06-28
 
 ### Added
