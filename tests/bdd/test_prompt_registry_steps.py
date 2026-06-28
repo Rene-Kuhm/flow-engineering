@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
-from jinja2 import UndefinedError
+from flow_engineering.prompt_registry import PromptRenderError
 from pytest_bdd import given, parsers, scenario, then, when
 
 from flow_engineering import prompt_registry
@@ -112,7 +112,7 @@ def test_req46_render_with_kwargs(prompt_world: dict[str, Any]) -> None:
 
 @scenario(
     "../bdd/req46_prompt_render.feature",
-    "render with missing kwargs raises UndefinedError",
+    "render with missing kwargs raises PromptRenderError",
 )
 def test_req46_render_missing_kwargs(prompt_world: dict[str, Any]) -> None:
     pass
@@ -300,14 +300,14 @@ def then_result_equals(prompt_world: dict[str, Any], expected: str) -> None:
     )
 
 
-@then(parsers.parse('an UndefinedError is raised mentioning "{fragment}"'))
-def then_undefinederror_mentioning(
+@then(parsers.parse('a PromptRenderError is raised mentioning "{fragment}"'))
+def then_promptrendererror_mentioning(
     prompt_world: dict[str, Any], fragment: str
 ) -> None:
     exc = prompt_world["exception"]
-    assert exc is not None, "expected an UndefinedError to be raised"
-    assert isinstance(exc, UndefinedError), (
-        f"expected UndefinedError; got {type(exc).__name__}: {exc}"
+    assert exc is not None, "expected a PromptRenderError to be raised"
+    assert isinstance(exc, PromptRenderError), (
+        f"expected PromptRenderError; got {type(exc).__name__}: {exc}"
     )
     assert fragment in str(exc), (
         f"expected {fragment!r} in error message; got {str(exc)!r}"
