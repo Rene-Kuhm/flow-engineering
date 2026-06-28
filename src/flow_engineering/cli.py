@@ -3298,13 +3298,53 @@ def _parse_var_pair(raw: str) -> tuple[str, str]:
         "literal sentinel <{var_name}>."
     ),
 )
-def prompts_show(prompt_id: str, var_pairs: list[tuple[str, str]]) -> None:
+@click.option(
+    "--render-count",
+    is_flag=True,
+    help=(
+        "Emit a one-line summary of render-count + last-rendered-at from "
+        "the prompt render sink (REQ-V1.1.3). Composes with the rendered body."
+    ),
+)
+@click.option(
+    "--render-history",
+    "render_history",
+    type=int,
+    default=0,
+    help=(
+        "Emit the last N JSONL records for this prompt id as an aligned "
+        "text table (REQ-V1.1.3; default N=5 when the flag is passed "
+        "without a value). Composes with the rendered body."
+    ),
+)
+@click.option(
+    "--show-render-history",
+    "show_render_history",
+    is_flag=True,
+    default=False,
+    help=(
+        "Boolean toggle for the render-history view at default N=5 "
+        "(REQ-V1.1.3). Use ``--render-history 10`` to override N explicitly."
+    ),
+)
+def prompts_show(
+    prompt_id: str,
+    var_pairs: list[tuple[str, str]],
+    render_count: bool,
+    render_history: int,
+    show_render_history: bool,
+) -> None:
     """Render a prompt by id with optional --var substitutions (REQ-50 S2).
 
     Output: metadata header (``prompt_id:``, ``version:``, ``variables:``)
     + rendered template body + footer noting the render source + the
     autoescape status. Uses ``render_prompt_safe()`` so missing declared
     variables surface as ``<{var_name}>`` sentinels (per design D4 + OQ-4).
+
+    The ``--render-count`` + ``--render-history [N]`` flags (REQ-V1.1.3)
+    surface the prompt render sink content without coupling to the
+    registry. They compose with the rendered body — they do NOT
+    replace it.
 
     Exit codes:
     - 0: rendered successfully (or sentinel substitution).
@@ -3379,6 +3419,57 @@ def prompts_show(prompt_id: str, var_pairs: list[tuple[str, str]]) -> None:
     click.echo(
         f"(rendered via Jinja2 · autoescape=on · source: {_entry_location(entry)})"
     )
+
+    # REQ-V1.1.3 S2: render-count + render-history flags surface the
+    # prompt render sink content. Best-effort: a missing sink file
+    # means zero renders — emit a friendly note instead of crashing.
+    from flow_engineering.prompt_render_log import PromptRenderLog
+
+    sink = PromptRenderLog()
+    history_n = render_history if render_history > 0 else 0
+    if show_render_history and history_n == 0:
+        history_n = 5
+
+    if render_count or history_n > 0:
+        try:
+            events = sink.read_all()
+        except OSError as exc:
+            click.echo(
+                f"warning: could not read prompt render sink: {exc}",
+                err=True,
+            )
+            events = []
+
+        matching = [e for e in events if e.prompt_id == prompt_id]
+
+        if render_count:
+            last_at = (
+                max((e.rendered_at for e in matching), default=None)
+            )
+            last_iso = (
+                datetime.fromtimestamp(last_at, tz=UTC).isoformat()
+                if last_at is not None
+                else "never"
+            )
+            click.echo(
+                f"render_count: {len(matching)} (last rendered_at: {last_iso})"
+            )
+
+        if history_n > 0:
+            tail = matching[-history_n:]
+            click.echo(f"render_history (last {len(tail)}):")
+            if not tail:
+                click.echo("  (no records)")
+            else:
+                click.echo(
+                    f"  {'rendered_at':<22} {'status':<6} {'elapsed_ms':<10} error"
+                )
+                for ev in tail:
+                    status = "ok" if ev.ok else "fail"
+                    click.echo(
+                        f"  {ev.rendered_at:<22.3f} {status:<6} "
+                        f"{ev.elapsed_ms:<10.2f} {ev.error or ''}"
+                    )
 
 
 if __name__ == "__main__":
