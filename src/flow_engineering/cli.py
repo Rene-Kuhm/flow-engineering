@@ -62,6 +62,88 @@ def main() -> None:
     """Flow Engineering -- orchestrator of the Agentic & Context-Driven closed loop."""
 
 
+def _read_pyproject_min_skill_versions(
+    pyproject_path: Path,
+) -> dict[str, str] | None:
+    """Read ``[tool.flow_engineering] min_sdd_skill_versions`` from ``pyproject.toml``.
+
+    Returns ``None`` when the section is missing or the file does not
+    exist (the gate is then a no-op pass-through). Uses stdlib
+    ``tomllib`` (Python 3.11+).
+    """
+    if not pyproject_path.exists():
+        return None
+    try:
+        import tomllib
+
+        with pyproject_path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, ValueError):
+        return None
+    section = (
+        data.get("tool", {}).get("flow_engineering", {}).get(
+            "min_sdd_skill_versions",
+        )
+    )
+    if not isinstance(section, dict):
+        return None
+    return {str(k): str(v) for k, v in section.items()}
+
+
+def _enforce_min_skill_versions_or_exit(pyproject_path: Path) -> None:
+    """REQ-V1.2.3: enforce ``min_sdd_skill_versions`` at SDD command startup.
+
+    Reads the pyproject section and calls
+    :func:`flow_engineering.opencode_skill_catalog.enforce_min_skill_versions`.
+    On violation emits a structured JSON remediation payload on stderr
+    and exits with code 4 (mirroring the
+    ``observability.EXIT_WRITE_FAILURE`` contract per design D3 + D9).
+    No-ops when the section is absent or empty.
+    """
+    min_versions = _read_pyproject_min_skill_versions(pyproject_path)
+    if not min_versions:
+        return
+    from flow_engineering import opencode_skill_catalog as osc
+
+    try:
+        osc.enforce_min_skill_versions(min_versions)
+    except osc.SkillVersionError as exc:
+        message = str(exc)
+        # Parse "<skill> requires version >= <min>; found <found>. Run: ..."
+        skill_name = ""
+        expected = ""
+        found = ""
+        hint = "pip install --upgrade gentle-ai"
+        for prefix in (
+            " requires version >= ",
+            "; found ",
+        ):
+            pass
+        # Lightweight parser: split on common delimiters.
+        try:
+            head, _, tail = message.partition(" requires version >= ")
+            skill_name = head.strip()
+            rest = tail
+            expected, _, after = rest.partition("; found ")
+            expected = expected.strip()
+            found_part, _, hint_part = after.partition(". Run: ")
+            found = found_part.strip()
+            if hint_part:
+                hint = hint_part.strip()
+        except Exception:
+            pass
+        payload = {
+            "error": "skill_version_violation",
+            "skill": skill_name,
+            "expected": expected,
+            "found": found,
+            "hint": hint,
+            "message": message,
+        }
+        click.echo(json.dumps(payload), err=True)
+        sys.exit(observability.EXIT_WRITE_FAILURE)
+
+
 @main.command()
 @click.argument("change")
 @click.option(
@@ -167,6 +249,7 @@ def doctor() -> None:
 @click.option("--reason", default=None, help="Reason for disabling strict TDD.")
 def apply(change: str, target: Path, no_strict_tdd: bool, reason: str | None) -> None:
     """Apply tasks for a change (TASKED -> APPLYING -> VERIFYING)."""
+    _enforce_min_skill_versions_or_exit(target / "pyproject.toml")
     if no_strict_tdd and not reason:
         click.echo("ERROR: --no-strict-tdd requires --reason", err=True)
         sys.exit(2)
@@ -189,6 +272,7 @@ def apply(change: str, target: Path, no_strict_tdd: bool, reason: str | None) ->
 @click.option("--test-output", default="", help="Test runner output to classify.")
 def verify(change: str, target: Path, test_output: str) -> None:
     """Verify change (APPLYING -> VERIFYING -> ARCHIVING)."""
+    _enforce_min_skill_versions_or_exit(target / "pyproject.toml")
     result = verify_change(change=change, target=target, test_output=test_output)
     click.echo(f"[{result.action}] {result.message}")
     if result.failure_class:
@@ -207,6 +291,7 @@ def verify(change: str, target: Path, test_output: str) -> None:
 @click.option("--no-graphify", is_flag=True, help="Skip the graphify rebuild (dry-run).")
 def archive(change: str, target: Path, diff: str, no_graphify: bool) -> None:
     """Archive change (ARCHIVING -> DONE), trigger graph rebuild."""
+    _enforce_min_skill_versions_or_exit(target / "pyproject.toml")
     result = archive_change(
         change=change,
         target=target,
