@@ -482,6 +482,78 @@ def record_snapshot_event(counter_name: str, **labels: Any) -> None:
     increment(counter_name, **labels)
 
 
+# ---------- Prompt render counters (REQ-V1.1.4 / REQ-52) ----------
+
+
+PROMPT_RENDER_COUNTER_NAMES: frozenset[str] = frozenset(
+    {"prompts_render_total", "prompts_render_ms", "prompts_render_failed_total"}
+)
+"""Catalog of NEW prompt render counter names (REQ-V1.1.4 / REQ-52).
+
+Exported so callers can validate counter names against the catalog
+before emitting; ``flow metrics`` consumers rely on this contract.
+
+- ``prompts_render_total{domain, prompt_id, status}`` — every render
+  attempt; ``status="ok"`` on success / ``"fail"`` on exception.
+- ``prompts_render_ms{domain, prompt_id, count}`` — wall-clock duration
+  in milliseconds (recorded alongside each ``prompts_render_total``
+  increment; the ``count`` label carries the duration).
+- ``prompts_render_failed_total{domain, prompt_id, error}`` — failure
+  events only (``error`` = ``"missing_var"`` / ``"template_error"`` /
+  ``"unknown"``).
+"""
+
+
+def record_prompt_render_summary(
+    *,
+    prompt_id: str,
+    domain: str,
+    elapsed_ms: float,
+    ok: bool,
+    error: str | None,
+) -> None:
+    """Append one set of prompt render counters to the JSONL sink (REQ-V1.1.4).
+
+    Emits 2 counters on success (total + ms) or 3 counters on failure
+    (total + ms + failed_total). Counter labels carry the prompt_id,
+    domain, and status/error for downstream dashboard slicing.
+
+    Args:
+        prompt_id: Catalog identifier of the rendered prompt.
+        domain: The prompt's domain (e.g., ``"binding"``); surfaces in
+            the counter labels so ``flow metrics --domain prompt`` can
+            group by domain without an additional lookup.
+        elapsed_ms: Wall-clock duration of the render in milliseconds.
+        ok: ``True`` on success, ``False`` on exception.
+        error: Error category (``"missing_var"`` / ``"template_error"`` /
+            ``"unknown"``) or ``None`` on success.
+
+    Notes:
+        Defensive: never raises. Failures are absorbed by :func:`increment`
+        which swallows ``OSError`` on the underlying file write.
+    """
+    status = "ok" if ok else "fail"
+    increment(
+        "prompts_render_total",
+        domain=domain,
+        prompt_id=prompt_id,
+        status=status,
+    )
+    increment(
+        "prompts_render_ms",
+        domain=domain,
+        prompt_id=prompt_id,
+        count=float(elapsed_ms),
+    )
+    if not ok:
+        increment(
+            "prompts_render_failed_total",
+            domain=domain,
+            prompt_id=prompt_id,
+            error=error or "unknown",
+        )
+
+
 # ---------- Change #6 PR#1 T1.1: read-side observability helpers (REQ-35..39) ----------
 
 
@@ -507,6 +579,7 @@ DOMAIN_BY_PREFIX: dict[str, str] = {
     "update_observation_metadata_": "metadata",  # REQ-13 / REQ-24
     "project_tag_": "metadata",   # REQ-24
     "engine_": "engine",          # REQ-42 reserved (no v1 counters; v1.1 follow-up)
+    "prompts_": "prompt",         # REQ-V1.1.4 / REQ-52 (prompt render counters)
 }
 """Prefix -> domain lookup table for change #6 read-side helpers (design D5).
 
