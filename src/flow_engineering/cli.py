@@ -2870,5 +2870,117 @@ def prompts_list(json_flag: bool) -> None:
     click.echo(_render_prompts_list_table(entries))
 
 
+# ---------- REQ-50 T3.2: flow prompts show <id> subcommand ----------
+
+
+_EXIT_UNKNOWN_PROMPT_ID: int = 5
+"""Exit code for ``flow prompts show <unknown>`` per design D9."""
+
+
+def _parse_var_pair(raw: str) -> tuple[str, str]:
+    """Parse a ``key=value`` string into ``(key, value)`` tuple.
+
+    Used by ``flow prompts show --var`` to convert each Click value into
+    a kwarg pair. ``=`` is the only separator; keys with ``=`` in the
+    value are NOT supported (mirrors the spec REQ-50 S2 grammar).
+    """
+    if "=" not in raw:
+        raise click.BadParameter(
+            f"--var must be key=value (got {raw!r}); expected '=' separator",
+            param_hint="--var",
+        )
+    key, _, value = raw.partition("=")
+    key = key.strip()
+    if not key:
+        raise click.BadParameter(
+            f"--var key cannot be empty (got {raw!r})",
+            param_hint="--var",
+        )
+    return key, value
+
+
+@prompts_group.command(name="show")
+@click.argument("prompt_id")
+@click.option(
+    "--var",
+    "var_pairs",
+    multiple=True,
+    callback=lambda _ctx, _param, values: [
+        _parse_var_pair(v) for v in values
+    ],
+    help=(
+        "Variable substitution as key=value (repeatable; last-write-wins). "
+        "Per spec REQ-50 S2: missing declared vars get the "
+        "literal sentinel <{var_name}>."
+    ),
+)
+def prompts_show(prompt_id: str, var_pairs: list[tuple[str, str]]) -> None:
+    """Render a prompt by id with optional --var substitutions (REQ-50 S2).
+
+    Output: metadata header (``prompt_id:``, ``version:``, ``variables:``)
+    + rendered template body + footer noting the render source + the
+    autoescape status. Uses ``render_prompt_safe()`` so missing declared
+    variables surface as ``<{var_name}>`` sentinels (per design D4 + OQ-4).
+
+    Exit codes:
+    - 0: rendered successfully (or sentinel substitution).
+    - 5: unknown ``prompt_id`` (emits JSON error on stderr).
+    """
+    from flow_engineering import prompt_registry
+
+    try:
+        entry = prompt_registry.get_prompt(prompt_id)
+    except KeyError:
+        click.echo(
+            json.dumps(
+                {
+                    "error": "unknown prompt id",
+                    "prompt_id": prompt_id,
+                    "hint": "run 'flow prompts list' to see available",
+                },
+                ensure_ascii=False,
+            ),
+            err=True,
+        )
+        sys.exit(_EXIT_UNKNOWN_PROMPT_ID)
+
+    declared = list(entry.metadata.get("variables", ()))
+    safe_kwargs: dict[str, str] = dict(var_pairs)
+    # Per D4 + OQ-4: substitute the literal sentinel for missing
+    # declared variables BEFORE rendering (render_prompt_safe has its
+    # own logic but we pre-substitute here so the header + body use
+    # the same source-of-truth).
+    for var_name in declared:
+        if var_name not in safe_kwargs:
+            safe_kwargs[var_name] = f"<{var_name}>"
+
+    try:
+        rendered = prompt_registry.render_prompt_safe(prompt_id, **safe_kwargs)
+    except Exception as exc:
+        click.echo(
+            json.dumps(
+                {
+                    "error": "render failed",
+                    "prompt_id": prompt_id,
+                    "reason": str(exc),
+                },
+                ensure_ascii=False,
+            ),
+            err=True,
+        )
+        sys.exit(_EXIT_UNKNOWN_PROMPT_ID)
+
+    click.echo(f"prompt_id:   {entry.name}")
+    click.echo(f"version:     {entry.version}")
+    click.echo(f"owner:       {_entry_owner(entry)}")
+    click.echo(f"variables:   {{{', '.join(f'{k}: {v}' for k, v in safe_kwargs.items())}}}")
+    click.echo("-" * 64)
+    click.echo(rendered)
+    click.echo("-" * 64)
+    click.echo(
+        f"(rendered via Jinja2 · autoescape=on · source: {_entry_location(entry)})"
+    )
+
+
 if __name__ == "__main__":
     main()
