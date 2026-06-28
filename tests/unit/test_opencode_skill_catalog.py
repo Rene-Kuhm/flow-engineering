@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_engineering import opencode_skill_catalog as osc_module
 from flow_engineering.opencode_skill_catalog import (
     FRONTMATTER_PATTERN,
     SIDECAR_PATH,
@@ -804,6 +805,18 @@ def skills_root(tmp_path: Path) -> Path:
     return tmp_path / ".config" / "opencode" / "skills"
 
 
+@pytest.fixture
+def patched_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Monkeypatch ``Path.home`` so ``enforce_min_skill_versions`` reads from ``tmp_path``.
+
+    Cross-platform: replaces the ``Path.home`` classmethod directly so
+    Windows (``USERPROFILE``) and Unix (``HOME``) both redirect to the
+    test's ``tmp_path``.
+    """
+    monkeypatch.setattr(osc_module.Path, "home", classmethod(lambda cls: tmp_path))
+    return tmp_path
+
+
 class TestEnforceMinSkillVersions:
     """T3.1 RED tests for ``enforce_min_skill_versions(min_versions)``.
 
@@ -814,12 +827,11 @@ class TestEnforceMinSkillVersions:
     """
 
     def test_passes_when_all_skills_meet_minimum(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, patched_home: Path,
     ) -> None:
         """8 SKILL.md files with version 3.0 + min dict {*: 3.0} returns None."""
         skills_root = tmp_path / ".config" / "opencode" / "skills"
         _mock_skill_layout(tmp_path, skills_root)
-        monkeypatch.setenv("HOME", str(tmp_path))
         min_versions = {
             "sdd-explore": "3.0",
             "sdd-propose": "3.0",
@@ -834,7 +846,7 @@ class TestEnforceMinSkillVersions:
         assert result is None
 
     def test_raises_skill_version_error_on_downgrade(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, patched_home: Path,
     ) -> None:
         """sdd-apply on disk at 2.5 + min dict {sdd-apply: 3.0} raises."""
         skills_root = tmp_path / ".config" / "opencode" / "skills"
@@ -842,7 +854,6 @@ class TestEnforceMinSkillVersions:
             tmp_path, skills_root,
             skills={"sdd-apply": "2.5"},
         )
-        monkeypatch.setenv("HOME", str(tmp_path))
         with pytest.raises(SkillVersionError) as excinfo:
             enforce_min_skill_versions({"sdd-apply": "3.0"})
         msg = str(excinfo.value)
@@ -851,18 +862,17 @@ class TestEnforceMinSkillVersions:
         assert "2.5" in msg
 
     def test_skips_missing_skill(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, patched_home: Path,
     ) -> None:
         """min dict references nonexistent skill name -> no error."""
         skills_root = tmp_path / ".config" / "opencode" / "skills"
         _mock_skill_layout(tmp_path, skills_root)
-        monkeypatch.setenv("HOME", str(tmp_path))
         # Skill not in the layout; helper must skip silently.
         result = enforce_min_skill_versions({"nonexistent-skill": "3.0"})
         assert result is None
 
     def test_skips_non_sdd_skill(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, patched_home: Path,
     ) -> None:
         """min dict references non-sdd-prefixed key -> no error.
 
@@ -872,12 +882,11 @@ class TestEnforceMinSkillVersions:
         """
         skills_root = tmp_path / ".config" / "opencode" / "skills"
         _mock_skill_layout(tmp_path, skills_root)
-        monkeypatch.setenv("HOME", str(tmp_path))
         result = enforce_min_skill_versions({"some-other-tool": "3.0"})
         assert result is None
 
     def test_handles_non_numeric_version_gracefully(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, patched_home: Path,
     ) -> None:
         """SKILL.md with version '3.0-beta' parses via safe fallback.
 
@@ -891,7 +900,6 @@ class TestEnforceMinSkillVersions:
             tmp_path, skills_root,
             skills={"sdd-apply": "3.0-beta"},
         )
-        monkeypatch.setenv("HOME", str(tmp_path))
         # Pass-through case: helper must not raise for a non-SDD-style
         # version; it may parse, fall back, or warn — but no crash.
         result = enforce_min_skill_versions({"sdd-apply": "3.0"})

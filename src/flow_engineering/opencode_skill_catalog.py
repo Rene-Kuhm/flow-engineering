@@ -296,6 +296,78 @@ discovered at runtime) for deterministic drift detection.
 """
 
 
+def _parse_major_minor(version: str) -> tuple[int, int]:
+    """Parse a ``MAJOR.MINOR`` version string into an integer tuple.
+
+    Tolerates pre-release suffixes (e.g., ``"3.0-beta"`` parses as
+    ``(3, 0)``). Strings that do not contain a ``MAJOR.MINOR`` prefix
+    fall back to ``(0, 0)`` (mirroring the safe-fallback precedent at
+    :func:`_extract_version`).
+
+    Args:
+        version: A version string such as ``"3.0"`` / ``"2.5"`` /
+            ``"3.0-beta"``.
+
+    Returns:
+        A ``(MAJOR, MINOR)`` tuple of ints. Falls back to ``(0, 0)`` for
+        non-numeric or malformed strings.
+    """
+    match = re.match(r"(\d+)\.(\d+)", version)
+    if not match:
+        return 0, 0
+    return int(match.group(1)), int(match.group(2))
+
+
+def enforce_min_skill_versions(min_versions: dict[str, str]) -> None:
+    """Enforce a project-pinned minimum skill-version gate (REQ-V1.2.3).
+
+    Iterates ``min_versions`` (sourced from the ``[tool.flow_engineering]
+    min_sdd_skill_versions`` pyproject section) and verifies that each
+    orchestrator-dispatched sdd-* skill on disk carries a ``version``
+    frontmatter field meeting the minimum. Missing skills and
+    non-sdd-* keys are silently skipped — the gate only fires on the
+    8 sdd-* agents the orchestrator dispatches.
+
+    Args:
+        min_versions: Mapping of ``skill_name -> minimum_version`` where
+            ``skill_name`` is a sdd-* agent identifier and
+            ``minimum_version`` is a ``MAJOR.MINOR`` semver string. The
+            8 orchestrator-dispatched sdd-* agents are
+            ``sdd-explore`` / ``sdd-propose`` / ``sdd-spec`` /
+            ``sdd-design`` / ``sdd-tasks`` / ``sdd-apply`` /
+            ``sdd-verify`` / ``sdd-archive``.
+
+    Returns:
+        ``None`` on success (all in-scope skills meet the minimum).
+
+    Raises:
+        SkillVersionError: When any in-scope skill on disk carries a
+            ``version`` frontmatter field lower than the declared
+            minimum. The error message includes the offending skill
+            name, the expected minimum, the on-disk version, and the
+            remediation hint:
+
+            ``"sdd-apply requires version >= 3.0; found 2.5. Run: pip install --upgrade gentle-ai"``
+    """
+    skills_root = Path.home() / ".config" / "opencode" / "skills"
+    for skill_name, min_version in min_versions.items():
+        if not skill_name.startswith("sdd-"):
+            continue
+        skill_path = skills_root / skill_name / "SKILL.md"
+        if not skill_path.exists():
+            continue
+        parsed = parse_frontmatter(skill_path)
+        on_disk_version = str(parsed.get("version", "0.0"))
+        on_disk_tuple = _parse_major_minor(on_disk_version)
+        min_tuple = _parse_major_minor(min_version)
+        if on_disk_tuple < min_tuple:
+            raise SkillVersionError(
+                f"{skill_name} requires version >= {min_version}; "
+                f"found {on_disk_version}. "
+                f"Run: pip install --upgrade gentle-ai"
+            )
+
+
 __all__ = [
     "FRONTMATTER_PATTERN",
     "SIDECAR_PATH",
@@ -305,6 +377,7 @@ __all__ = [
     "SkillVersionError",
     "check_drift",
     "compute_frontmatter_sha256",
+    "enforce_min_skill_versions",
     "init_checksums",
     "parse_frontmatter",
     "update_checksums",
