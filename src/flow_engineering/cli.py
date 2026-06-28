@@ -114,11 +114,6 @@ def _enforce_min_skill_versions_or_exit(pyproject_path: Path) -> None:
         expected = ""
         found = ""
         hint = "pip install --upgrade gentle-ai"
-        for prefix in (
-            " requires version >= ",
-            "; found ",
-        ):
-            pass
         # Lightweight parser: split on common delimiters.
         try:
             head, _, tail = message.partition(" requires version >= ")

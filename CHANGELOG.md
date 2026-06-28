@@ -3,6 +3,33 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
+## [1.2.0c] - 2026-06-28
+
+### Added
+- `[tool.flow_engineering] min_sdd_skill_versions` enforcement
+  (REQ-V1.2.3 / REQ-54): project-pinned minimum-version dict for the
+  8 orchestrator-dispatched sdd-* agents (`sdd-explore` / `sdd-propose`
+  / `sdd-spec` / `sdd-design` / `sdd-tasks` / `sdd-apply` / `sdd-verify`
+  / `sdd-archive`). The three `flow apply` / `flow verify` /
+  `flow archive` Click commands now enforce this gate at startup:
+  on-disk `~/.config/opencode/skills/<name>/SKILL.md` files below the
+  declared minimum trigger exit code 4 + a structured JSON remediation
+  payload on stderr pointing at `pip install --upgrade gentle-ai`.
+  - New `enforce_min_skill_versions(min_versions)` helper in
+    `opencode_skill_catalog.py` reuses the existing `SkillVersionError`
+    exception (no new exception hierarchy needed).
+  - Pre-release version strings like `"3.0-beta"` parse via a tolerant
+    `_parse_major_minor()` helper that strips the suffix and returns
+    `(3, 0)`. Malformed versions fall back to `(0, 0)` so the gate
+    fires correctly (any minimum > 0.0 is satisfied).
+
+### Migration
+- Project operators on an outdated OpenCode runtime (e.g., sdd-apply
+  2.5 vs the codebase's 3.0 minimum) will see exit code 4 from
+  `flow apply` / `flow verify` / `flow archive` instead of silent
+  breakage. Run `pip install --upgrade gentle-ai` to refresh the
+  on-disk `SKILL.md` files.
+
 ## [1.2.0b] - 2026-06-28
 
 ### Added
