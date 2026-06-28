@@ -788,3 +788,176 @@ class TestPromptsList:
         assert strict_tdd["version"] == "1.0.0", (
             f"expected strict_tdd version=1.0.0; got {strict_tdd['version']!r}"
         )
+
+
+# ---------- T3.2: flow prompts show <id> subcommand + --var repeatable (REQ-50 S2) ----------
+
+
+class TestPromptsShow:
+    """RED fixtures for `flow prompts show <id>` (REQ-50 S2).
+
+    The CLI surface renders one PROMPT_NAMES entry by id with optional
+    ``--var key=value`` (repeatable) substitutions. Missing declared
+    variables get the literal sentinel ``<{var_name}>`` (per D4 + OQ-4).
+    Unknown prompt_id exits 5 with a JSON error on stderr.
+
+    Acceptance criteria (tasks-pr2.md T3.2 + spec REQ-50 S2):
+    - ``flow prompts show strict_tdd --var test_command=pytest`` exits 0;
+      stdout carries the metadata header (prompt_id + version + variables),
+      the rendered string with ``pytest`` substituted, and a footer
+      noting the render source + autoescape status.
+    - Missing ``--var`` for a prompt with declared variables prints the
+      ``<{var_name}>`` sentinel in the rendered output (per OQ-4 + D4).
+    - Unknown ``prompt_id`` exits 5 and emits a JSON error object on
+      stderr containing ``{"error": "unknown prompt id", ...}``.
+    - ``--var`` is repeatable; last-write-wins for repeated keys.
+    """
+
+    def test_show_strict_tdd_substitutes_var(self) -> None:
+        """`flow prompts show strict_tdd --var test_command=pytest` renders correctly.
+
+        The CLI invokes ``render_prompt_safe()`` (per D4 sentinel convention)
+        with the provided kwarg, prints the metadata header + rendered
+        string + footer, and exits 0. The rendered body MUST contain
+        the substituted ``pytest`` token (NOT the sentinel).
+        """
+        result = runner.invoke(
+            main,
+            ["prompts", "show", "strict_tdd", "--var", "test_command=pytest"],
+        )
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "pytest" in result.stdout, (
+            f"expected 'pytest' substitution in stdout; got {result.stdout!r}"
+        )
+        assert "STRICT TDD MODE IS ACTIVE" in result.stdout, (
+            f"expected template prefix in stdout; got {result.stdout!r}"
+        )
+
+    def test_show_prints_metadata_header(self) -> None:
+        """`flow prompts show <id>` stdout contains a metadata header.
+
+        Per spec REQ-50 S2: the header carries ``prompt_id:``,
+        ``version:``, ``variables:`` lines so the user can audit which
+        entry is being rendered before reading the body.
+        """
+        result = runner.invoke(
+            main,
+            ["prompts", "show", "strict_tdd", "--var", "test_command=pytest"],
+        )
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r}"
+        )
+        assert "prompt_id:" in result.stdout, (
+            f"expected 'prompt_id:' header line; got {result.stdout!r}"
+        )
+        assert "strict_tdd" in result.stdout, (
+            f"expected 'strict_tdd' in header; got {result.stdout!r}"
+        )
+        assert "version:" in result.stdout, (
+            f"expected 'version:' header line; got {result.stdout!r}"
+        )
+        assert "1.0.0" in result.stdout, (
+            f"expected '1.0.0' version stamp; got {result.stdout!r}"
+        )
+        assert "variables:" in result.stdout, (
+            f"expected 'variables:' header line; got {result.stdout!r}"
+        )
+        assert "test_command" in result.stdout, (
+            f"expected 'test_command' variable name; got {result.stdout!r}"
+        )
+
+    def test_show_missing_var_prints_sentinel(self) -> None:
+        """`flow prompts show strict_tdd` (no --var) prints the sentinel.
+
+        Per design D4 + OQ-4: when a declared variable is missing from
+        the kwargs, ``render_prompt_safe()`` substitutes the literal
+        sentinel ``<{var_name}>`` (e.g., ``<test_command>``) so the
+        user sees exactly which variable was missing.
+        """
+        result = runner.invoke(main, ["prompts", "show", "strict_tdd"])
+        assert result.exit_code == 0, (
+            f"expected exit 0 even with missing var; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "<test_command>" in result.stdout, (
+            f"expected '<test_command>' sentinel in stdout for missing var; "
+            f"got {result.stdout!r}"
+        )
+
+    def test_show_unknown_id_exits_five(self) -> None:
+        """`flow prompts show <unknown>` exits 5 + JSON error on stderr.
+
+        Per design D9 exit code contract: unknown prompt id → exit 5
+        with a structured JSON error on stderr so downstream consumers
+        can parse it. The error payload MUST contain ``"error"``,
+        ``"prompt_id"``, and ``"hint"`` keys per the spec verbatim.
+        """
+        result = runner.invoke(main, ["prompts", "show", "no_such_prompt_xyz"])
+        assert result.exit_code == 5, (
+            f"expected exit 5 on unknown prompt_id; got {result.exit_code}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        loaded = json.loads(result.stderr)
+        assert loaded["error"] == "unknown prompt id", (
+            f"expected 'unknown prompt id' error key; got {loaded!r}"
+        )
+        assert loaded["prompt_id"] == "no_such_prompt_xyz", (
+            f"expected prompt_id in error payload; got {loaded!r}"
+        )
+        assert "hint" in loaded, (
+            f"expected 'hint' key for remediation; got {loaded!r}"
+        )
+
+    def test_show_var_repeatable_last_write_wins(self) -> None:
+        """`flow prompts show --var KEY=VALUE --var KEY=OTHER` last-write-wins.
+
+        ``--var`` is REPEATABLE per spec REQ-50 S2; when the same key
+        is passed twice, the SECOND value wins (last-write-wins
+        convention; mirrors Click's repeatable-flag pattern).
+        """
+        result = runner.invoke(
+            main,
+            [
+                "prompts", "show", "strict_tdd",
+                "--var", "test_command=first",
+                "--var", "test_command=second",
+            ],
+        )
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r}"
+        )
+        assert "second" in result.stdout, (
+            f"expected 'second' (last-write-wins) in stdout; got {result.stdout!r}"
+        )
+        # The sentinel substitution was the only --var-less default; we
+        # supplied BOTH pairs so the sentinel MUST NOT appear.
+        assert "<test_command>" not in result.stdout, (
+            f"unexpected sentinel '<test_command>' in stdout when --var provided; "
+            f"got {result.stdout!r}"
+        )
+
+    def test_show_footer_includes_autoescape_marker(self) -> None:
+        """`flow prompts show <id>` stdout footer notes the render source + autoescape.
+
+        Per spec REQ-50 S2 (output example): the footer carries
+        ``(rendered via Jinja2 · autoescape=on · source: ...``. The
+        autoescape marker is the user-facing signal that HTML / control
+        chars in ``{{ var }}`` substitutions will be escaped (REQ-46 W2
+        + OQ-2 carry-forward).
+        """
+        result = runner.invoke(
+            main,
+            ["prompts", "show", "strict_tdd", "--var", "test_command=pytest"],
+        )
+        assert result.exit_code == 0, (
+            f"expected exit 0; got {result.exit_code}. "
+            f"stdout={result.stdout!r}"
+        )
+        assert "autoescape" in result.stdout, (
+            f"expected 'autoescape' marker in footer; got {result.stdout!r}"
+        )
