@@ -48,7 +48,7 @@ import time as _time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
@@ -650,7 +650,7 @@ class SnapshotManager:
                 f"expected={expected_sha!r}"
             )
 
-        return envelope
+        return cast(dict[str, Any], envelope)
 
     # ----- diff ---------------------------------------------------------
 

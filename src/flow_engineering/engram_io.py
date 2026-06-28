@@ -17,6 +17,7 @@ from flow_engineering.auto_suggest_code_refs import (
     FLOW_AUTO_SUGGEST_ENV as _FLOW_AUTO_SUGGEST_ENV,
 )
 from flow_engineering.auto_suggest_code_refs import (
+    PromptFn,
     auto_suggest_code_refs,
 )
 from flow_engineering.binding import (
@@ -538,7 +539,7 @@ class EngramClient:
         with_suggest: bool = False,
         no_suggest: bool = False,
         is_tty: bool | None = None,
-        prompt_fn=None,
+        prompt_fn: PromptFn | None = None,
     ) -> dict[str, Any]:
         """Save a phase artifact (explore/propose/design/spec/tasks/apply-progress/etc).
 
@@ -677,7 +678,7 @@ class EngramClient:
         with_suggest: bool,
         no_suggest: bool,
         is_tty: bool | None,
-        prompt_fn,
+        prompt_fn: PromptFn | None,
     ) -> str:
         """Build content + block honoring REQ-3 validation + REQ-6 auto-suggest.
 

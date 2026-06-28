@@ -1409,11 +1409,11 @@ def format_percentile_report(result: dict[str, float]) -> str:
             lines.append("  ".join(row_parts))
             continue
         for pct in (50, 95, 99):
-            value = grouped[counter].get(pct)
-            if value is None:
+            pct_value: float | None = grouped[counter].get(pct)
+            if pct_value is None:
                 row_parts.append("".rjust(6))
             else:
-                row_parts.append(f"{value:g}".rjust(6))
+                row_parts.append(f"{pct_value:g}".rjust(6))
         lines.append("  ".join(row_parts))
     return "\n".join(lines) + "\n"
 

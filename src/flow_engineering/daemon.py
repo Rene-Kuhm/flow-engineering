@@ -165,6 +165,8 @@ def _maybe_emit_drift(
     try:
         from flow_engineering.engram_io import EngramClient
 
+        if backend is None:
+            return
         client = EngramClient(change, backend)
         prose = client.load_phase_prose("apply-progress")
         if not prose:

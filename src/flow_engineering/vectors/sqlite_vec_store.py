@@ -28,7 +28,7 @@ import numpy as np
 # KNN machinery use ``pytest.importorskip("sqlite_vec")`` so missing extra
 # produces a clean skip, not a collection error.
 try:
-    import sqlite_vec  # type: ignore[import-untyped]
+    import sqlite_vec
 except ImportError:  # pragma: no cover - covered via monkeypatch test
     sqlite_vec = None
 
