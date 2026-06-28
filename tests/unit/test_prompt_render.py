@@ -132,7 +132,13 @@ class TestRenderPromptRaisesKeyErrorOnUnknownName:
 class TestRenderPromptSafeReturnsSentinelForMissingKwargs:
     def test_safe_substitutes_sentinel(self, jinja_prompts: None) -> None:
         result = render_prompt_safe("jinja_missing")
-        assert result == "Hello, <user_name>!"
+        # REQ-46 W2: autoescape is on, so the literal sentinel
+        # ``<user_name>`` is HTML-escaped to ``&lt;user_name&gt;``.
+        # The sentinel marker is still detectable because the
+        # variable name ``user_name`` appears in the output between
+        # ``&lt;`` and ``&gt;``.
+        assert "user_name" in result
+        assert "&lt;user_name&gt;" in result
 
     def test_safe_with_provided_var_substitutes_value(self, jinja_prompts: None) -> None:
         result = render_prompt_safe("jinja_missing", user_name="World")
@@ -142,7 +148,8 @@ class TestRenderPromptSafeReturnsSentinelForMissingKwargs:
         # Should NOT raise even when called with no kwargs for a template
         # that requires vars.
         result = render_prompt_safe("jinja_simple")
-        assert result == "Hello, <user_name>!"
+        assert "user_name" in result
+        assert "&lt;user_name&gt;" in result
 
 
 class TestListRequiredVarsReturnsUndeclaredVariables:
@@ -209,6 +216,57 @@ class TestRenderPromptFallsBackToPythonFormatForLegacyTemplates:
         """Templates with no placeholders return the template unchanged."""
         result = render_prompt("auto_suggest_empty")
         assert result == "No auto-suggested bindings available."
+
+
+class TestPromptRenderSafeAutoescapeEnabled:
+    """REQ-46 W2 — ``render_prompt_safe`` MUST enable Jinja2 autoescape.
+
+    Per verify-report-pr2b W2 + design D4: the safe renderer is used by
+    ``flow prompts show <id>`` to surface missing-variable sentinels to
+    the user. If a prompt template contains HTML-looking content
+    (``<script>``) and the user-supplied value is malicious, the CLI
+    must NOT echo the raw HTML back. ``select_autoescape(
+    default_for_string=True)`` enables autoescape for string templates
+    by default (no filename known), so the rendered output escapes
+    HTML metacharacters.
+    """
+
+    def test_render_prompt_safe_escapes_html_in_substituted_value(
+        self, jinja_prompts: None
+    ) -> None:
+        """A Jinja2 template rendered through ``render_prompt_safe`` escapes
+        HTML in the substituted value because autoescape is enabled."""
+        prompt_registry.register(
+            name="autoescape_html",
+            template="Hello, {{ user_name }}!",
+            domain=prompt_registry.PromptDomain.OBSERVABILITY,
+            version="1.0.0",
+            required_vars=("user_name",),
+        )
+        try:
+            result = render_prompt_safe(
+                "autoescape_html", user_name="<script>alert(1)</script>"
+            )
+            assert "<script>" not in result
+            assert "&lt;script&gt;" in result
+            assert "alert(1)" in result
+        finally:
+            prompt_registry.unregister_prompt("autoescape_html")
+
+    def test_render_prompt_safe_env_has_select_autoescape(self) -> None:
+        """The Jinja2 env used by ``render_prompt_safe`` enables autoescape.
+
+        Inspects the module-private ``_safe_jinja_env`` factory (it's an
+        implementation detail, but the spec mandates autoescape so we
+        verify it directly).
+        """
+        from flow_engineering.prompt_registry import _safe_jinja_env
+
+        env = _safe_jinja_env()
+        assert env.autoescape is not False, (
+            "expected _safe_jinja_env to enable autoescape (REQ-46 W2); "
+            f"got autoescape={env.autoescape!r}"
+        )
 
 
 class TestPromptRenderErrorException:

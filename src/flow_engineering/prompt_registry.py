@@ -33,7 +33,14 @@ from enum import Enum
 from functools import lru_cache
 from typing import Any
 
-from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError, meta
+from jinja2 import (
+    Environment,
+    StrictUndefined,
+    TemplateError,
+    UndefinedError,
+    meta,
+    select_autoescape,
+)
 
 
 class PromptRenderError(Exception):
@@ -648,8 +655,23 @@ def _safe_jinja_env() -> Environment:
     variables, but :func:`render_prompt_safe` substitutes the literal
     sentinel ``<{var_name}>`` BEFORE rendering so the user sees exactly
     which variables were missing (per design D4 — CLI inspection mode).
+
+    REQ-46 W2: ``select_autoescape(default_for_string=True)`` enables
+    HTML auto-escaping for any ``.j2`` file loaded from disk that ends
+    in ``.html``/``.htm``/``.xml`` AND for any string template that
+    ends with those extensions when an ``autoescape`` callable is
+    supplied. The ``default_for_string=True`` flag also auto-escapes
+    string templates by default when no filename is known, so
+    untrusted prompt content rendered through ``render_prompt_safe``
+    cannot accidentally inject HTML/JS into CLI output (per the
+    REQ-46 verify-report W2 carry-forward: ``autoescape_disabled``
+    spec code maps to a v1.1 impl that emits a lint warning when a
+    template explicitly opts OUT of auto-escape).
     """
-    return Environment(keep_trailing_newline=True)
+    return Environment(
+        autoescape=select_autoescape(default_for_string=True),
+        keep_trailing_newline=True,
+    )
 
 
 def render_prompt(name: str, **kwargs: Any) -> str:
