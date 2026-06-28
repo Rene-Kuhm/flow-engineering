@@ -62,6 +62,9 @@ strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
+[tool.flow_engineering.prompts]
+directory = "prompts"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 bdd_features_base_dir = "tests/bdd"
