@@ -726,3 +726,92 @@ class TestWriteBackSkipWarn:
                 detail="",
             )
         assert "decision_id" in str(exc_info.value) or "int" in str(exc_info.value)
+
+
+# ---------- REQ-V1.2.4 Path A: flow drift events {list,tail,stats} canonical surface ----------
+
+
+class TestDriftEventsGroup:
+    """REQ-V1.2.4 Path A rename: ``flow drift events {list,tail,stats}`` is the new canonical surface.
+
+    The pre-v1.2 surface was ``flow drift-events {list,tail,stats}`` (a top-level
+    group). v1.2 nests the events read-side under the new ``drift`` group so
+    ``flow drift <change>`` (run), ``flow drift events list`` (read),
+    ``flow drift events tail`` (read), and ``flow drift events stats`` (read)
+    share a single namespace — mirroring ``flow metrics {summary,export}``
+    and ``flow prompts {list,show}``. The hyphenated ``flow drift-events``
+    alias is REMOVED in v1.3 (per ``SnapshotGraphMissing`` v1.1 precedent).
+    """
+
+    @pytest.fixture
+    def seeded_drift_events(self, tmp_path: Path) -> Path:
+        """Pre-seed a tmp JSONL with 1 LABEL_DRIFT event for the events group tests."""
+        from flow_engineering.drift_event_log import DriftEvent, DriftEventLog
+
+        log_path = tmp_path / "drift_events.jsonl"
+        log = DriftEventLog(path=log_path)
+        log.append(
+            DriftEvent(
+                change="change-foo",
+                decision_id=1,
+                binding_id="obs-1",
+                event_class="LABEL_DRIFT",
+                detected_at=1_700_000_000.0,
+            )
+        )
+        return log_path
+
+    def test_flow_drift_events_list_works_via_new_subcommand_group(
+        self, seeded_drift_events: Path
+    ) -> None:
+        """``flow drift events list --format=text --path=<tmp>`` exits 0 + prints rows.
+
+        Canonical post-rename surface (REQs REQ-V1.2.4 + REQ-10/11/14).
+        Pre-rename the surface was ``flow drift-events list``; after Path A
+        the events read-side lives under ``flow drift events list``.
+        """
+        result = runner.invoke(
+            main,
+            [
+                "drift",
+                "events",
+                "list",
+                "--format=text",
+                "--path", str(seeded_drift_events),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "change" in result.output
+        assert "change-foo" in result.output
+
+    def test_flow_drift_events_tail_works_via_new_subcommand_group(
+        self, seeded_drift_events: Path
+    ) -> None:
+        """``flow drift events tail`` exits 0 + renders newest-first."""
+        result = runner.invoke(
+            main,
+            [
+                "drift",
+                "events",
+                "tail",
+                "--path", str(seeded_drift_events),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "change-foo" in result.output
+
+    def test_flow_drift_events_stats_works_via_new_subcommand_group(
+        self, seeded_drift_events: Path
+    ) -> None:
+        """``flow drift events stats`` exits 0 + renders per-class counts."""
+        result = runner.invoke(
+            main,
+            [
+                "drift",
+                "events",
+                "stats",
+                "--path", str(seeded_drift_events),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Event class" in result.output or "LABEL_DRIFT" in result.output
