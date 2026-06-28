@@ -19,15 +19,31 @@ follow-up (REQ-44 → v1.1).
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 DEFAULT_DRIFT_EVENT_LOG_PATH: Path = (
     Path.home() / ".flow-engineering" / "drift_events.jsonl"
 )
+
+ROTATE_BYTES_DEFAULT: int = 10 * 1024 * 1024
+"""Default size threshold for ``DriftEventLog`` rotation (REQ-V1.1.1).
+
+Mirrors the never-shipped ``metrics.jsonl`` rotation policy at REQ-44.
+Override at runtime via ``FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` env var; set to
+``0`` to disable size-based rotation entirely.
+"""
+
+ROTATE_AGE_DAYS_DEFAULT: int = 30
+"""Default age threshold (days) for deleting rotated ``DriftEventLog``
+files (REQ-V1.1.1). Override via ``FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS``;
+set to ``0`` to disable age-based cleanup entirely.
+"""
 
 
 @dataclass(frozen=True)
@@ -103,11 +119,18 @@ class DriftEventLog:
         lock guards against accidental multi-thread callers within the
         process. ``flush`` ensures bytes reach the OS buffer before the
         lock is released so a subsequent crash does not lose the line.
+
+        REQ-V1.1.1: the rotation helper runs INSIDE the lock so the
+        rename + the next ``open("a")`` see a consistent filesystem
+        state. Rotation is best-effort — a slow rename on a network FS
+        never crashes the daemon (``try/except OSError`` swallow).
         """
         line = json.dumps(event.to_json_dict(), ensure_ascii=False) + "\n"
-        with self._lock, self.path.open("a", encoding="utf-8") as fh:
-            fh.write(line)
-            fh.flush()
+        with self._lock:
+            _rotate_if_needed(self.path)
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
+                fh.flush()
 
     def read_all(self) -> list[DriftEvent]:
         """Return all events from the JSONL file in append order.
@@ -157,4 +180,68 @@ __all__ = [
     "DEFAULT_DRIFT_EVENT_LOG_PATH",
     "DriftEvent",
     "DriftEventLog",
+    "ROTATE_AGE_DAYS_DEFAULT",
+    "ROTATE_BYTES_DEFAULT",
 ]
+
+
+def _resolve_rotation_threshold_bytes() -> int:
+    """Read ``FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` (0 = disable)."""
+    raw = os.environ.get("FLOW_DRIFT_EVENT_LOG_MAX_BYTES")
+    if raw is None or raw == "":
+        return ROTATE_BYTES_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return ROTATE_BYTES_DEFAULT
+    return max(0, value)
+
+
+def _resolve_max_age_days() -> int:
+    """Read ``FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS`` (0 = disable)."""
+    raw = os.environ.get("FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS")
+    if raw is None or raw == "":
+        return ROTATE_AGE_DAYS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return ROTATE_AGE_DAYS_DEFAULT
+    return max(0, value)
+
+
+def _rotate_if_needed(path: Path) -> None:
+    """Rotate ``path`` when its size meets the configured threshold (REQ-V1.1.1).
+
+    Behaviour:
+    - If ``path.stat().st_size >= FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` (default 10 MB),
+      rename ``path`` to ``drift_events.<ISO-no-colons>.jsonl`` so the
+      next append creates a fresh active file.
+    - Walk sibling files matching ``drift_events.*.jsonl`` and delete
+      any whose mtime is older than ``FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS``
+      (default 30 days).
+    - All filesystem operations are wrapped in ``try/except OSError`` so
+      a slow rename on a network filesystem never crashes the daemon.
+    """
+    threshold = _resolve_rotation_threshold_bytes()
+    if threshold > 0 and path.exists():
+        try:
+            if path.stat().st_size >= threshold:
+                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                rotated = path.with_name(f"drift_events.{stamp}.jsonl")
+                path.rename(rotated)
+        except OSError:
+            pass
+
+    max_age_days = _resolve_max_age_days()
+    if max_age_days <= 0:
+        return
+    cutoff = datetime.now(UTC).timestamp() - (max_age_days * 86400)
+    parent = path.parent
+    for sibling in parent.glob("drift_events.*.jsonl"):
+        if sibling == path:
+            continue
+        try:
+            if sibling.stat().st_mtime < cutoff:
+                sibling.unlink()
+        except OSError:
+            pass
