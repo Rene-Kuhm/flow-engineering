@@ -2425,6 +2425,55 @@ _STATUS_LABELS = {
     "missing_file": "MISSING",
     "frontmatter_parse_error": "PARSE_ERROR",
 }
+"""Map :class:`SkillDrift.drift_kind` to the CLI's short status label.
+
+Drift kinds that imply a real divergence (``checksum_mismatch`` and
+``version_mismatch``) collapse to ``"DRIFT"``; the parse-error and
+missing-file kinds keep their distinct labels so the CLI footer can
+report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
+"""
+
+
+def _emit_check_observability(
+    drifts: list[Any], duration_seconds: float,
+) -> None:
+    """Emit the W2 observability counter set for one ``prompts check`` invocation.
+
+    Four counter names are emitted (REQ-22 prefix convention; mirrors
+    ``drift_*_total`` from drift-hardening + REQ-22 ``vector_*_total``):
+
+    - ``prompts_check_total{result="clean"}`` — exactly once when no drift
+      was detected.
+    - ``prompts_check_total{result="drift"}`` — exactly once when at least
+      one drift finding was reported.
+    - ``prompts_check_drift_total{skill=<name>}`` — once per drift finding,
+      tagged with the affected skill name (so the metrics surface can
+      break down drift counts by skill).
+    - ``prompts_check_duration_seconds`` — exactly once per invocation,
+      with ``value=<elapsed>`` (gauge-style ``_seconds`` suffix counter;
+      mirrors ``reindex_duration_seconds`` precedent).
+
+    The function is best-effort and never raises; ``observability.increment``
+    swallows ``OSError`` internally so a write failure to the JSONL sink
+    cannot break the CLI flow.
+
+    Args:
+        drifts: The list of :class:`SkillDrift` from :func:`check_drift`.
+        duration_seconds: Wall-clock duration of the check in seconds.
+    """
+    observability.increment(
+        "prompts_check_total",
+        result="drift" if drifts else "clean",
+    )
+    for drift in drifts:
+        observability.increment(
+            "prompts_check_drift_total",
+            skill=drift.skill_name,
+        )
+    observability.increment(
+        "prompts_check_duration_seconds",
+        value=float(duration_seconds),
+    )
 
 
 @dataclass(frozen=True)
@@ -2486,13 +2535,6 @@ def _resolve_check_action(
         else:
             catalog = filtered
     return CheckAction(catalog, None, no_fail_flag, unknown)
-"""Map :class:`SkillDrift.drift_kind` to the CLI's short status label.
-
-Drift kinds that imply a real divergence (``checksum_mismatch`` and
-``version_mismatch``) collapse to ``"DRIFT"``; the parse-error and
-missing-file kinds keep their distinct labels so the CLI footer can
-report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
-"""
 
 
 _LINT_ERROR_CODES = frozenset({"jinja_syntax", "invalid_version"})
@@ -2609,7 +2651,11 @@ def prompts_check(
         click.echo(f"Unknown skill: {action.unknown_skill}", err=True)
         sys.exit(3)
 
+    start = time.monotonic()
     drifts = osc.check_drift(action.catalog)
+    elapsed = time.monotonic() - start
+    _emit_check_observability(drifts, elapsed)
+
     for drift in drifts:
         status = _STATUS_LABELS.get(drift.drift_kind, "DRIFT")
         click.echo(
@@ -2622,6 +2668,13 @@ def prompts_check(
     click.echo(
         f"{catalog_size} skills verified · {drift_count} drift detected"
     )
+
+    if drift_count > 0:
+        click.echo(
+            f"[WARN] flow prompts check: {drift_count} drifts detected "
+            f"— see stdout for details",
+            err=True,
+        )
 
     if drift_count > 0 and not action.suppress_drift_exit:
         sys.exit(1)
