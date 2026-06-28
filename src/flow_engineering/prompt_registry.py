@@ -612,6 +612,7 @@ __all__ = [
     "register",
     "register_prompt",
     "render_prompt",
+    "render_prompt_canonical",
     "render_prompt_safe",
     "unregister_prompt",
     "validate_catalog",
@@ -1007,3 +1008,76 @@ def list_required_vars(name: str) -> set[str]:
     prompt = get_prompt(name)
     ast = _strict_jinja_env().parse(prompt.template)
     return set(meta.find_undeclared_variables(ast))
+
+
+# ---------- REQ-V1.2.2 (T2.2): canonical render for golden regression tests ----------
+
+
+# Canonical sentinel kwargs per PROMPT_NAMES entry. Used by
+# :func:`render_prompt_canonical` to produce a deterministic render that
+# does NOT depend on caller kwargs — required by REQ-V1.2.2 for the
+# golden regression tests under ``tests/golden/prompts/``.
+#
+# Adding a new PROMPT_NAMES entry? Add a key here FIRST so the canonical
+# helper stays in sync with the catalog. ``TestCanonicalRenders`` in
+# ``tests/unit/test_prompt_render_golden.py`` exercises the contract.
+_CANONICAL_DEFAULTS: dict[str, dict[str, str]] = {
+    "strict_tdd": {"test_command": "TEST_COMMAND"},
+    "auto_suggest_header": {},
+    "auto_suggest_footer": {},
+    "auto_suggest_empty": {},
+}
+"""Canonical sentinel kwargs per PROMPT_NAMES entry (REQ-V1.2.2)."""
+
+
+def render_prompt_canonical(prompt_id: str, **overrides: Any) -> str:
+    """Render a prompt with canonical sentinel values for golden regression tests.
+
+    REQ-V1.2.2: closes the v1.1 carry-forward "golden regression tests
+    for ``render_prompt``" (per ``decision-drift/spec.md:410`` v1.2
+    entry). The 4 PROMPT_NAMES entries each get a byte-identical
+    snapshot under ``tests/golden/prompts/`` so unintentional template
+    edits (whitespace, punctuation, escape chars) fail CI with a
+    precise drift message instead of passing the 21 happy-path unit
+    tests in ``tests/unit/test_prompt_render.py``.
+
+    Canonical defaults per catalog entry (defined in
+    :data:`_CANONICAL_DEFAULTS`):
+
+    - ``strict_tdd`` → ``test_command="TEST_COMMAND"``
+    - ``auto_suggest_header`` / ``auto_suggest_footer`` /
+      ``auto_suggest_empty`` → no declared variables (no kwargs)
+
+    Callers MAY pass ``**overrides`` to test variations (e.g.,
+    ``render_prompt_canonical("strict_tdd", test_command="pytest")``).
+    Unknown kwargs raise ``KeyError`` via :func:`render_prompt`'s strict
+    mode so callers cannot accidentally inject empty strings into the
+    snapshot (per REQ-46 strict-mode contract).
+
+    Args:
+        prompt_id: The catalog identifier (e.g., ``"strict_tdd"``).
+        **overrides: Optional overrides for the canonical defaults.
+            Useful for testing the snapshot helper without modifying
+            the canonical sentinel contract.
+
+    Returns:
+        The rendered string with canonical kwargs substituted into the
+        template body. Byte-identical across repeated calls when
+        ``**overrides`` is empty.
+
+    Raises:
+        ValueError: When ``prompt_id`` is not in the catalog (added by
+            this helper so callers get a clear signal vs. the
+            ``KeyError`` raised by :func:`get_prompt`).
+        PromptRenderError: When the template references a variable that
+            was not provided in the merged kwargs (propagated from
+            :func:`render_prompt`).
+    """
+    if prompt_id not in _CANONICAL_DEFAULTS:
+        raise ValueError(
+            f"unknown prompt id for canonical render: {prompt_id!r} "
+            f"(known: {sorted(_CANONICAL_DEFAULTS)!r})"
+        )
+    kwargs: dict[str, Any] = {**_CANONICAL_DEFAULTS[prompt_id], **overrides}
+    return render_prompt(prompt_id, **kwargs)
+
