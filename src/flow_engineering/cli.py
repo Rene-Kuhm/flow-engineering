@@ -2742,6 +2742,36 @@ catalog-shape drift between runtime + capability spec.
 """
 
 
+def _entry_domain_value(entry: Any) -> str:
+    """Return ``entry.domain.value`` as a string (defensive fallback).
+
+    Defensive helper used by both the text-table and JSON serializers
+    so a non-enum domain (e.g., a future ``str`` direct value) still
+    renders. Mirrors the convention used in
+    ``opencode_skill_catalog.py`` for surface handling.
+    """
+    domain = entry.domain
+    return domain.value if hasattr(domain, "value") else str(domain)
+
+
+def _entry_owner(entry: Any) -> str:
+    """Render the spec-mandated owner string ``flow/{domain_value}``.
+
+    Centralized so the text table + JSON serializer stay in lockstep
+    with the spec REQ-50 S1 owner notation.
+    """
+    return f"flow/{_entry_domain_value(entry)}"
+
+
+def _entry_location(entry: Any) -> str:
+    """Render the spec-mandated location string ``prompts/<name>.j2``.
+
+    Per W3 carry-forward: the canonical location is the repo-root
+    ``prompts/`` directory; ``.j2`` suffix per design D1+D2.
+    """
+    return f"prompts/{entry.name}.j2"
+
+
 def _format_prompts_list_row(entry: Any) -> str:
     """Format one PROMPT_NAMES row for the `flow prompts list` text table.
 
@@ -2750,17 +2780,11 @@ def _format_prompts_list_row(entry: Any) -> str:
     ``flow/{domain.value}`` so it matches the spec REQ-50 S1 verbatim
     (``flow/observability`` / ``flow/binding``).
     """
-    domain_value = (
-        entry.domain.value
-        if hasattr(entry.domain, "value")
-        else str(entry.domain)
-    )
-    location = "prompts/" + entry.name + ".j2"
     return (
         f"{entry.name:<24}  "
         f"{entry.version:<10}  "
-        f"flow/{domain_value:<20}  "
-        f"{location}"
+        f"{_entry_owner(entry):<24}  "
+        f"{_entry_location(entry)}"
     )
 
 
@@ -2791,17 +2815,13 @@ def _serialize_prompts_list(entries: list[Any]) -> dict[str, Any]:
     """
     prompts: list[dict[str, Any]] = []
     for entry in entries:
-        domain_value = (
-            entry.domain.value
-            if hasattr(entry.domain, "value")
-            else str(entry.domain)
-        )
+        domain_value = _entry_domain_value(entry)
         prompts.append(
             {
                 "name": entry.name,
                 "version": entry.version,
-                "owner": f"flow/{domain_value}",
-                "location": "prompts/" + entry.name + ".j2",
+                "owner": _entry_owner(entry),
+                "location": _entry_location(entry),
                 "domain": domain_value,
             }
         )
