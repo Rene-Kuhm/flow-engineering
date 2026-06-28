@@ -814,6 +814,10 @@ def render_prompt(name: str, **kwargs: Any) -> str:
             var_keys=var_keys,
         )
         raise PromptNotFoundError(name) from exc
+    # Surface the prompt's domain into the counter labels (REQ-V1.1.4).
+    # ``PromptDomain`` is a str-Enum so ``.value`` returns the lowercase
+    # string ("binding" / "drift" / ...) directly.
+    _prompt_domain_value: str = prompt.domain.value
     env = _strict_jinja_env()
     template = env.from_string(prompt.template)
     try:
@@ -825,6 +829,7 @@ def render_prompt(name: str, **kwargs: Any) -> str:
             ok=False,
             error="missing_var",
             var_keys=var_keys,
+            domain=_prompt_domain_value,
         )
         raise PromptRenderError(
             {
@@ -844,6 +849,7 @@ def render_prompt(name: str, **kwargs: Any) -> str:
             ok=False,
             error="template_error",
             var_keys=var_keys,
+            domain=_prompt_domain_value,
         )
         raise PromptRenderError(
             {
@@ -872,6 +878,7 @@ def render_prompt(name: str, **kwargs: Any) -> str:
                     ok=False,
                     error="missing_var",
                     var_keys=var_keys,
+                    domain=_prompt_domain_value,
                 )
                 raise PromptRenderError(
                     {
@@ -891,6 +898,7 @@ def render_prompt(name: str, **kwargs: Any) -> str:
                     ok=True,
                     error=None,
                     var_keys=var_keys,
+                    domain=_prompt_domain_value,
                 )
                 return formatted
     _emit_render_record(
@@ -899,6 +907,7 @@ def render_prompt(name: str, **kwargs: Any) -> str:
         ok=True,
         error=None,
         var_keys=var_keys,
+        domain=_prompt_domain_value,
     )
     return rendered
 
