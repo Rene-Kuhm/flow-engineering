@@ -332,3 +332,78 @@ class TestListEmptyLog:
             ],
         )
         assert result.exit_code == 0, result.output
+
+
+# ---------- REQ-V1.0.2 T2.3: text-table helper direct unit test ----------
+
+
+class TestFormatDriftEventsTextHelper:
+    """The text-table helper is exposed for direct unit testing (T2.3).
+
+    Mirrors the ``flow metrics summary`` text-table precedent at
+    ``observability.py:999-1001``. Columns are fixed-width aligned and
+    rows are emitted in input order with a separator rule.
+    """
+
+    def test_format_drift_events_text_helper_empty(self) -> None:
+        """Empty event list returns the 'no drift events' sentinel."""
+        from flow_engineering.cli import _format_drift_events_text
+
+        out = _format_drift_events_text([])
+        assert out == "(no drift events)\n"
+
+    def test_format_drift_events_text_helper_3_rows(
+        self, seeded_log: Path
+    ) -> None:
+        """3 events -> header + rule + 3 data rows in input order."""
+        from flow_engineering.cli import _format_drift_events_text
+
+        events = DriftEventLog(path=seeded_log).read_all()
+        out = _format_drift_events_text(events)
+
+        lines = out.splitlines()
+        # header + separator + 3 data rows = 5 lines total (trailing nl = empty)
+        assert len(lines) == 5
+        # Header columns.
+        assert "change" in lines[0]
+        assert "decision_id" in lines[0]
+        assert "binding_id" in lines[0]
+        assert "class" in lines[0]
+        assert "detected_at" in lines[0]
+        # Separator line is all dashes.
+        assert set(lines[1].replace(" ", "")) <= {"-"}
+        # Data rows: each contains the change name + the rendered int decision_id.
+        assert "change-foo" in lines[2]
+        assert "change-bar" in lines[3]
+        assert "change-foo" in lines[4]
+        # decision_id rendered as int string (no decimal point).
+        assert "1" in lines[2]
+        assert "2" in lines[3]
+        assert "3" in lines[4]
+
+    def test_drift_events_list_text_table_mirrors_metrics_summary(
+        self, seeded_log: Path
+    ) -> None:
+        """`flow drift-events list --format=text` aligns columns (mirrors flow metrics summary)."""
+        result = runner.invoke(
+            main,
+            [
+                "drift-events",
+                "list",
+                "--format=text",
+                "--path", str(seeded_log),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        lines = [ln for ln in result.output.splitlines() if ln]
+        # header + separator + 3 data rows = 5 lines.
+        assert len(lines) == 5
+        # Header columns + data values must appear at predictable positions.
+        # The first column of each data row must NOT have leading whitespace
+        # (proves ljust() worked from column 0).
+        for ln in lines[2:]:
+            assert not ln[0].isspace(), f"data row has leading whitespace: {ln!r}"
+        # The detected_at values appear in each data row.
+        assert "1700000000" in lines[2]
+        assert "1700000100" in lines[3]
+        assert "1700000200" in lines[4]

@@ -1830,6 +1830,7 @@ def _format_drift_events_text(events: list[DriftEvent]) -> str:
     Mirrors the ``flow metrics summary`` text-table precedent at
     ``cli.py:999-1001`` (``name.ljust(name_width) ...``). Columns:
     ``change``, ``decision_id``, ``binding_id``, ``class``, ``detected_at``.
+    Empty input renders as ``(no drift events)`` for operator clarity.
     """
     if not events:
         return "(no drift events)\n"
@@ -1847,13 +1848,13 @@ def _format_drift_events_text(events: list[DriftEvent]) -> str:
     widths = [
         max(len(headers[i]), *(len(r[i]) for r in rows)) for i in range(len(headers))
     ]
-    lines = [
-        "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)),
-        "  ".join("-" * w for w in widths),
+    sep = "  "
+    header_line = sep.join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    rule_line = sep.join("-" * w for w in widths)
+    data_lines = [
+        sep.join(r[i].ljust(widths[i]) for i in range(len(headers))) for r in rows
     ]
-    for r in rows:
-        lines.append("  ".join(r[i].ljust(widths[i]) for i in range(len(headers))))
-    return "\n".join(lines) + "\n"
+    return "\n".join([header_line, rule_line, *data_lines]) + "\n"
 
 
 def _parse_since_until(
