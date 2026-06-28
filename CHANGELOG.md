@@ -3,6 +3,39 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
+## [1.0.0] - 2026-06-28
+
+### Changed (BREAKING)
+- The JSONL wire format at `~/.flow-engineering/drift_events.jsonl` is now
+  `decision_id: int` (was `str` pre-v1.0). This aligns the wire format with
+  `decision_drift.Finding.decision_id: int` post-v0.9.0. Operators consuming
+  the JSONL with `jq` or custom scripts should review the migration note
+  below. The Python `Finding` API is unchanged — this is a wire-format-only
+  flip.
+
+### Added
+- `flow drift-events {list,tail,stats}` — new read-side CLI command group for
+  the JSONL drift event log. Mirrors the `flow metrics {summary,export,
+  aggregate}` operator mental model (per `observability` PR#2 subcommand
+  precedent). `list` supports `--since` / `--until` / `--change` /
+  `--event-class` / `--limit` / `--format=text|json|prometheus|csv` /
+  `--path` filters. `tail` defaults to `--limit=10` newest-first and
+  supports `--change` / `--event-class` / `--format=text|json` filters.
+  `stats` renders per-event-class + per-change + per-decision-id top-N
+  counts in an aligned text table (or JSON envelope via `--format=json`).
+- `DriftEventLog.read_all()` defensively coerces legacy `str` `decision_id`
+  lines from pre-v1.0 JSONL files to `int` with a one-time stderr WARN per
+  log-path. Zero data loss; old files remain readable without migration.
+
+### Migration
+- Convert existing JSONL files in place (silences the one-time WARN):
+  ```bash
+  sed -i 's/"decision_id": "\([0-9]*\)"/"decision_id": \1/g' \
+    ~/.flow-engineering/drift_events.jsonl
+  ```
+- Old `decision_id: "42"` (str) JSONL lines continue to read correctly
+  without migration thanks to the defensive coercion shim. The `sed` above
+  just silences the WARN.
 
 ## [0.9.0] - 2026-06-28
 
