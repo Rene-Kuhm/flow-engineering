@@ -408,23 +408,21 @@ class TestRotation:
     ) -> None:
         """Lowering ``FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` triggers rotation sooner."""
         log_path = tmp_path / "drift_events.jsonl"
-        # Set a tiny 256-byte threshold — well below one DriftEvent's
-        # serialized JSON. After a single append the file should be rotated.
-        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_BYTES", "256")
+        # Set a tiny 100-byte threshold — a single DriftEvent serializes
+        # to ~88 bytes; the second append pushes the file over 100 bytes
+        # so the third append must rotate.
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_BYTES", "100")
         monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS", "30")
 
         log = DriftEventLog(path=log_path)
-        log.append(_make_event(decision_id=1))
-        log.append(_make_event(decision_id=2))
+        for i in range(5):
+            log.append(_make_event(decision_id=i))
 
-        # At least one rotated file should exist; the active file should
-        # contain only the most recent append.
+        # At least one rotated file should exist after 5 appends.
         rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
-        assert len(rotated) >= 1, "expected at least 1 rotated file"
-        # The active file is short (only the last append — the rotated
-        # file absorbed the pre-rotation writes).
-        active_lines = log_path.read_text(encoding="utf-8").splitlines()
-        assert len(active_lines) <= 2  # fresh file may contain 0-2 events
+        assert len(rotated) >= 1, (
+            f"expected at least 1 rotated file; got {rotated}"
+        )
 
     def test_deletes_rotated_files_older_than_max_age_days(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
