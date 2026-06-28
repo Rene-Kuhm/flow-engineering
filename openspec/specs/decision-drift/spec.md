@@ -1,4 +1,4 @@
-<!-- spec.md: decision-drift capability catalog. Source: sdd-spec bootstrap in drift-hardening batch D. Archive sync: 2026-06-27. -->
+<!-- spec.md: decision-drift capability catalog. Source: sdd-spec bootstrap in drift-hardening batch D. Archive sync: 2026-06-27 + 2026-06-28. -->
 # Decision-Drift Capability Spec
 
 ## Archive status (2026-06-27)
@@ -12,6 +12,16 @@
 The v0.8.0 1-release compat shims and the new `unable_reason: str | None` field are documented below per the brief. The dataclass shape migration deviated from the original design.md (which proposed `__post_init__` coercion + `@property graph_unavailable` rename) to follow the orchestrator brief's compat-shim migration pattern + `graph_unavailable: bool` (canonical, NOT renamed) + `unable_reason: str | None` (NEW). This spec reflects the FINAL brief-aligned shape, not the original design.md proposal.
 
 ## v0.9.0 final note (REQ-V9.1..V9.5)
+
+**Status:** ✅ **SHIPPED as v0.9.0 (BREAKING)** — change #9 `v0.9.0-hardening` CLOSED 2026-06-28.
+
+| REQ | Title | Status |
+|-----|-------|--------|
+| **REQ-V9.1** | `Finding.from_legacy` classmethod deleted (W1 — str→int coercion shim) | ✅ **SHIPPED** |
+| **REQ-V9.2** | `DriftReport.from_legacy` classmethod deleted (W1 — float→ISO coercion shim) | ✅ **SHIPPED** |
+| **REQ-V9.3** | `classify_binding_legacy` 3-arg wrapper deleted (W3 — backwards-compat shim) | ✅ **SHIPPED** |
+| **REQ-V9.4** | `Finding.__post_init__` enforces int-only `decision_id` (W1 enforcement — hard break, no `DeprecationWarning`, no coercion) | ✅ **SHIPPED** |
+| **REQ-V9.5** | Docs + meta + version bump + W2 Option B Drift note (`design.md:493`) + 6 SKILL.md updates | ✅ **SHIPPED** |
 
 The 1-release compat shims introduced in v0.8.0 are **removed** in v0.9.0.
 **No migration path** — this is a hard break:
@@ -37,6 +47,18 @@ original REQ-9..16 contract in v0.3.0 but never created a corresponding
 baseline so future deltas (e.g., per-finding graph_unavailable refinement,
 cross-project drift federation, OTel push) extend this file rather than
 forking the archived `decision-reality-drift` spec.
+
+## Archive status (2026-06-28)
+
+**v0.9.0-hardening (change #9) SHIPPED as v0.9.0 — single PR, 3 sequential sub-batches (A + B + C) of strict TDD, 19 tasks complete (T1.1..T3.7), 12 work-unit commits on `main` (HEAD `3de7783`).**
+
+**REQs shipped**: REQ-V9.1 (W1 `Finding.from_legacy` shim removal), REQ-V9.2 (W1 `DriftReport.from_legacy` shim removal), REQ-V9.3 (W3 `classify_binding_legacy` 3-arg wrapper removal), REQ-V9.4 (W1 enforcement via `Finding.__post_init__` raising `TypeError` on str/bool), REQ-V9.5 (CHANGELOG BREAKING + version bump 0.8.1 → 0.9.0 + W2 Option B Drift note at `archive/2026-06-27-drift-hardening/design.md:493` + 6 SKILL.md runtime updates).
+
+**Verdict at archive**: **PASS WITH WARNINGS — archive-ready** (accepted per `drift-hardening` precedent; same posture). Per `openspec/changes/archive/2026-06-28-v0.9.0-hardening/verify-report.md`: **0 CRITICAL findings** + **1 WARNING** (W1 — `Finding.__post_init__` enforces STRICT REJECTION (TypeError) on str/bool vs the brief's "should coerce to int" example; NOT a regression — implementation honors the proposal §"Code sketch" lines 239-245 hard-break contract) + **4 SUGGESTION** (S1 stale docstring reference to `from_legacy` at `decision_drift.py:116`; S2 12 ruff errors in changed files DOWN from 27 baseline = IMPROVEMENT of 15; S3 12 mypy residuals in `decision_drift.py` within proposal R3 expected band; S4 positive docstring feedback on `__post_init__` rationale — KEEP). All 5 REQs (REQ-V9.1..V9.5) have at least one passing test demonstrating compliance. All 19 tasks (T1.1..T3.7) closed across 3 sub-batches. **1232/1232 tests passing** (net even: -2 removed + 2 added via W1 enforcement) with **0 regressions** vs the `a2ce3f5` baseline. **179/179 BDD scenarios passing**. Ruff: 12 errors in changed files (down from 27 = -15 net improvement); mypy: 12 errors in `decision_drift.py` (within proposal R3 ~10 expected residual band; 1 net improvement from 3 `# type: ignore` cleanup). The 3 documented carry-forwards from `drift-hardening` (W1 + W2 + W3) are all explicitly **CLOSED** by this change.
+
+**Migration guide reference**: see the v0.9.0 final note above (REQ-V9.1..V9.5 section) for the hard-break contract. The v0.9.0 CHANGELOG entry (lines 7-32) documents the 4-step migration path. The W2 Option B Drift note in `archive/2026-06-27-drift-hardening/design.md:493` officially documents the `graph_unavailable` direction-flip (canonical field stays `graph_unavailable: bool` + new `unable_reason: str | None` field; design D2's intent to rename to `unable_to_verify` was NOT followed per the orchestrator pre-decision).
+
+**Note on archive structure**: this is a **single-PR single-cycle** archive (no chained PRs, no per-PR split; 12 work-unit commits in one v0.9.0 release per tasks.md T3.1..T3.7). Mirrors the `drift-hardening` (change #8) cluster structure but condensed — v0.9.0 is a **debt-closure release**, not a feature release.
 
 ## Purpose
 
@@ -368,3 +390,21 @@ def classify_binding(ref, graph_nodes) -> DriftClass:
 | `vector-semantic-search` (v0.4.0) | Unrelated |
 | `cross-project-federation` (v0.5.0) | Unrelated |
 | `prompt-registry` (v0.8.0 PR#1) | Unrelated |
+
+## Versioning
+
+| Version | Date | Change | Status | Headline |
+|---------|------|--------|--------|----------|
+| v0.2.0 | 2026-06-24 | `decision-code-linking` (#1) | SHIPPED | `CodeRef` + `extract_code_refs` + `flow inspect <change>` |
+| v0.3.0 | 2026-06-26 | `decision-reality-drift` (#2) | SHIPPED | REQ-9..16 — first drift detection surface; introduced str `decision_id` + epoch `scanned_at` |
+| v0.4.0 | 2026-06-26 | `vector-semantic-search` (#3) | SHIPPED | REQ-17..22 — `[vectors]` extra gated semantic search |
+| v0.5.0 | 2026-06-26 | `cross-project-federation` (#4) | SHIPPED | REQ-23..27 — `flow search --federated` + `flow projects` |
+| v0.6.0 | 2026-06-27 | `graph-snapshots` (#5) | SHIPPED | REQ-28..34 — `SnapshotManager` + `flow snapshot {create,list,show,diff,rollback,prune}` |
+| v0.7.0 | 2026-06-27 | `observability` (#6) | SHIPPED | REQ-35..39 — `flow metrics summary/export/aggregate` + REQ-38 Prometheus textfile |
+| v0.8.0 | 2026-06-27 | `prompt-registry` (#7) PR#1 | SHIPPED | REQ-45..47 — Python API catalog + `validate_catalog()` + `lint_prompts()` |
+| v0.8.0 | 2026-06-27 | `drift-hardening` (#8) | SHIPPED | REQ-55..59 — `DriftEventLog` JSONL + v0.8.0 BREAKING dataclass shape + 21 NEW BDD scenarios + 1-release compat shims |
+| v0.8.1 | 2026-06-28 | `prompt-registry` (#7) PR#2b | SHIPPED | REQ-49..50 — `flow prompts` CLI + SKILL.md mirror catalog |
+| **v0.9.0** | **2026-06-28** | **`v0.9.0-hardening` (#9)** | **✅ SHIPPED (BREAKING)** | **REQ-V9.1..V9.5 — 1-release compat shims REMOVED (`Finding.from_legacy`, `DriftReport.from_legacy`, `classify_binding_legacy`); `Finding.__post_init__` enforces int `decision_id` (hard break); W2 Option B Drift note at `design.md:493`; 1232/1232 tests pass** |
+| v1.0 | TBD | (planned) | NOT STARTED | DriftEvent JSONL int wire format + `flow drift events` CLI read-side + tech-debt residuals (S2 ruff + S3 mypy) |
+
+**v1.0 entry — change #9 CLOSED + v0.9.0 BREAKING shipped (2026-06-28).** With change #9 (`v0.9.0-hardening`) archived, the v0.8.0 1-release compat shim window is officially closed. Operators who delayed the v0.7.x → v0.9.0 jump now have a hard-break surface to migrate against; the v0.8.x line is end-of-life. The 3 carry-forwards from `drift-hardening` (W1, W2, W3) are CLOSED. v1.0 planning resumes per the deferred follow-ups: DriftEvent JSONL `decision_id: int` wire-format flip (S1 from drift-hardening) + `flow drift events` CLI read-side (S2 from drift-hardening) + tech-debt residuals (S2 ruff `--unsafe-fixes` + S3 mypy annotations on `decision_drift.py` lines 127/161/203/252/253/262/278/372/375/310/411/439) + DriftEventLog rotation (v1.1 alongside metrics rotation).
