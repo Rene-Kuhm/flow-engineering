@@ -296,9 +296,21 @@ __all__ = [
     "SkillDrift",
     "SkillEntry",
     "SkillVersionError",
+    "check_drift",
     "compute_frontmatter_sha256",
     "parse_frontmatter",
 ]
+
+
+def _read_sidecar() -> dict[str, dict[str, str]]:
+    """Read the sidecar JSON; return ``{}`` when the file is missing.
+
+    Stubbed to return ``{}`` in T1.3; the real implementation that reads
+    from :data:`SIDECAR_PATH` lands in T1.4. Returning ``{}`` keeps the
+    function pure for unit-test scenarios where the sidecar should not
+    influence the comparison (tests monkeypatch this stub).
+    """
+    return {}
 
 
 def compute_frontmatter_sha256(path: Path) -> str:
@@ -359,3 +371,104 @@ def parse_frontmatter(path: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise SkillVersionError(f"{path}: frontmatter is not a YAML dict")
     return parsed
+
+
+def check_drift(
+    catalog: dict[str, SkillEntry] | None = None,
+) -> list[SkillDrift]:
+    """Walk ``catalog`` and return a list of drift findings.
+
+    For each :class:`SkillEntry` the function:
+
+    1. Looks up the sidecar entry (``{}`` when missing). The sidecar provides
+       the ``checksum`` + ``version`` recorded at the last verification.
+    2. Resolves the expected checksum (sidecar first, fallback to catalog
+       ``last_verified_checksum``) and the expected version (sidecar first,
+       fallback to catalog ``expected_version``).
+    3. Checks the on-disk file: missing file, parse error, or checksum
+       mismatch + version mismatch.
+
+    The returned :class:`SkillDrift` list is empty when the catalog is
+    empty OR every entry matches (clean state). Order matches catalog
+    iteration order.
+
+    Args:
+        catalog: The catalog to walk. ``None`` defaults to
+            :data:`SKILL_CATALOG`.
+
+    Returns:
+        A list of :class:`SkillDrift` instances. Empty list means clean
+        state (no drift detected).
+    """
+    catalog = catalog if catalog is not None else SKILL_CATALOG
+    sidecar = _read_sidecar()
+    drifts: list[SkillDrift] = []
+
+    for key, entry in catalog.items():
+        sidecar_entry = sidecar.get(key, {})
+        expected_checksum = sidecar_entry.get(
+            "checksum", entry.last_verified_checksum,
+        )
+        expected_version = sidecar_entry.get(
+            "version", entry.expected_version,
+        )
+
+        path = Path(entry.expected_path).expanduser()
+        if not path.exists():
+            drifts.append(
+                SkillDrift(
+                    skill_name=entry.skill_name,
+                    surface=entry.surface,
+                    expected_version=expected_version,
+                    on_disk_version="",
+                    expected_checksum=expected_checksum,
+                    on_disk_checksum="",
+                    drift_kind="missing_file",
+                )
+            )
+            continue
+
+        try:
+            on_disk_checksum = compute_frontmatter_sha256(path)
+            parsed = parse_frontmatter(path)
+            on_disk_version = str(parsed.get("version", "0.0"))
+        except SkillVersionError:
+            drifts.append(
+                SkillDrift(
+                    skill_name=entry.skill_name,
+                    surface=entry.surface,
+                    expected_version=expected_version,
+                    on_disk_version="",
+                    expected_checksum=expected_checksum,
+                    on_disk_checksum="",
+                    drift_kind="frontmatter_parse_error",
+                )
+            )
+            continue
+
+        if on_disk_checksum != expected_checksum:
+            drifts.append(
+                SkillDrift(
+                    skill_name=entry.skill_name,
+                    surface=entry.surface,
+                    expected_version=expected_version,
+                    on_disk_version=on_disk_version,
+                    expected_checksum=expected_checksum,
+                    on_disk_checksum=on_disk_checksum,
+                    drift_kind="checksum_mismatch",
+                )
+            )
+        elif on_disk_version != expected_version:
+            drifts.append(
+                SkillDrift(
+                    skill_name=entry.skill_name,
+                    surface=entry.surface,
+                    expected_version=expected_version,
+                    on_disk_version=on_disk_version,
+                    expected_checksum=expected_checksum,
+                    on_disk_checksum=on_disk_checksum,
+                    drift_kind="version_mismatch",
+                )
+            )
+
+    return drifts
