@@ -177,3 +177,131 @@ class TestReadAll:
         events = observability.read_all()
         assert [e["name"] for e in events] == ["suggest_invoked_total", "suggest_hit_total"]
         assert events[1]["fields"]["confirmed"] == 1
+
+
+class TestMetricsRotation:
+    """REQ-V1.2.1 — metrics.jsonl rotation (size threshold + env override).
+
+    Mirrors the ``DriftEventLog`` rotation pattern at
+    ``drift_event_log.py:220-254``. The helper must rotate the active
+    ``metrics.jsonl`` when its size exceeds ``FLOW_METRICS_LOG_MAX_BYTES``
+    (default 10 MB) by renaming it to ``metrics.<ISO-no-colons>.jsonl``,
+    then resume appending to a fresh active file. Best-effort
+    ``OSError`` swallow on rename prevents a slow FS from poisoning the
+    sink path resolution.
+    """
+
+    def test_rotates_metrics_when_size_exceeds_threshold(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        path = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv(METRICS_PATH_ENV, str(path))
+        monkeypatch.setenv("FLOW_METRICS_LOG_MAX_BYTES", "1024")
+
+        # Drive the active file past the 1 KB threshold. Each event line
+        # is ~120 bytes (name + fields + ts + braces + newline) so 20
+        # calls reliably cross the 1024-byte mark.
+        for _ in range(20):
+            observability.increment("rotation_probe_total", payload="x" * 80)
+
+        # Active file should be present and contain at least one line
+        # from AFTER the rotation (the post-rotation file is fresh).
+        assert path.exists()
+        active_events = _read_events(path)
+        assert len(active_events) >= 1
+        assert all(e["name"] == "rotation_probe_total" for e in active_events)
+
+        # At least one rotated sibling must exist matching metrics.*.jsonl
+        siblings = sorted(tmp_path.glob("metrics.*.jsonl"))
+        assert siblings, "expected at least one rotated sibling"
+        assert all(s != path for s in siblings)
+
+    def test_no_rotation_when_below_threshold(
+        self, metrics_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        # Default 10 MB threshold + 100 small calls = far below threshold.
+        for _ in range(100):
+            observability.increment("suggest_invoked_total")
+        events = _read_events(metrics_path)
+        assert len(events) == 100
+
+        # No rotated siblings should have been created.
+        siblings = sorted(metrics_path.parent.glob("metrics.*.jsonl"))
+        assert siblings == [], f"unexpected rotated siblings: {siblings}"
+
+    def test_rotation_respects_env_override_zero_disables(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        path = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv(METRICS_PATH_ENV, str(path))
+        monkeypatch.setenv("FLOW_METRICS_LOG_MAX_BYTES", "0")
+
+        # Even 50 calls with a large payload must not rotate when the
+        # threshold is explicitly disabled via env var.
+        for _ in range(50):
+            observability.increment("rotation_probe_total", payload="x" * 200)
+        assert path.exists()
+        # No rotated siblings should be present (rotation disabled).
+        siblings = sorted(tmp_path.glob("metrics.*.jsonl"))
+        assert siblings == [], f"rotation should be disabled; found: {siblings}"
+
+    def test_rotation_uses_isolated_tmp_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        path = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv(METRICS_PATH_ENV, str(path))
+        monkeypatch.setenv("FLOW_METRICS_LOG_MAX_BYTES", "512")
+
+        for _ in range(15):
+            observability.increment("rotation_probe_total", payload="x" * 80)
+
+        # All rotated siblings MUST live inside tmp_path — no parent
+        # traversal escapes from the rotation rename.
+        siblings = list(tmp_path.glob("metrics.*.jsonl"))
+        assert siblings, "expected at least one rotated sibling"
+        for s in siblings:
+            assert s.parent.resolve() == tmp_path.resolve()
+        # Active file also stays inside tmp_path.
+        assert path.parent.resolve() == tmp_path.resolve()
+
+    def test_rotation_failure_does_not_crash_increment(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        path = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv(METRICS_PATH_ENV, str(path))
+        monkeypatch.setenv("FLOW_METRICS_LOG_MAX_BYTES", "256")
+
+        # Pre-create the sink with one line so size() >= threshold fires.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("seed line\n", encoding="utf-8")
+
+        # Force rename to raise OSError; increment must still succeed
+        # (best-effort sink — a slow FS must not break the caller).
+        real_rename = Path.rename
+
+        def boom(self: Path, target: Path) -> None:
+            raise OSError("simulated slow FS rename failure")
+
+        monkeypatch.setattr(Path, "rename", boom)
+        try:
+            for _ in range(5):
+                observability.increment("rotation_probe_total", payload="x" * 80)
+        finally:
+            monkeypatch.setattr(Path, "rename", real_rename)
+
+        # increment never raised; sink still has the seed line + new
+        # writes appended AFTER the failed rename was swallowed.
+        assert path.exists()
+        text = path.read_text(encoding="utf-8")
+        assert "seed line" in text
+        assert "rotation_probe_total" in text
