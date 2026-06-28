@@ -305,3 +305,68 @@ class TestMetricsRotation:
         text = path.read_text(encoding="utf-8")
         assert "seed line" in text
         assert "rotation_probe_total" in text
+
+    def test_deletes_rotated_siblings_older_than_max_age_days(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        path = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv(METRICS_PATH_ENV, str(path))
+        monkeypatch.setenv("FLOW_METRICS_LOG_MAX_AGE_DAYS", "30")
+
+        # Seed the active file so the size check passes; the rotation
+        # helper will then walk the sibling glob and prune.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("active\n", encoding="utf-8")
+
+        old_sibling = tmp_path / "metrics.20250101T000000Z.jsonl"
+        recent_sibling = tmp_path / "metrics.20260628T000000Z.jsonl"
+        old_sibling.write_text("old rotated\n", encoding="utf-8")
+        recent_sibling.write_text("recent rotated\n", encoding="utf-8")
+
+        # Backdate the old sibling's mtime to 60 days ago so the cutoff
+        # (30 days) marks it for deletion. The recent sibling stays
+        # within the retention window.
+        old_time = 60 * 86400
+        import os
+        import time as _time
+
+        now = _time.time()
+        os.utime(old_sibling, (now - old_time, now - old_time))
+        # Ensure recent sibling has a fresh mtime (just-now).
+        os.utime(recent_sibling, (now, now))
+
+        observability.increment("rotation_probe_total", payload="x" * 80)
+
+        assert not old_sibling.exists(), "old sibling should have been pruned"
+        assert recent_sibling.exists(), "recent sibling must be preserved"
+        assert path.exists(), "active file must still be present"
+
+    def test_age_cleanup_skips_when_max_age_days_is_zero(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from flow_engineering import observability
+
+        path = tmp_path / "metrics.jsonl"
+        monkeypatch.setenv(METRICS_PATH_ENV, str(path))
+        # Explicit 0 = disable age-based cleanup.
+        monkeypatch.setenv("FLOW_METRICS_LOG_MAX_AGE_DAYS", "0")
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("active\n", encoding="utf-8")
+        old_sibling = tmp_path / "metrics.20200101T000000Z.jsonl"
+        old_sibling.write_text("very old\n", encoding="utf-8")
+
+        import os
+        import time as _time
+
+        now = _time.time()
+        # Backdate by 5 years — should be way past any reasonable cutoff.
+        os.utime(old_sibling, (now - 5 * 365 * 86400, now - 5 * 365 * 86400))
+
+        observability.increment("rotation_probe_total", payload="x" * 80)
+
+        # With cleanup disabled, the old sibling MUST be preserved.
+        assert old_sibling.exists(), "age cleanup must be disabled when env=0"
+        assert path.exists()
