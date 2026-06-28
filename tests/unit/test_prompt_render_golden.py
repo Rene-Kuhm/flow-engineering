@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from flow_engineering.prompt_registry import render_prompt_canonical
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "golden" / "prompts"
@@ -111,7 +113,132 @@ class TestCanonicalRenders:
 
     def test_unknown_prompt_id_raises_value_error(self) -> None:
         """The helper rejects unknown prompt IDs (mirrors render_prompt contract)."""
-        import pytest
-
         with pytest.raises(ValueError, match="unknown prompt id"):
             render_prompt_canonical("definitely_not_in_catalog_xyz")
+
+
+@pytest.fixture
+def golden_snapshot_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Provide an isolated golden snapshot directory for ``TestGoldenUpdate``.
+
+    Mirrors the production ``tests/golden/prompts/`` layout but rooted at
+    ``tmp_path`` so the ``--update-goldens`` + ``--check-snapshot`` tests
+    do NOT mutate the committed artifacts. The CLI helper reads the
+    directory from ``flow_engineering.cli._GOLDEN_PROMPTS_DIR`` (wired by
+    T2.4 GREEN); the fixture overrides that constant for the test scope.
+
+    Lazy monkeypatch: the override is registered only when the fixture
+    resolves so tests that DON'T use this fixture (e.g., the snapshot
+    byte-match tests in ``TestGoldenRegression``) don't pay the import
+    cost. Tests that DO use this fixture see the override applied at
+    fixture-resolve time.
+    """
+    snap_dir = tmp_path / "golden" / "prompts"
+    snap_dir.mkdir(parents=True)
+    from flow_engineering import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "_GOLDEN_PROMPTS_DIR", snap_dir, raising=False)
+    return snap_dir
+
+
+class TestGoldenUpdate:
+    """``flow prompts show --update-goldens`` + ``--check-snapshot`` flags (T2.3..T2.4).
+
+    These tests verify the CLI surface that lets operators regenerate
+    golden snapshots after an intentional template change (mirrors
+    ``scripts/generate_prompts_doc.py`` "regenerate via ``make docs``"
+    precedent) AND detect drift when the rendered output diverges from
+    the committed snapshot.
+
+    Strict TDD: tests written BEFORE the flag implementation. They
+    MUST fail with ``Error: no such option: --update-goldens`` (or
+    ``--check-snapshot``) until ``cli.py`` wires the flags (T2.4 GREEN).
+    """
+
+    def test_update_goldens_flag_writes_canonical_snapshot(
+        self, golden_snapshot_dir: Path
+    ) -> None:
+        """`--update-goldens` writes the canonical render to the snapshot file."""
+        from click.testing import CliRunner
+
+        from flow_engineering.cli import main
+
+        runner = CliRunner()
+        snap_path = golden_snapshot_dir / "strict_tdd.txt"
+        assert not snap_path.exists(), (
+            "precondition: snapshot file must not exist before --update-goldens"
+        )
+
+        result = runner.invoke(
+            main,
+            ["prompts", "show", "strict_tdd", "--update-goldens"],
+        )
+
+        assert result.exit_code == 0, (
+            f"--update-goldens failed: exit={result.exit_code}, "
+            f"output={result.output!r}, exc={result.exception!r}"
+        )
+        assert snap_path.exists(), (
+            f"--update-goldens did not write {snap_path}"
+        )
+        written = snap_path.read_text(encoding="utf-8")
+        expected = render_prompt_canonical("strict_tdd")
+        assert written == expected, (
+            f"snapshot content mismatch: "
+            f"expected {len(expected)} bytes, got {len(written)} bytes"
+        )
+
+    def test_check_snapshot_flag_fails_on_drift(
+        self, golden_snapshot_dir: Path
+    ) -> None:
+        """`--check-snapshot` exits non-zero + emits 'snapshot drift detected' on mismatch."""
+        from click.testing import CliRunner
+
+        from flow_engineering.cli import main
+
+        runner = CliRunner()
+        snap_path = golden_snapshot_dir / "auto_suggest_header.txt"
+        snap_path.write_text("GARBAGE BYTES THAT WILL NEVER MATCH", encoding="utf-8")
+
+        result = runner.invoke(
+            main,
+            ["prompts", "show", "auto_suggest_header", "--check-snapshot"],
+        )
+
+        assert result.exit_code != 0, (
+            f"--check-snapshot should fail on drift but exited 0; "
+            f"output={result.output!r}"
+        )
+        err_text = ""
+        if result.stderr_bytes:
+            err_text = result.stderr_bytes.decode("utf-8", errors="replace")
+        out_text = result.output or ""
+        full = out_text + err_text
+        assert "snapshot drift detected" in full, (
+            f"stderr should mention 'snapshot drift detected'; got: {full!r}"
+        )
+
+    def test_check_snapshot_flag_passes_when_match(
+        self, golden_snapshot_dir: Path
+    ) -> None:
+        """`--check-snapshot` exits 0 when snapshot matches canonical render."""
+        from click.testing import CliRunner
+
+        from flow_engineering.cli import main
+
+        runner = CliRunner()
+        snap_path = golden_snapshot_dir / "auto_suggest_empty.txt"
+        snap_path.write_text(
+            render_prompt_canonical("auto_suggest_empty"),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            main,
+            ["prompts", "show", "auto_suggest_empty", "--check-snapshot"],
+        )
+
+        assert result.exit_code == 0, (
+            f"--check-snapshot should pass when snapshot matches; "
+            f"exit={result.exit_code}, output={result.output!r}"
+        )
