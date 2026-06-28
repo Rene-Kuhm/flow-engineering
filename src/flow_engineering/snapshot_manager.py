@@ -78,7 +78,7 @@ class SnapshotEnvelopeError(Exception):
     """
 
 
-class SnapshotGraphMissing(Exception):
+class SnapshotGraphMissingError(Exception):
     """Raised when a snapshot envelope lacks the frozen ``graph.json`` content.
 
     REQ-33 D2 graceful degradation: a snapshot created against an
@@ -94,7 +94,33 @@ class SnapshotGraphMissing(Exception):
     (``SnapshotGraphMissing(ValueError)``) for backwards compat with
     batch B1 BDD tests — the two are semantically equivalent and
     interchangeable from a caller's perspective.
+
+    This is the canonical name (v1.1); the legacy
+    :class:`SnapshotGraphMissing` is preserved as a 1-release alias and
+    will be removed in v1.2.
     """
+
+
+# 1-release alias (v1.1 follow-up per REQ-V1.1.6).
+# Deprecated: use ``SnapshotGraphMissingError`` instead. The alias exists
+# so v1.0 callers that imported ``SnapshotGraphMissing`` keep working
+# until v1.2. Both names refer to the SAME class — there is no parallel
+# hierarchy. DeprecationWarning fires at import time.
+import warnings as _warnings
+
+
+def __getattr__(name: str) -> object:
+    """PEP 562 module-level __getattr__ for backward-compat aliases."""
+    if name == "SnapshotGraphMissing":
+        _warnings.warn(
+            "SnapshotGraphMissing is deprecated; "
+            "import SnapshotGraphMissingError instead. "
+            "The alias will be removed in v1.2.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return SnapshotGraphMissingError
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(frozen=True)
@@ -1179,6 +1205,7 @@ class SnapshotManager:
 
 __all__ = [
     "SnapshotEnvelopeError",
+    "SnapshotGraphMissingError",
     "SnapshotGraphMissing",
     "SnapshotMeta",
     "SnapshotDiff",
