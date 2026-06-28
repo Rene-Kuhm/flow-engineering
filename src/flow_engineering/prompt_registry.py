@@ -549,6 +549,7 @@ __all__ = [
     "get_prompt",
     "get_prompt_metadata",
     "get_prompt_template",
+    "get_spec_category",
     "lint_prompts",
     "list_prompts",
     "list_required_vars",
@@ -559,6 +560,72 @@ __all__ = [
     "unregister_prompt",
     "validate_catalog",
 ]
+
+
+# ---------- W1: spec-taxonomy alias map (PR#1 verify-report W1 carry-forward) ----------
+
+
+"""Forward mapping from spec-locked REQ-47 category names to impl codes (W1).
+
+Per verify-report-pr1.md W1 + spec REQ-47: the spec mandates 5
+category names (``missing_placeholder``, ``unused_variable``,
+``template_parse_error``, ``autoescape_disabled``,
+``missing_variable``). The impl ships 5 different names (no
+overlap). This mapping is the forward bridge from spec name →
+impl name so downstream consumers querying for spec-mandated
+names can resolve them. Values are:
+
+- ``str`` — the impl code emitted by :func:`lint_prompts` /
+  :func:`validate_catalog`.
+- ``None`` — the spec name has NO impl equivalent yet (deferred
+  to v1.1; documented in verify-report-pr1.md W1).
+
+The mapping is FORWARD-ONLY (spec → impl). Reverse lookups
+(impl name → spec name) return ``None`` because:
+- The spec mandates spec names as the source of truth.
+- The impl has 3 codes the spec doesn't cover at all
+  (``duplicate_name``, ``invalid_domain``, ``invalid_version``).
+
+Migration path: when the v0.8.x ``PromptDef → PromptEntry``
+schema migration lands, rename impl codes to match the spec
+taxonomy and remove this shim (the proposal's deferral path).
+"""
+
+LINT_CATEGORY_SPEC_ALIASES: dict[str, str | None] = {
+    "missing_placeholder": "undefined_var",
+    "template_parse_error": "jinja_syntax",
+    "unused_variable": None,
+    "autoescape_disabled": None,
+    "missing_variable": None,
+}
+
+
+def get_spec_category(spec_name: str) -> str | None:
+    """Resolve a spec-locked REQ-47 category name to its impl equivalent.
+
+    Per verify-report-pr1.md W1: downstream consumers (future REQ-52
+    counters, REQ-53 docs generator) querying for the spec-mandated
+    category names can use this helper instead of duplicating the
+    taxonomy in their own code.
+
+    Args:
+        spec_name: One of the 5 spec-locked category names
+            (``missing_placeholder``, ``unused_variable``,
+            ``template_parse_error``, ``autoescape_disabled``,
+            ``missing_variable``).
+
+    Returns:
+        The impl code emitted by :func:`lint_prompts` for that spec
+        name (``"undefined_var"`` or ``"jinja_syntax"``), or
+        ``None`` when the spec name has NO impl equivalent yet
+        (deferred to v1.1; downstream consumers should treat
+        ``None`` as "no-op: implement later").
+
+    Raises:
+        Nothing. Unknown spec names return ``None`` defensively (the
+        mapping is forward-only and closed-world by intent).
+    """
+    return LINT_CATEGORY_SPEC_ALIASES.get(spec_name)
 
 
 @lru_cache(maxsize=1)
