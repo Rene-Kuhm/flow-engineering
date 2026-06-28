@@ -344,6 +344,93 @@ class TestDefaultPath:
 # ---------- REQ-V1.1.1: DriftEventLog rotation (size + age) ----------
 
 
+# ---------- REQ-V1.1.2: S2 hardening (drop defensive coercion shim) ----------
+
+
+class TestReadAllLegacyFormat:
+    """REQ-V1.1.2: legacy ``decision_id: "42"`` (str) lines raise
+    ``DriftEventLogLegacyFormatError`` instead of being silently coerced.
+
+    The v1.0 D2 defensive coercion shim (``_legacy_warn_emitted`` flag +
+    ``try/except`` block + per-instance one-time stderr WARN) is REMOVED
+    in v1.1. Legacy lines now raise a NEW exception that inherits from
+    ``ValueError``. The read-side CLI catches it per-line: default mode
+    skips + emits a stderr WARN per batch; ``--strict`` mode aborts on
+    first legacy line.
+    """
+
+    def test_legacy_str_decision_id_raises_legacy_format_error(
+        self, tmp_path: Path
+    ) -> None:
+        """A legacy str decision_id line raises DriftEventLogLegacyFormatError (T2.1 RED)."""
+        from flow_engineering.drift_event_log import (
+            DriftEventLogLegacyFormatError,
+        )
+
+        log_path = tmp_path / "drift_events.jsonl"
+        legacy_line = json.dumps({
+            "change": "x",
+            "decision_id": "42",
+            "binding_id": "y",
+            "class": "z",
+            "detected_at": 1_710_000_000.0,
+        })
+        log_path.write_text(legacy_line + "\n", encoding="utf-8")
+        log = DriftEventLog(path=log_path)
+
+        with pytest.raises(DriftEventLogLegacyFormatError):
+            log.read_all()
+
+    def test_legacy_format_error_inherits_value_error(self) -> None:
+        """``DriftEventLogLegacyFormatError`` inherits from ``ValueError``
+        so external ``except ValueError:`` blocks continue to catch it."""
+        from flow_engineering.drift_event_log import (
+            DriftEventLogLegacyFormatError,
+        )
+
+        assert issubclass(DriftEventLogLegacyFormatError, ValueError)
+
+    def test_legacy_lines_remain_skippable_via_caller_catch(
+        self, tmp_path: Path
+    ) -> None:
+        """Read-side callers can ``except DriftEventLogLegacyFormatError``
+        per-line to keep the best-effort sink ethos (T2.4 contract)."""
+        from flow_engineering.drift_event_log import (
+            DriftEventLogLegacyFormatError,
+        )
+
+        log_path = tmp_path / "drift_events.jsonl"
+        legacy = json.dumps({
+            "change": "x",
+            "decision_id": "42",
+            "binding_id": "y",
+            "class": "z",
+            "detected_at": 1_710_000_000.0,
+        })
+        log_path.write_text(legacy + "\n", encoding="utf-8")
+        log = DriftEventLog(path=log_path)
+
+        skipped = 0
+        with pytest.raises(DriftEventLogLegacyFormatError):
+            for _raw in log_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    log.read_all()
+                except DriftEventLogLegacyFormatError:
+                    skipped += 1
+                    break
+        assert skipped == 1
+
+    def test_legacy_warn_emitted_flag_removed(self) -> None:
+        """The v1.0 per-instance ``_legacy_warn_emitted`` flag is REMOVED."""
+        log = DriftEventLog(path=Path("/tmp/missing.jsonl"))
+        assert not hasattr(log, "_legacy_warn_emitted"), (
+            "v1.0 _legacy_warn_emitted flag should be removed in v1.1"
+        )
+
+
+# ---------- REQ-V1.1.1: DriftEventLog rotation (size + age) ----------
+
+
 class TestRotation:
     """REQ-V1.1.1: DriftEventLog rotation policy.
 
