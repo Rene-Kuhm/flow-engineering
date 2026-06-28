@@ -10,7 +10,7 @@ Feature: render_prompt helper (REQ-46)
     When I call `render_prompt("with_kwargs_example", user_name="World")`
     Then the result equals "Hello, World!"
 
-  Scenario: render with missing kwargs raises UndefinedError
+  Scenario: render with missing kwargs raises PromptRenderError
     Given the prompt "needs_name" exists with template "Hello, {{ user_name }}!"
     When I call `render_prompt("needs_name")`
-    Then an UndefinedError is raised mentioning "user_name"
+    Then a PromptRenderError is raised mentioning "user_name"
