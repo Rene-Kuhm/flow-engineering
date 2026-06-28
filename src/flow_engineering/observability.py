@@ -87,6 +87,31 @@ _DEFAULT_PATH: Path = DEFAULT_METRICS_DIR / DEFAULT_METRICS_FILE
 STALE_DAYS_THRESHOLD: int = 30
 
 
+# ---------- REQ-V1.2.1 metrics.jsonl rotation (mirrors drift_event_log.py:196-254) ----------
+
+
+METRICS_ROTATE_BYTES_DEFAULT: int = 10 * 1024 * 1024
+"""Default size threshold for ``metrics.jsonl`` rotation (REQ-V1.2.1).
+
+Mirrors ``DriftEventLog.ROTATE_BYTES_DEFAULT`` at ``drift_event_log.py:33``.
+Override at runtime via ``FLOW_METRICS_LOG_MAX_BYTES`` env var; set to ``0``
+to disable size-based rotation entirely.
+"""
+
+METRICS_ROTATE_AGE_DAYS_DEFAULT: int = 30
+"""Default age threshold (days) for deleting rotated ``metrics.jsonl``
+files (REQ-V1.2.1). Mirrors ``DriftEventLog.ROTATE_AGE_DAYS_DEFAULT`` at
+``drift_event_log.py:41``. Override via ``FLOW_METRICS_LOG_MAX_AGE_DAYS``;
+set to ``0`` to disable age-based cleanup entirely.
+"""
+
+METRICS_LOG_MAX_BYTES_ENV: str = "FLOW_METRICS_LOG_MAX_BYTES"
+"""Env-var name for the size-threshold override (REQ-V1.2.1)."""
+
+METRICS_LOG_MAX_AGE_DAYS_ENV: str = "FLOW_METRICS_LOG_MAX_AGE_DAYS"
+"""Env-var name for the age-cleanup override (REQ-V1.2.1)."""
+
+
 # ---------- REQ-22 vector counter catalog ----------
 
 
@@ -176,8 +201,14 @@ def increment(name: str, **fields: Any) -> None:
 
     The parent directory is created on demand. The function never raises:
     any unexpected ``OSError`` is swallowed (the counter is best-effort).
+
+    REQ-V1.2.1: a size-based rotation is run BEFORE the write via
+    :func:`_rotate_metrics_if_needed`. The rotation helper itself is
+    best-effort (``try/except OSError`` swallow internally) so a slow
+    rename on a network FS never crashes the sink path resolution.
     """
     path = _resolve_path()
+    _rotate_metrics_if_needed(path)
     event = {"name": name, "fields": fields, "ts": _now_iso()}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,6 +218,80 @@ def increment(name: str, **fields: Any) -> None:
     except OSError:
         # Best-effort counter. Failing to write MUST NOT break the save flow.
         return
+
+
+def _resolve_metrics_rotation_threshold_bytes() -> int:
+    """Read ``FLOW_METRICS_LOG_MAX_BYTES`` (0 = disable).
+
+    Mirrors ``drift_event_log._resolve_rotation_threshold_bytes`` exactly:
+    missing/empty env var returns the default; non-integer env var falls
+    back to the default; negative values are clamped to 0 (disabled).
+    """
+    raw = os.environ.get(METRICS_LOG_MAX_BYTES_ENV)
+    if raw is None or raw == "":
+        return METRICS_ROTATE_BYTES_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return METRICS_ROTATE_BYTES_DEFAULT
+    return max(0, value)
+
+
+def _resolve_metrics_max_age_days() -> int:
+    """Read ``FLOW_METRICS_LOG_MAX_AGE_DAYS`` (0 = disable).
+
+    Mirrors ``drift_event_log._resolve_max_age_days`` exactly: missing
+    env var returns the default; non-integer env var falls back to the
+    default; values <= 0 disable age-based cleanup.
+    """
+    raw = os.environ.get(METRICS_LOG_MAX_AGE_DAYS_ENV)
+    if raw is None or raw == "":
+        return METRICS_ROTATE_AGE_DAYS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return METRICS_ROTATE_AGE_DAYS_DEFAULT
+    return max(0, value)
+
+
+def _rotate_metrics_if_needed(path: Path) -> None:
+    """Rotate ``path`` when its size meets the configured threshold (REQ-V1.2.1).
+
+    Mirrors ``drift_event_log._rotate_if_needed`` at lines 220-254. The
+    helper is best-effort: every filesystem call is wrapped in
+    ``try/except OSError`` so a slow rename on a network FS never crashes
+    the sink. Behaviour:
+
+    - If ``path.stat().st_size >= FLOW_METRICS_LOG_MAX_BYTES`` (default 10 MB),
+      rename ``path`` to ``metrics.<ISO-no-colons>.jsonl`` so the next
+      append creates a fresh active file.
+    - When ``FLOW_METRICS_LOG_MAX_AGE_DAYS`` is set, walk sibling files
+      matching ``metrics.*.jsonl`` and delete any whose mtime is older
+      than the cutoff. ``0`` (or unset-with-default) means 30 days.
+    """
+    threshold = _resolve_metrics_rotation_threshold_bytes()
+    if threshold > 0 and path.exists():
+        try:
+            if path.stat().st_size >= threshold:
+                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                rotated = path.with_name(f"metrics.{stamp}.jsonl")
+                path.rename(rotated)
+        except OSError:
+            pass
+
+    max_age_days = _resolve_metrics_max_age_days()
+    if max_age_days <= 0:
+        return
+    cutoff = datetime.now(UTC).timestamp() - (max_age_days * 86400)
+    parent = path.parent
+    for sibling in parent.glob("metrics.*.jsonl"):
+        if sibling == path:
+            continue
+        try:
+            if sibling.stat().st_mtime < cutoff:
+                sibling.unlink()
+        except OSError:
+            pass
 
 
 def flush() -> None:
