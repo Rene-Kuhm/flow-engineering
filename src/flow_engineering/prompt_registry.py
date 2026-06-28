@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 import time as _time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -89,7 +89,7 @@ class PromptNotFoundError(PromptRenderError, KeyError):
         KeyError.__init__(self, prompt_id)
 
 
-class PromptDomain(str, Enum):
+class PromptDomain(StrEnum):
     """Categorical domain for prompt grouping.
 
     Mirrors the ``owner`` convention used by the observability counter

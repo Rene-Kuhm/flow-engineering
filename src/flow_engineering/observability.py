@@ -63,6 +63,7 @@ increments the two coverage counters in a single call.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import random
@@ -70,7 +71,8 @@ import tempfile
 import time as _time
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass, field as _dc_field
+from dataclasses import dataclass
+from dataclasses import field as _dc_field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -670,10 +672,9 @@ def _domain_for_counter(counter_name: str) -> str:
     # Longest-prefix match — preserves determinism if two prefixes ever
     # share a stem (e.g., ``update_observation_metadata_`` vs ``update_``).
     best: str | None = None
-    for prefix, domain in DOMAIN_BY_PREFIX.items():
-        if counter_name.startswith(prefix):
-            if best is None or len(prefix) > len(best):
-                best = prefix
+    for prefix, _domain in DOMAIN_BY_PREFIX.items():
+        if counter_name.startswith(prefix) and (best is None or len(prefix) > len(best)):
+            best = prefix
     if best is None:
         return "unknown"
     return DOMAIN_BY_PREFIX[best]
@@ -767,7 +768,7 @@ def read_events_by_domain(domain: str, path: Path | None = None) -> list[MetricE
     if not prefixes:
         raise ValueError(
             f"unknown domain: {domain!r}; "
-            f"valid domains: {sorted({d for d in DOMAIN_BY_PREFIX.values()})}"
+            f"valid domains: {sorted(set(DOMAIN_BY_PREFIX.values()))}"
         )
     events = read_all_metrics(path)
     return [e for e in events if any(e.counter_name.startswith(p) for p in prefixes)]
@@ -903,8 +904,7 @@ def _prometheus_name(counter_name: str, prefix: str) -> str:
     fixtures that bypass the catalog.
     """
     name = f"{prefix}{counter_name}"
-    name = name.replace("_total_total", "_total")
-    return name
+    return name.replace("_total_total", "_total")
 
 
 def _format_label_block(labels: dict[str, str]) -> str:
@@ -1280,9 +1280,7 @@ def format_percentile_report(result: dict[str, float]) -> str:
         # contract is the only source of 0.0 values (positive counters
         # yield strictly-positive percentiles), so this is a reliable
         # signal even when only a subset of percentiles was requested.
-        values_present = [
-            v for v in grouped[counter].values()
-        ]
+        values_present = list(grouped[counter].values())
         all_zero = bool(values_present) and all(v == 0.0 for v in values_present)
         if all_zero:
             row_parts.append("not enough data points")
@@ -1320,10 +1318,8 @@ def atomic_write_text(path: Path, content: str) -> int:
             tmp.write(content)
         os.replace(tmp_name, path)
     except Exception:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
     return len(content.encode("utf-8"))
 
@@ -1542,7 +1538,7 @@ def read_and_summarize(
             # raises ValueError so the CLI emits exit-code-2 (D9).
             raise ValueError(
                 f"unknown domain: {domain!r}; "
-                f"valid domains: {sorted({d for d in DOMAIN_BY_PREFIX.values()})}"
+                f"valid domains: {sorted(set(DOMAIN_BY_PREFIX.values()))}"
             )
         events = [e for e in events if any(e.counter_name.startswith(p) for p in prefixes)]
 
