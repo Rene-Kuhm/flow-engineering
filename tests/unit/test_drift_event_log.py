@@ -11,7 +11,9 @@ Test isolation: each test gets a fresh ``tmp_path`` and constructs the
 from __future__ import annotations
 
 import json
+import os
 import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -337,3 +339,146 @@ class TestDefaultPath:
     def test_default_path_is_under_flow_engineering(self) -> None:
         assert DEFAULT_DRIFT_EVENT_LOG_PATH.parent.name == ".flow-engineering"
         assert DEFAULT_DRIFT_EVENT_LOG_PATH.name == "drift_events.jsonl"
+
+
+# ---------- REQ-V1.1.1: DriftEventLog rotation (size + age) ----------
+
+
+class TestRotation:
+    """REQ-V1.1.1: DriftEventLog rotation policy.
+
+    Size-based: rotate the active ``drift_events.jsonl`` to
+    ``drift_events.<ISO-no-colons>.jsonl`` when ``st_size >=
+    FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` (default 10 MB).
+    Age-based: delete rotated files older than
+    ``FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS`` (default 30 days).
+    Best-effort ``try/except OSError`` swallow for slow FS errors.
+    """
+
+    def test_rotates_at_max_bytes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Appending past ``FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` rotates the active file."""
+        # T1.1 RED: 1 KB threshold so a single DriftEvent triggers rotation.
+        log_path = tmp_path / "drift_events.jsonl"
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_BYTES", "1024")
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS", "30")
+
+        log = DriftEventLog(path=log_path)
+        # Force the file to look "full" by pre-sizing it to >= threshold.
+        log_path.write_bytes(b"x" * 2048)
+
+        log.append(_make_event(decision_id=1))
+
+        # The active file now exists at the original path (fresh, ready
+        # for the NEXT append); a sibling rotated file was created.
+        assert log_path.exists()
+        rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
+        assert len(rotated) == 1, (
+            f"expected exactly 1 rotated file; got {rotated}"
+        )
+        # The rotated file is lex-sortable (ISO-no-colons format).
+        assert rotated[0].name.startswith("drift_events.")
+        assert rotated[0].name.endswith(".jsonl")
+
+    def test_no_rotation_when_below_threshold(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A small append below the threshold does NOT trigger rotation."""
+        log_path = tmp_path / "drift_events.jsonl"
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_BYTES", "1048576")
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS", "30")
+
+        log = DriftEventLog(path=log_path)
+        for i in range(3):
+            log.append(_make_event(decision_id=i))
+
+        # Only the active file exists; no rotated siblings.
+        assert log_path.exists()
+        rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
+        assert rotated == [], (
+            f"unexpected rotated files below threshold: {rotated}"
+        )
+        # The active file contains all 3 events.
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 3
+
+    def test_rotates_when_env_var_overrides(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Lowering ``FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` triggers rotation sooner."""
+        log_path = tmp_path / "drift_events.jsonl"
+        # Set a tiny 256-byte threshold — well below one DriftEvent's
+        # serialized JSON. After a single append the file should be rotated.
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_BYTES", "256")
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS", "30")
+
+        log = DriftEventLog(path=log_path)
+        log.append(_make_event(decision_id=1))
+        log.append(_make_event(decision_id=2))
+
+        # At least one rotated file should exist; the active file should
+        # contain only the most recent append.
+        rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
+        assert len(rotated) >= 1, "expected at least 1 rotated file"
+        # The active file is short (only the last append — the rotated
+        # file absorbed the pre-rotation writes).
+        active_lines = log_path.read_text(encoding="utf-8").splitlines()
+        assert len(active_lines) <= 2  # fresh file may contain 0-2 events
+
+    def test_deletes_rotated_files_older_than_max_age_days(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rotated files older than ``FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS`` are deleted."""
+        log_path = tmp_path / "drift_events.jsonl"
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_BYTES", "10")
+        monkeypatch.setenv("FLOW_DRIFT_EVENT_LOG_MAX_AGE_DAYS", "1")
+
+        # Pre-create a rotated file with an old mtime (simulate "10 days old").
+        old_rotated = tmp_path / "drift_events.20200101T000000Z.jsonl"
+        old_rotated.write_text("legacy\n", encoding="utf-8")
+        ten_days_ago = (datetime.now(UTC) - timedelta(days=10)).timestamp()
+        os.utime(old_rotated, (ten_days_ago, ten_days_ago))
+
+        log = DriftEventLog(path=log_path)
+        # Any append triggers the rotation helper, which also walks
+        # siblings and deletes old rotated files.
+        log.append(_make_event(decision_id=1))
+
+        assert not old_rotated.exists(), (
+            "old rotated file should have been deleted on next append"
+        )
+
+    def test_rotation_preserves_lock(self, log_path: Path) -> None:
+        """Rotation runs inside ``self._lock`` so concurrent appends do not
+        interleave bytes (D11 contract preserved across rotation)."""
+        log = DriftEventLog(path=log_path)
+        n_threads = 10
+        per_thread = 5
+
+        def _worker(thread_idx: int) -> None:
+            for i in range(per_thread):
+                log.append(
+                    _make_event(
+                        decision_id=thread_idx * per_thread + i,
+                        binding_id=f"obs-{thread_idx}-{i}",
+                    )
+                )
+
+        threads = [
+            threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Every line in the active + any rotated file must parse + carry
+        # a unique decision_id (no interleaved bytes).
+        all_lines: list[str] = []
+        all_lines.extend(log_path.read_text(encoding="utf-8").splitlines())
+        for rotated in sorted(log_path.parent.glob("drift_events.*.jsonl")):
+            all_lines.extend(rotated.read_text(encoding="utf-8").splitlines())
+        parsed = [json.loads(line) for line in all_lines if line.strip()]
+        ids = sorted(int(p["decision_id"]) for p in parsed)
+        assert ids == list(range(n_threads * per_thread))
