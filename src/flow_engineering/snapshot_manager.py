@@ -45,7 +45,7 @@ import os
 import secrets
 import tempfile
 import time as _time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -365,7 +365,7 @@ class SnapshotManager:
     def __init__(
         self,
         snapshots_dir: Path,
-        backend: "EngramBackend",
+        backend: EngramBackend,
     ) -> None:
         self.snapshots_dir = Path(snapshots_dir)
         self.backend = backend

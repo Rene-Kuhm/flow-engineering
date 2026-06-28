@@ -19,7 +19,6 @@ from flow_engineering.engram_io import EngramBackend, EngramClient
 from flow_engineering.graphify_hook import (
     GraphifyDecision,
     archive_graphify_hook,
-    decide_rebuild,
 )
 from flow_engineering.state import ChangeStatus, InvalidTransitionError, StateMachine
 

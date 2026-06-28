@@ -140,7 +140,7 @@ def apply_tag(
     observation_id: int,
     project: str,
     *,
-    backend: "EngramBackend",
+    backend: EngramBackend,
 ) -> bool:
     """Re-tag a single observation's ``project`` field.
 
