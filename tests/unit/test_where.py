@@ -195,3 +195,43 @@ class TestGrepRepo:
         assert captured[0][0] == "grep"
         assert any(h.path == "src/foo.py" for h in code)
         assert any(h.path == "tests/test_x.py" for h in tests)
+
+
+# ---------- T1.3 / T1.4 — REQ-V1.0.1: split_code_vs_tests ----------
+
+
+class TestSplitCodeVsTests:
+    """REQ-V1.0.1: ``split_code_vs_tests`` partitions hits by path prefix."""
+
+    def test_all_code_returns_empty_tests_bucket(self) -> None:
+        """No ``tests/`` paths → empty tests bucket; code bucket unchanged."""
+        hits = [
+            where.WhereHit(path="src/a.py", line=1, snippet=None),
+            where.WhereHit(path="src/b.py", line=2, snippet=None),
+        ]
+        code, tests = where.split_code_vs_tests(hits)
+        assert code == hits
+        assert tests == []
+
+    def test_all_tests_returns_empty_code_bucket(self) -> None:
+        """All paths under ``tests/`` → empty code bucket; tests unchanged."""
+        hits = [
+            where.WhereHit(path="tests/test_a.py", line=1, snippet=None),
+            where.WhereHit(path="tests/test_b.py", line=2, snippet=None),
+        ]
+        code, tests = where.split_code_vs_tests(hits)
+        assert code == []
+        assert tests == hits
+
+    def test_mixed_preserves_order_per_bucket(self) -> None:
+        """Mixed hits: each bucket preserves the input order (path-asc, line-asc)."""
+        hits = [
+            where.WhereHit(path="src/a.py", line=1, snippet=None),
+            where.WhereHit(path="tests/test_a.py", line=1, snippet=None),
+            where.WhereHit(path="src/b.py", line=2, snippet=None),
+            where.WhereHit(path="tests/test_b.py", line=2, snippet=None),
+        ]
+        code, tests = where.split_code_vs_tests(hits)
+        assert [h.path for h in code] == ["src/a.py", "src/b.py"]
+        assert [h.path for h in tests] == ["tests/test_a.py", "tests/test_b.py"]
+
