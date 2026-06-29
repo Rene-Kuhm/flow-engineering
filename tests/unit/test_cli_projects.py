@@ -11,11 +11,14 @@ fail until the GREEN commit wires the `flow projects` subcommand.
 
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+from flow_engineering import cli as cli_mod
 from flow_engineering.cli import main
 
 runner = CliRunner()
@@ -49,7 +52,109 @@ def projects_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
-# ---------- Tests ----------
+# ---------- Fake-project fixtures (workspace-intelligence) ----------
+
+
+def make_fake_go_project(parent: Path, name: str = "go-proj") -> Path:
+    """Create a Go project (go.mod + .git/) under ``parent``. Returns the project dir."""
+    p = parent / name
+    p.mkdir()
+    (p / "go.mod").write_text("module example.com/test\n\ngo 1.21\n")
+    (p / ".git").mkdir()
+    return p
+
+
+def make_fake_python_project(parent: Path, name: str = "py-proj") -> Path:
+    """Create a Python project (pyproject.toml + Makefile with test: target)."""
+    p = parent / name
+    p.mkdir()
+    (p / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (p / "Makefile").write_text("test:\n\tpytest\n")
+    return p
+
+
+def make_fake_flutter_project(parent: Path, name: str = "flutter-proj") -> Path:
+    """Create a Flutter project (pubspec.yaml)."""
+    p = parent / name
+    p.mkdir()
+    (p / "pubspec.yaml").write_text("name: x\ndescription: stub\n")
+    return p
+
+
+def make_fake_nix_project(parent: Path, name: str = "nix-proj") -> Path:
+    """Create a Nix project (flake.nix)."""
+    p = parent / name
+    p.mkdir()
+    (p / "flake.nix").write_text("{ }: { }\n")
+    return p
+
+
+def make_fake_astro_project(parent: Path, name: str = "astro-proj") -> Path:
+    """Create an Astro project (astro.config.mjs + package.json with astro dep)."""
+    p = parent / name
+    p.mkdir()
+    (p / "astro.config.mjs").write_text("// config\n")
+    (p / "package.json").write_text('{"dependencies": {"astro": "^5"}}\n')
+    return p
+
+
+def make_fake_next_project(parent: Path, name: str = "next-proj") -> Path:
+    """Create a Next.js project (package.json with next dep + app/ dir)."""
+    p = parent / name
+    p.mkdir()
+    (p / "package.json").write_text('{"dependencies": {"next": "^15"}}\n')
+    (p / "app").mkdir()
+    return p
+
+
+def make_fake_wxt_project(parent: Path, name: str = "wxt-proj") -> Path:
+    """Create a WXT project (wxt.config.ts)."""
+    p = parent / name
+    p.mkdir()
+    (p / "wxt.config.ts").write_text("export default { }\n")
+    return p
+
+
+def make_fake_no_git_project(parent: Path, name: str = "no-git-proj") -> Path:
+    """Create a project with pyproject.toml only (no .git/)."""
+    p = parent / name
+    p.mkdir()
+    (p / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    return p
+
+
+def make_fake_dirty_project(parent: Path, name: str = "dirty-proj") -> Path:
+    """Create a Go project with .git/ + an uncommitted file."""
+    p = make_fake_go_project(parent, name=name)
+    (p / "uncommitted.txt").write_text("wip\n")
+    return p
+
+
+def make_fake_openspec_project(parent: Path, name: str = "os-proj") -> Path:
+    """Create a project with openspec/changes/ dir (empty)."""
+    p = parent / name
+    p.mkdir()
+    (p / "openspec" / "changes").mkdir(parents=True)
+    return p
+
+
+def _default_branch_fake_git(branch: str = "main") -> "callable":
+    """Build a fake_git that returns ``branch`` for rev-parse; no remote, clean."""
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        cp = subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="", stderr=""
+        )
+        if args and args[0] == "rev-parse":
+            cp.stdout = branch + "\n"
+        elif args and args[0] == "config":
+            cp.returncode = 1  # no remote
+        return cp
+
+    return fake_git
+
+
+# ---------- Tests (existing 4 regression baseline) ----------
 
 
 def test_flow_projects_lists_subdirectories_with_markers(projects_root: Path) -> None:
@@ -107,3 +212,270 @@ def test_flow_projects_default_root_windows(
     # If default root doesn't exist (CI/non-Windows), should print informative error
     if result.exit_code != 0:
         assert "not found" in result.output.lower() or "does not exist" in result.output.lower()
+
+
+# ---------- Tests (workspace-intelligence: 9 new unit tests) ----------
+
+
+def test_flow_projects_ls_branch_with_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Go project + fake git seam → branch == 'main' (REQ-FIELD-EXTENSION)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_go_project(root)
+    monkeypatch.setattr(cli_mod, "_git", _default_branch_fake_git(branch="main"))
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload["projects"]) == 1
+    project = payload["projects"][0]
+    assert project["has_git"] is True
+    assert project["branch"] == "main"
+
+
+def test_flow_projects_ls_dirty_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Clean vs uncommitted → dirty boolean (REQ-FIELD-EXTENSION)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_go_project(root, name="clean-proj")
+    make_fake_dirty_project(root, name="dirty-proj")
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        cp = subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="", stderr=""
+        )
+        cwd = kwargs.get("cwd")
+        cwd_path = Path(str(cwd)).resolve() if cwd else None
+        is_dirty = cwd_path is not None and "dirty" in cwd_path.name
+        if args and args[0] == "rev-parse":
+            cp.stdout = "main\n"
+        elif args and args[0] == "status" and "--porcelain" in args:
+            cp.stdout = " M foo.txt\n" if is_dirty else ""
+        elif args and args[0] == "config":
+            cp.returncode = 1
+        return cp
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    by_name = {p["name"]: p for p in payload["projects"]}
+    assert by_name["clean-proj"]["dirty"] is False
+    assert by_name["dirty-proj"]["dirty"] is True
+
+
+def test_flow_projects_ls_remote_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Go project + origin URL → remote string (REQ-FIELD-EXTENSION)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_go_project(root)
+    expected_remote = "https://github.com/example/test.git"
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        cp = subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="", stderr=""
+        )
+        if args and args[0] == "rev-parse":
+            cp.stdout = "main\n"
+        elif args and args[0] == "config":
+            cp.stdout = expected_remote + "\n"
+        return cp
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["projects"][0]["remote"] == expected_remote
+
+
+def test_flow_projects_ls_remote_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No remote configured → remote is None (REQ-FIELD-EXTENSION)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_go_project(root)
+    monkeypatch.setattr(cli_mod, "_git", _default_branch_fake_git(branch="main"))
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["projects"][0]["remote"] is None
+
+
+def test_flow_projects_ls_test_commands_python_pytest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Python + Makefile test: target → ['make test'] (REQ-FIELD-EXTENSION)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_python_project(root)
+    monkeypatch.setenv("FLOW_PROJECTS_ROOT", str(root))
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["projects"][0]["test_commands"] == ["make test"]
+
+
+def test_flow_projects_ls_has_openspec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Project with openspec/changes/ → has_openspec is True (REQ-FIELD-EXTENSION)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_openspec_project(root)
+    monkeypatch.setenv("FLOW_PROJECTS_ROOT", str(root))
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["projects"][0]["has_openspec"] is True
+
+
+def test_flow_projects_ls_has_engram_stub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """has_engram always False (stub) regardless of fixture (REQ-HAS-ENGRAM-STUB)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_go_project(root, name="go-one")
+    make_fake_python_project(root, name="py-one")
+    make_fake_openspec_project(root, name="os-one")
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="main\n", stderr=""
+        )
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload["projects"]) == 3
+    for project in payload["projects"]:
+        assert project["has_engram"] is False
+
+
+def test_flow_projects_ls_json_deterministic_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """3 projects a/c/b → sorted to a/b/c in output (REQ-DETERMINISTIC-ORDER)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    for name in ("c", "a", "b"):
+        (root / name).mkdir()
+    monkeypatch.setenv("FLOW_PROJECTS_ROOT", str(root))
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    names = [p["name"] for p in payload["projects"]]
+    assert names == ["a", "b", "c"]
+
+
+def test_flow_projects_ls_json_version_field_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """version key is first in serialized JSON (REQ-SCHEMA-VERSIONING)."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    (root / "any").mkdir()
+    monkeypatch.setenv("FLOW_PROJECTS_ROOT", str(root))
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    # First key in JSON output must be "version" (json.dumps preserves dict
+    # insertion order in Python 3.7+).
+    first_key_line = next(
+        (ln for ln in result.output.splitlines() if ln.lstrip().startswith('"')),
+        None,
+    )
+    assert first_key_line is not None
+    assert first_key_line.lstrip().startswith('"version"')
+
+
+def test_flow_projects_ls_json_byte_identical_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC8: Two consecutive ``flow projects ls --json`` invocations on an unchanged
+    filesystem MUST emit byte-identical bytes.
+
+    Regression test added in the AC8 fix-up cycle (2026-06-29). The original
+    envelope assembly injected ``generated_at: _now_iso()`` per invocation,
+    which by design violates byte-determinism. After dropping the timestamp,
+    two invocations on the same fixture must produce identical stdout.
+
+    Pattern follows ``test_flow_projects_ls_json_deterministic_order``:
+    build a tiny fixture in ``tmp_path``, run the command twice in succession
+    (no filesystem changes between calls), and assert ``result1.output ==
+    result2.output``.
+    """
+    root = tmp_path / "projects"
+    root.mkdir()
+    # Two minimal projects — one Go (with .git) + one Python — sorted to
+    # ["go-proj", "py-proj"] in the JSON envelope.
+    make_fake_go_project(root, name="go-proj")
+    make_fake_python_project(root, name="py-proj")
+    monkeypatch.setattr(cli_mod, "_git", _default_branch_fake_git(branch="main"))
+
+    result1 = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    result2 = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+
+    # Both invocations must succeed.
+    assert result1.exit_code == 0, result1.output
+    assert result2.exit_code == 0, result2.output
+
+    # AC8 byte-identical contract: two consecutive invocations on an unchanged
+    # filesystem MUST emit the same bytes. Any timestamp/clock-dependent field
+    # (e.g. ``generated_at``) would break this — the test is intentionally
+    # strict.
+    assert result1.output == result2.output, (
+        f"AC8 violation: two invocations produced different bytes.\n"
+        f"  First ({len(result1.output)} bytes): {result1.output!r}\n"
+        f"  Second ({len(result2.output)} bytes): {result2.output!r}"
+    )
