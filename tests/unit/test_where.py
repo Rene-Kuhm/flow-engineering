@@ -235,3 +235,47 @@ class TestSplitCodeVsTests:
         assert [h.path for h in code] == ["src/a.py", "src/b.py"]
         assert [h.path for h in tests] == ["tests/test_a.py", "tests/test_b.py"]
 
+
+# ---------- T1.5 — REQ-V1.0.2: grep_sdd_archive ----------
+
+
+class TestGrepSddArchive:
+    """REQ-V1.0.2: ``grep_sdd_archive`` reads ``openspec/changes/archive/``."""
+
+    def test_one_hit_from_fixture_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A single match in a fixture `.md` is reported with snippet."""
+        archive = tmp_path / "openspec" / "changes" / "archive" / "2026-01-01-foo"
+        archive.mkdir(parents=True)
+        (archive / "spec.md").write_text(
+            "the jwt validator pattern handles X.\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        hits = where.grep_sdd_archive("jwt", limit=20)
+        assert len(hits) == 1
+        assert hits[0].path == "openspec/changes/archive/2026-01-01-foo/spec.md"
+        assert hits[0].line == 1
+        assert hits[0].snippet is not None
+        assert "jwt" in hits[0].snippet.lower()
+
+    def test_missing_dir_returns_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No ``openspec/changes/archive`` dir → ``[]`` (no error)."""
+        monkeypatch.chdir(tmp_path)
+        assert where.grep_sdd_archive("anything", limit=20) == []
+
+    def test_limit_caps_hits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``limit=N`` truncates the result list at N hits."""
+        archive = tmp_path / "openspec" / "changes" / "archive"
+        for i in range(5):
+            sub = archive / f"change-{i}"
+            sub.mkdir(parents=True)
+            (sub / "spec.md").write_text("jwt token\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        hits = where.grep_sdd_archive("jwt", limit=2)
+        assert len(hits) == 2
