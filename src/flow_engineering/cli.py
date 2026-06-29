@@ -6,6 +6,7 @@ import csv as _csv
 import io
 import json
 import os
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -2485,37 +2486,165 @@ def projects_group() -> None:
     """
 
 
-def _detect_project_markers(project_dir: Path) -> dict[str, str | None]:
-    """Detect type markers + README first line for a project directory.
+# Subprocess seam for workspace-intelligence testability.
+# Mirrors ``where._run_search`` (where.py:89). Production callers hit real
+# ``subprocess.run`` with ``timeout=5s``; tests ``monkeypatch.setattr(cli,
+# "_git", fake_git)`` to inject canned ``CompletedProcess`` instances.
+# Returns the raw ``CompletedProcess``; callers branch on ``returncode``.
+def _git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """Run ``git <args>`` with capture, text decoding, and a 5s timeout.
 
-    Returns dict with keys: ``type``, ``has_flow``, ``readme_first_line``.
-    Used by `flow projects ls` to render a one-line summary per project.
+    Exit-code contract:
+    - ``0`` → stdout parsed; caller decides field semantics.
+    - non-zero → caller treats as "missing"; returns None / False.
+
+    Diverges from ``_run_search`` precedent in two ways:
+    1. Returns ``CompletedProcess`` (not bare ``str``) so the caller can
+       branch on ``returncode`` for fields like ``remote``.
+    2. Adds ``timeout=5s`` — git has higher hang risk than ``rg``/``grep``
+       on Windows when the index is large. Fail-open default: caller
+       catches ``TimeoutExpired`` / ``OSError`` per project.
     """
-    markers: dict[str, str | None] = {"type": "", "has_flow": "", "readme_first_line": ""}
-    # Type detection
+    return subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=str(cwd) if cwd is not None else None,
+        check=False,
+        timeout=5,
+    )
+
+
+def _detect_stack(project_dir: Path) -> str:
+    """Return stack enum from file probes (9-stack cascade per explore.md:30-41).
+
+    Order: Python -> Astro (config wins over package.json substring) -> Node
+    -> Flutter -> Nix -> WXT -> Rust -> Go -> Unknown. Astro/Next disambiguation
+    rule: ``astro.config.{mjs,ts}`` wins over ``package.json`` substring match.
+    """
     if (project_dir / "pyproject.toml").exists():
-        markers["type"] = "python"
-    elif (project_dir / "package.json").exists():
-        markers["type"] = "node"
-        # Detect astro/next/other framework
-        pkg = (project_dir / "package.json").read_text(encoding="utf-8", errors="replace")
+        return "Python"
+    if (project_dir / "astro.config.mjs").exists() or (project_dir / "astro.config.ts").exists():
+        return "Astro"
+    if (project_dir / "package.json").exists():
+        try:
+            pkg = (project_dir / "package.json").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return "Unknown"
         if "astro" in pkg:
-            markers["type"] = "astro"
-        elif "next" in pkg:
-            markers["type"] = "next"
-    elif (project_dir / "Cargo.toml").exists():
-        markers["type"] = "rust"
-    elif (project_dir / "go.mod").exists():
-        markers["type"] = "go"
-    # Flow engineering presence
-    if (project_dir / "flow-engineering").is_dir():
-        markers["has_flow"] = "yes"
-    # README first line
+            return "Astro"
+        if "next" in pkg:
+            return "Next"
+        return "Node"
+    if (project_dir / "pubspec.yaml").exists():
+        return "Flutter"
+    if (project_dir / "flake.nix").exists() or (project_dir / "default.nix").exists():
+        return "Nix"
+    if (project_dir / "wxt.config.ts").exists() or (project_dir / "wxt.config.js").exists():
+        return "WXT"
+    if (project_dir / "Cargo.toml").exists():
+        return "Rust"
+    if (project_dir / "go.mod").exists():
+        return "Go"
+    return "Unknown"
+
+
+def _detect_test_commands(project_dir: Path, stack: str) -> list[str]:
+    """Return detected test commands (per explore.md:46-54; first hit wins).
+
+    Makefile ``test:`` target wins for Go/Python when present. Stack-specific
+    fallbacks use ``package.json`` scripts.test for Astro/Next/WXT/Node, and
+    Python uses ``uv run pytest`` when ``uv.lock`` is at root.
+    """
+    makefile = project_dir / "Makefile"
+    if makefile.is_file():
+        try:
+            content = makefile.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            content = ""
+        for line in content.splitlines():
+            if line.strip().startswith("test:"):
+                return ["make test"]
+    if stack in ("Astro", "Next", "WXT", "Node"):
+        return ["npm test"]
+    if stack == "Python":
+        if (project_dir / "uv.lock").exists():
+            return ["uv run pytest"]
+        if (project_dir / "pyproject.toml").exists():
+            return ["python -m pytest"]
+        return ["pytest"]
+    if stack == "Go":
+        return ["go test ./..."]
+    if stack == "Flutter":
+        return ["flutter test"]
+    if stack == "Rust":
+        return ["cargo test"]
+    return []  # Nix / Unknown — no probe
+
+
+def _detect_project_markers(project_dir: Path) -> dict[str, Any]:
+    """Detect workspace-intel fields + legacy markers for a project directory.
+
+    Returns 14 keys: ``name``, ``path``, ``has_git``, ``branch``, ``dirty``,
+    ``remote``, ``stack``, ``test_commands``, ``has_openspec``, ``has_graphify``
+    (stub), ``has_engram`` (stub), ``type`` (lowercase back-compat for text
+    table), ``has_flow``, ``readme_first_line``. Per-project error isolation:
+    every git call is wrapped in try/except (OSError, subprocess.SubprocessError,
+    subprocess.TimeoutExpired) — broken ``.git`` returns ``has_git=False``,
+    never aborts the listing (REQ-FIELD-EXTENSION, design #439).
+    """
+    out: dict[str, Any] = {
+        "name": project_dir.name,
+        "path": str(project_dir.resolve()),
+    }
+    # Git presence + 3 derived fields via _git() seam (per-call isolation)
+    has_git = (project_dir / ".git").exists()
+    out["has_git"] = has_git
+    out["branch"] = None
+    out["dirty"] = None
+    out["remote"] = None
+    if has_git:
+        try:
+            cp = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=project_dir)
+            if cp.returncode == 0 and cp.stdout.strip():
+                out["branch"] = cp.stdout.strip()
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            pass
+        try:
+            cp = _git("status", "--porcelain", cwd=project_dir)
+            if cp.returncode == 0:
+                out["dirty"] = bool(cp.stdout.strip())
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            pass
+        try:
+            cp = _git("config", "--get", "remote.origin.url", cwd=project_dir)
+            if cp.returncode == 0 and cp.stdout.strip():
+                out["remote"] = cp.stdout.strip()
+        except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            pass
+    # Stack cascade + test commands (helpers above to keep body < 80 LOC)
+    stack = _detect_stack(project_dir)
+    out["stack"] = stack
+    out["type"] = stack.lower() if stack != "Unknown" else ""
+    out["test_commands"] = _detect_test_commands(project_dir, stack)
+    # Workspace-intel fields (Phase 1: has_graphify/has_engram are stubs)
+    out["has_openspec"] = (project_dir / "openspec" / "changes").is_dir()
+    out["has_graphify"] = False
+    # TODO(workspace-intelligence): Phase 2 — replace stub with Engram MCP/API call.
+    # Always returns False; see --help note for user-facing warning.
+    out["has_engram"] = False
+    # Legacy markers (kept for text-table back-compat)
+    out["has_flow"] = "yes" if (project_dir / "flow-engineering").is_dir() else ""
     readme = project_dir / "README.md"
+    out["readme_first_line"] = ""
     if readme.is_file():
-        first = readme.read_text(encoding="utf-8", errors="replace").splitlines()
-        markers["readme_first_line"] = first[0].lstrip("#").strip() if first else ""
-    return markers
+        try:
+            first = readme.read_text(encoding="utf-8", errors="replace").splitlines()
+            out["readme_first_line"] = first[0].lstrip("#").strip() if first else ""
+        except OSError:
+            pass
+    return out
 
 
 @projects_group.command(name="ls")
@@ -2526,12 +2655,27 @@ def _detect_project_markers(project_dir: Path) -> dict[str, str | None]:
     help="Projects root directory. Defaults to FLOW_PROJECTS_ROOT env var, "
     "then C:\\dev\\proyects on Windows or ~/dev/proyects on POSIX.",
 )
-def projects_ls(root: Path | None) -> None:
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON envelope (v1 schema) instead of text table. "
+    "NOTE: 'has_engram' is currently a stub field and always reports false; "
+    "full Engram integration is planned for a later phase.",
+)
+def projects_ls(root: Path | None, json_flag: bool) -> None:
     """List sibling projects with type markers (REQ-V0.1).
 
     Single-purpose cross-project discovery: lists immediate subdirectories
     of the projects root, shows detected type (python/astro/next/rust/go/node),
     whether `flow-engineering/` subdir exists, and the README first line.
+
+    With ``--json``, emits a v1 envelope with 14 fields per project. The
+    ``has_engram`` field is a Phase 1 stub and always reports false.
+
+    NOTE: 'has_engram' is currently a stub field and always reports false;
+    full Engram integration is planned for a later phase.
 
     Output is ASCII-safe (Windows cp1252 portable) per the `flow-where` MVP
     convention. Designed for quick "where's my X project?" questions
@@ -2552,7 +2696,28 @@ def projects_ls(root: Path | None) -> None:
 
     subdirs = sorted([p for p in root.iterdir() if p.is_dir()])
     if not subdirs:
+        if json_flag:
+            envelope = {
+                "version": "1",
+                "root": str(root),
+                "projects": [],
+            }
+            click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
+            return
         click.echo(f"(no subdirectories under {root})")
+        return
+
+    if json_flag:
+        projects = sorted(
+            (_detect_project_markers(p) for p in subdirs),
+            key=lambda d: d["name"],
+        )
+        envelope = {
+            "version": "1",
+            "root": str(root),
+            "projects": projects,
+        }
+        click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
         return
 
     # Compute column widths
