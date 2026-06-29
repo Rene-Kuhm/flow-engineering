@@ -66,6 +66,10 @@ def main() -> None:
     """Flow Engineering -- orchestrator of the Agentic & Context-Driven closed loop."""
 
 
+_DEFAULT_PROJECTS_ROOT_WIN = "C:\\dev\\proyects"
+_DEFAULT_PROJECTS_ROOT_NIX = "~/dev/proyects"
+
+
 def _read_pyproject_min_skill_versions(
     pyproject_path: Path,
 ) -> dict[str, str] | None:
@@ -2475,9 +2479,95 @@ def projects_group() -> None:
 
 
     Subcommands:
+    - ``ls``: list sibling projects with type markers (python/astro/next/rust/go/node).
     - ``backfill``: re-tag observations safely (dry-run default + --confirm gate).
     - ``alias``: append a rename record to ``project-aliases.json`` (REQ-27, lands in T1.10).
     """
+
+
+def _detect_project_markers(project_dir: Path) -> dict[str, str | None]:
+    """Detect type markers + README first line for a project directory.
+
+    Returns dict with keys: ``type``, ``has_flow``, ``readme_first_line``.
+    Used by `flow projects ls` to render a one-line summary per project.
+    """
+    markers: dict[str, str | None] = {"type": "", "has_flow": "", "readme_first_line": ""}
+    # Type detection
+    if (project_dir / "pyproject.toml").exists():
+        markers["type"] = "python"
+    elif (project_dir / "package.json").exists():
+        markers["type"] = "node"
+        # Detect astro/next/other framework
+        pkg = (project_dir / "package.json").read_text(encoding="utf-8", errors="replace")
+        if "astro" in pkg:
+            markers["type"] = "astro"
+        elif "next" in pkg:
+            markers["type"] = "next"
+    elif (project_dir / "Cargo.toml").exists():
+        markers["type"] = "rust"
+    elif (project_dir / "go.mod").exists():
+        markers["type"] = "go"
+    # Flow engineering presence
+    if (project_dir / "flow-engineering").is_dir():
+        markers["has_flow"] = "yes"
+    # README first line
+    readme = project_dir / "README.md"
+    if readme.is_file():
+        first = readme.read_text(encoding="utf-8", errors="replace").splitlines()
+        markers["readme_first_line"] = first[0].lstrip("#").strip() if first else ""
+    return markers
+
+
+@projects_group.command(name="ls")
+@click.option(
+    "--root",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Projects root directory. Defaults to FLOW_PROJECTS_ROOT env var, "
+    "then C:\\dev\\proyects on Windows or ~/dev/proyects on POSIX.",
+)
+def projects_ls(root: Path | None) -> None:
+    """List sibling projects with type markers (REQ-V0.1).
+
+    Single-purpose cross-project discovery: lists immediate subdirectories
+    of the projects root, shows detected type (python/astro/next/rust/go/node),
+    whether `flow-engineering/` subdir exists, and the README first line.
+
+    Output is ASCII-safe (Windows cp1252 portable) per the `flow-where` MVP
+    convention. Designed for quick "where's my X project?" questions
+    without leaving the terminal.
+    """
+    if root is None:
+        env_root = os.environ.get("FLOW_PROJECTS_ROOT")
+        if env_root:
+            root = Path(env_root)
+        elif os.name == "nt":
+            root = Path("C:\\dev\\proyects")
+        else:
+            root = Path("~/dev/proyects").expanduser()
+
+    if not root.is_dir():
+        click.echo(f"projects root not found: {root}", err=True)
+        raise SystemExit(1)
+
+    subdirs = sorted([p for p in root.iterdir() if p.is_dir()])
+    if not subdirs:
+        click.echo(f"(no subdirectories under {root})")
+        return
+
+    # Compute column widths
+    name_w = max(len("NAME"), max((len(p.name) for p in subdirs), default=4))
+    type_w = max(len("TYPE"), max((len(_detect_project_markers(p)["type"] or "?") for p in subdirs), default=4))
+    has_flow_w = len("FLOW")
+
+    click.echo(f"{'NAME'.ljust(name_w)}  {'TYPE'.ljust(type_w)}  {'FLOW'.ljust(has_flow_w)}  README")
+    click.echo(f"{'-' * name_w}  {'-' * type_w}  {'-' * has_flow_w}  {'-' * 20}")
+    for p in subdirs:
+        m = _detect_project_markers(p)
+        ptype = m["type"] or "?"
+        has_flow = m["has_flow"] or "-"
+        readme = m["readme_first_line"] or ""
+        click.echo(f"{p.name.ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}")
 
 
 @projects_group.command(name="backfill")
