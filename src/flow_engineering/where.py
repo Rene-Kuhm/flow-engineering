@@ -162,6 +162,26 @@ def grep_repo(
     work_dir = Path(cwd) if cwd is not None else Path.cwd()
     stdout = _run_search(query, ["src", "tests"], work_dir)
     all_hits = _parse_hits(stdout)
-    code = [h for h in all_hits if not h.path.startswith("tests/")][:limit]
-    tests = [h for h in all_hits if h.path.startswith("tests/")][:limit]
+    code_all, tests_all = split_code_vs_tests(all_hits)
+    return (_apply_limit(code_all, limit), _apply_limit(tests_all, limit))
+
+
+def _apply_limit(hits: list[WhereHit], limit: int) -> list[WhereHit]:
+    """Truncate ``hits`` at ``limit`` entries (defensive copy)."""
+    if limit <= 0:
+        return []
+    return hits[:limit]
+
+
+def split_code_vs_tests(
+    hits: list[WhereHit],
+) -> tuple[list[WhereHit], list[WhereHit]]:
+    """Partition ``hits`` by ``path.startswith("tests/")`` (D1 helper).
+
+    Pure function — no I/O, no mutation of ``hits``. Order is preserved
+    within each bucket (rg's natural ``path`` / ``line`` ascending order
+    carries over).
+    """
+    code = [h for h in hits if not h.path.startswith("tests/")]
+    tests = [h for h in hits if h.path.startswith("tests/")]
     return (code, tests)
