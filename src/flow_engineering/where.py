@@ -185,3 +185,35 @@ def split_code_vs_tests(
     code = [h for h in hits if not h.path.startswith("tests/")]
     tests = [h for h in hits if h.path.startswith("tests/")]
     return (code, tests)
+
+
+# ---------- D2: SDD archive grep backend ----------
+
+
+def _sdd_archive_dir(cwd: Path) -> Path:
+    """Return the ``openspec/changes/archive`` directory under ``cwd``."""
+    return cwd / "openspec" / "changes" / "archive"
+
+
+def grep_sdd_archive(
+    query: str,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    cwd: Path | None = None,
+) -> list[WhereHit]:
+    """Search ``openspec/changes/archive/`` for ``query`` (D2).
+
+    Missing ``query`` and a non-existent archive dir both yield
+    ``[]`` — never raises. Hits are returned in rg's natural order
+    (path-asc, line-asc) and capped at ``limit``.
+    """
+    if not query:
+        return []
+    work_dir = Path(cwd) if cwd is not None else Path.cwd()
+    archive = _sdd_archive_dir(work_dir)
+    if not archive.is_dir():
+        return []
+    # Pass the forward-slash relative path so rg's output is relative to
+    # ``work_dir`` (mirrors the ``src/`` / ``tests/`` shape from grep_repo).
+    stdout = _run_search(query, ["openspec/changes/archive"], work_dir)
+    return _apply_limit(_parse_hits(stdout), limit)
