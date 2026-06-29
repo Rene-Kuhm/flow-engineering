@@ -388,7 +388,16 @@ def memory_timeline(target: Path) -> None:
     default=False,
     help="Skip the graphify GRAPH section entirely.",
 )
-def where_cmd(query: str, limit: int, no_graph_flag: bool) -> None:
+@click.option(
+    "--pretty",
+    "pretty_flag",
+    is_flag=True,
+    default=False,
+    help="(Future) Emit Unicode output. Default is ASCII-safe for portability (HOTFIX-V1.0.5).",
+)
+def where_cmd(
+    query: str, limit: int, no_graph_flag: bool, pretty_flag: bool
+) -> None:
     """Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4).
 
     Fans out to repo code + tests, archived SDD specs, and the
@@ -397,8 +406,14 @@ def where_cmd(query: str, limit: int, no_graph_flag: bool) -> None:
     ``0`` always — ``(no matches)`` renders empty sections; missing
     ``graph.json`` renders the deterministic
     ``unavailable / no graph index found`` line.
+
+    Output is ASCII-safe by default (Windows cp1252 friendly). The
+    ``--pretty`` flag is reserved for future Unicode output (Opción
+    media UX work) and is currently a no-op.
     """
     result = where_mod.where(query, limit=limit, no_graph=no_graph_flag)
+    # TODO Opción media: when ``--pretty`` lands full Unicode output,
+    # branch here on ``pretty_flag`` and call a Unicode-emitting renderer.
     click.echo(where_mod.render_text(result))
 
 

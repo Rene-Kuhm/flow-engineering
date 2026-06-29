@@ -449,3 +449,72 @@ class TestWhereOrchestrator:
         assert len(result.code) <= 1
         assert len(result.tests) <= 1
         assert len(result.sdd) <= 1
+
+
+# ---------- HOTFIX-V1.0.5: ASCII-safe output for Windows cp1252 ----------
+
+
+class TestAsciiSafeOutput:
+    """Regression tests for Windows cp1252 console compatibility.
+
+    Reproduces the ``UnicodeEncodeError`` bug from the user smoke test:
+    ``flow where "DriftEvent"`` and ``flow where "PromptRenderError"`` crashed
+    on Windows because snippets from ``rg`` could contain Unicode (e.g. ``✅``,
+    ``→``) and ``_format_hit`` emitted an em-dash (``—``) in the GRAPH section.
+    The Windows ``cp1252`` console codec cannot encode ``✅``/``→``, raising
+    ``UnicodeEncodeError`` on ``print``. Fix lands in :func:`where._ascii_safe`
+    + the em-dash → ``--`` substitution in :func:`where._format_hit`.
+    """
+
+    def test_format_hit_with_unicode_snippet_is_ascii_safe(self) -> None:
+        """Snippet with ``✅`` + ``→`` must be ASCII-encoded for cp1252.
+
+        Without the fix, ``✅`` and ``→`` survive into the formatted row and
+        raise ``UnicodeEncodeError`` when the Windows console tries to encode
+        them as cp1252.
+        """
+        hit = where.WhereHit(
+            path="src/whatever.py", line=42, snippet="# ✅ TODO → fix this"
+        )
+        formatted = where._format_hit(hit, section="CODE")
+        assert "✅" not in formatted
+        assert "→" not in formatted
+        assert "?" in formatted  # `?` is the cp1252 replacement marker
+
+    def test_format_hit_graph_section_uses_ascii_dash(self) -> None:
+        """GRAPH section no longer emits em-dash (``—``); uses ``--`` instead.
+
+        Em-dash is in cp1252 but the snippet content is not — emitting ``--``
+        keeps the section visually distinct AND cp1252-safe in a single move.
+        """
+        hit = where.WhereHit(path="graph.json", line=1, snippet="node_label")
+        formatted = where._format_hit(hit, section="GRAPH")
+        assert "—" not in formatted
+        assert "-- " in formatted
+
+    def test_render_text_passes_through_cp1252_encoding(self) -> None:
+        """``render_text`` output must encode as cp1252 without raising.
+
+        This is the regression test for the user-reported
+        ``UnicodeEncodeError`` bug. We build a :class:`WhereResult` whose
+        snippets carry real-world Unicode (``✅``, ``→``, em-dash) — the
+        kind a Windows ``flow where`` smoke test produces — and verify the
+        fully rendered text encodes cleanly under ``cp1252`` strict mode.
+        Mirrors what the Windows console does on ``sys.stdout.write(output)``.
+        """
+        result = where.WhereResult(
+            code=[where.WhereHit(path="src/a.py", line=1, snippet="# ✅ TODO")],
+            tests=[where.WhereHit(path="tests/b.py", line=2, snippet="# → arrow")],
+            sdd=[where.WhereHit(path="openspec/x.md", line=3, snippet="# — em-dash")],
+            graph=None,  # graphify unavailable
+            graph_skipped=False,
+        )
+        output = where.render_text(result)
+
+        try:
+            encoded = output.encode("cp1252", errors="strict")
+        except UnicodeEncodeError as exc:
+            pytest.fail(f"render_text output is NOT ASCII-safe for cp1252: {exc}")
+        # Sanity: encoded payload is non-empty and decodes back losslessly.
+        assert len(encoded) > 0
+        assert encoded.decode("cp1252") == output
