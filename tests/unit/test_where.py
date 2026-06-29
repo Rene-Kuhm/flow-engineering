@@ -279,3 +279,70 @@ class TestGrepSddArchive:
         monkeypatch.chdir(tmp_path)
         hits = where.grep_sdd_archive("jwt", limit=2)
         assert len(hits) == 2
+
+
+# ---------- T2.1 — REQ-V1.0.3: grep_graphify ----------
+
+
+class TestGrepGraphify:
+    """REQ-V1.0.3: ``grep_graphify`` returns ``None`` when graph.json unavailable."""
+
+    def test_missing_file_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-existent ``graph.json`` → ``None`` (caller renders unavailable)."""
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", tmp_path / "ghost.json")
+        assert where.grep_graphify("jwt", limit=20) is None
+
+    def test_malformed_json_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Malformed JSON in ``graph.json`` → ``None`` (no stack trace)."""
+        graph = tmp_path / "graph.json"
+        graph.write_text("{ this is not valid JSON ", encoding="utf-8")
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", graph)
+        assert where.grep_graphify("jwt", limit=20) is None
+
+    def test_empty_nodes_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Valid JSON with empty ``nodes`` array → ``None`` (nothing to score)."""
+        graph = tmp_path / "graph.json"
+        graph.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", graph)
+        assert where.grep_graphify("jwt", limit=20) is None
+
+    def test_valid_nodes_return_scored_hits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Valid JSON with nodes → list of ``WhereHit`` ranked by score desc."""
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            json.dumps(
+                {
+                    "nodes": [
+                        {
+                            "id": "src-auth-jwt",
+                            "label": "auth.jwt",
+                            "source_file": "src/auth.py",
+                            "source_location": "42",
+                        },
+                        {
+                            "id": "src-orders",
+                            "label": "orders",
+                            "source_file": "src/orders.py",
+                            "source_location": "12",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", graph)
+        hits = where.grep_graphify("jwt", limit=20)
+        assert hits is not None
+        assert len(hits) == 1
+        assert hits[0].path == "src/auth.py"
+        assert hits[0].line == 42
+        assert hits[0].snippet is not None
+        assert "auth.jwt" in hits[0].snippet
