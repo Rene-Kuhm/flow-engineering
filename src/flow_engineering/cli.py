@@ -17,6 +17,7 @@ from typing import Any
 import click
 
 from flow_engineering import decision_drift, observability
+from flow_engineering import where as where_mod
 from flow_engineering.auto_suggest_code_refs import FLOW_AUTO_SUGGEST_ENV
 from flow_engineering.binding import (
     CODE_REFS_MARKER,
@@ -367,6 +368,38 @@ def memory_timeline(target: Path) -> None:
         return
     timeline = build_timeline(changes)
     click.echo(render_timeline(timeline))
+
+
+# ---------- REQ-V1.0.1..V1.0.4: flow where "<query>" ----------
+
+
+@main.command(name="where")
+@click.argument("query")
+@click.option(
+    "--limit",
+    type=int,
+    default=where_mod.DEFAULT_LIMIT,
+    help="Max hits per backend section (default: 20).",
+)
+@click.option(
+    "--no-graph",
+    "no_graph_flag",
+    is_flag=True,
+    default=False,
+    help="Skip the graphify GRAPH section entirely.",
+)
+def where_cmd(query: str, limit: int, no_graph_flag: bool) -> None:
+    """Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4).
+
+    Fans out to repo code + tests, archived SDD specs, and the
+    graphify index (fail-open). Renders structured ``CODE / TESTS /
+    SDD / GRAPH`` text sections (always in that order). Exit code
+    ``0`` always — ``(no matches)`` renders empty sections; missing
+    ``graph.json`` renders the deterministic
+    ``unavailable / no graph index found`` line.
+    """
+    result = where_mod.where(query, limit=limit, no_graph=no_graph_flag)
+    click.echo(where_mod.render_text(result))
 
 
 FLOW_VECTOR_SEARCH_ENV: str = "FLOW_VECTOR_SEARCH"

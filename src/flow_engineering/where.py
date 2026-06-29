@@ -348,3 +348,116 @@ def grep_graphify(
         )
     scored.sort(key=lambda x: x[0], reverse=True)
     return [hit for _, hit in scored[:limit]]
+
+
+# ---------- D4: Orchestrator + render_text ----------
+
+
+@dataclass(frozen=True)
+class WhereResult:
+    """Composite of all three backend outcomes.
+
+    ``graph`` is ``None`` when the graphify index is unavailable (fail-open
+    per D3); an empty list means "available but no matches". ``graph_skipped``
+    is True when the caller passed ``--no-graph`` (the section is omitted
+    entirely, not rendered as empty or unavailable). Without ``graph_skipped``
+    the dataclass cannot distinguish "user opted out" from "index unavailable"
+    at the render layer.
+    """
+
+    code: list[WhereHit]
+    tests: list[WhereHit]
+    sdd: list[WhereHit]
+    graph: list[WhereHit] | None
+    graph_skipped: bool = False
+
+
+_NO_MATCHES: str = "(no matches)"
+
+
+def where(
+    query: str,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    no_graph: bool = False,
+    cwd: Path | None = None,
+    graph_path: Path | None = None,
+) -> WhereResult:
+    """Orchestrator: fan out to all three backends and assemble a :class:`WhereResult`.
+
+    ``no_graph=True`` short-circuits the graphify backend
+    (``graph = None``) so the render layer omits the GRAPH section
+    entirely. ``cwd`` and ``graph_path`` override the process defaults
+    so tests can isolate the call from the user's real ``src/`` /
+    ``openspec/`` / ``graphify-out/`` trees.
+    """
+    work_dir = Path(cwd) if cwd is not None else Path.cwd()
+    code, tests = grep_repo(query, limit=limit, cwd=work_dir)
+    sdd = grep_sdd_archive(query, limit=limit, cwd=work_dir)
+    if no_graph:
+        graph: list[WhereHit] | None = None
+        graph_skipped = True
+    elif graph_path is not None:
+        graph = grep_graphify(query, limit=limit, graph_path=graph_path)
+        graph_skipped = False
+    else:
+        graph = grep_graphify(query, limit=limit)
+        graph_skipped = False
+    return WhereResult(
+        code=code, tests=tests, sdd=sdd, graph=graph, graph_skipped=graph_skipped
+    )
+
+
+def _format_hit(hit: WhereHit, *, section: str) -> str:
+    """Render one ``WhereHit`` row in the section's canonical format.
+
+    CODE / TESTS: bare ``path:line`` (mirrors rg's ``--line-number`` output).
+    SDD: ``path:line <trailing prose snippet>`` so the spec context shows up.
+    GRAPH: ``path:line — <label>`` so the graphify node identity is visible.
+    """
+    head = f"{hit.path}:{hit.line}"
+    if hit.snippet is None:
+        return f"- {head}"
+    if section == "GRAPH":
+        return f"- {head} — {hit.snippet}"
+    return f"- {head} {hit.snippet}"
+
+
+def _render_section(name: str, hits: list[WhereHit] | None) -> str:
+    """Render one ``CODE / TESTS / SDD / GRAPH`` section.
+
+    A ``None`` value (graph unavailable) renders the deterministic
+    fail-open message; an empty list renders ``(no matches)``; a
+    populated list renders one ``- path:line[ snippet]`` row per hit.
+    """
+    if name == "GRAPH" and hits is None:
+        return f"{name}\n{GRAPH_UNAVAILABLE_MESSAGE}"
+    if not hits:
+        return f"{name}\n{_NO_MATCHES}"
+    lines = [name]
+    for hit in hits:
+        lines.append(_format_hit(hit, section=name))
+    return "\n".join(lines)
+
+
+def render_text(result: WhereResult) -> str:
+    """Render a :class:`WhereResult` as the canonical text output (D4 contract).
+
+    Sections always render in the order ``CODE / TESTS / SDD / GRAPH``,
+    separated by blank lines. Empty sections use ``(no matches)``; the
+    GRAPH section uses the deterministic ``unavailable / no graph
+    index found`` string when ``graph is None``.
+    """
+    parts: list[str] = [
+        _render_section("CODE", result.code),
+        _render_section("TESTS", result.tests),
+        _render_section("SDD", result.sdd),
+    ]
+    if result.graph_skipped:
+        # ``--no-graph`` was set: omit the GRAPH section entirely so the
+        # rendered output is shorter (covers the explicit opt-out path
+        # of design D4 — only 3 sections appear when the user skipped
+        # the GRAPH backend).
+        return "\n\n".join(parts)
+    parts.append(_render_section("GRAPH", result.graph))
+    return "\n\n".join(parts)
