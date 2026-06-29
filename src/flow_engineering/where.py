@@ -408,19 +408,38 @@ def where(
     )
 
 
+def _ascii_safe(s: str) -> str:
+    """Replace non-ASCII chars with ``?`` for Windows cp1252 console safety.
+
+    CLI tools must produce portable output; users on Windows cp1252
+    consoles cannot encode Unicode like ``✅``/``→``/em-dash that may
+    leak in from rg snippets (docstrings, comments, etc.). Future
+    ``--pretty`` flag can opt back into Unicode output (deferred to
+    Opción media UX work; see ``flow where --help`` for the reserved
+    flag plumbing).
+    """
+    return s.encode("ascii", "replace").decode("ascii")
+
+
 def _format_hit(hit: WhereHit, *, section: str) -> str:
     """Render one ``WhereHit`` row in the section's canonical format.
 
     CODE / TESTS: bare ``path:line`` (mirrors rg's ``--line-number`` output).
     SDD: ``path:line <trailing prose snippet>`` so the spec context shows up.
-    GRAPH: ``path:line — <label>`` so the graphify node identity is visible.
+    GRAPH: ``path:line -- <label>`` so the graphify node identity is visible.
+
+    Snippets are passed through :func:`_ascii_safe` so the rendered row is
+    guaranteed cp1252-encodable. Em-dash (``—``) was replaced with ASCII
+    ``--`` (HOTFIX-V1.0.5) for the same reason — the GRAPH section's visual
+    separator must survive a Windows cp1252 console round-trip.
     """
     head = f"{hit.path}:{hit.line}"
     if hit.snippet is None:
         return f"- {head}"
+    safe_snippet = _ascii_safe(hit.snippet)
     if section == "GRAPH":
-        return f"- {head} — {hit.snippet}"
-    return f"- {head} {hit.snippet}"
+        return f"- {head} -- {safe_snippet}"
+    return f"- {head} {safe_snippet}"
 
 
 def _render_section(name: str, hits: list[WhereHit] | None) -> str:
