@@ -25,27 +25,27 @@ Chain strategy: pending
 
 ## Phase 1: Production CLI surface
 
-- [ ] T-1 Add `_resolve_projects_root(root)` in `src/flow_engineering/cli.py` and update `projects_ls` to use it without changing its output contract.
-- [ ] T-2 Add `_summarize_workspace_status(projects)` implementing R1-R4 needs-attention and R5 informational-only behavior.
-- [ ] T-3 Add deterministic `_workspace_status_envelope(root, projects, summary)` with key order `version`, `root`, `totals`, `projects`, `needs_attention`; no timestamp fields.
-- [ ] T-4 Add `_render_workspace_status_text(root, projects, summary)` with readable per-project status and bottom summary.
-- [ ] T-5 Add top-level `flow workspace status [--root PATH] [--json]` command that scans once via `_detect_project_markers` and renders text/JSON.
+- [x] T-1 Add `_resolve_projects_root(root)` in `src/flow_engineering/cli.py` and update `projects_ls` to use it without changing its output contract.
+- [x] T-2 Add `_summarize_workspace_status(projects)` implementing R1-R4 needs-attention and R5 informational-only behavior.
+- [x] T-3 Add deterministic `_workspace_status_envelope(root, projects, summary)` with key order `version`, `root`, `totals`, `projects`, `needs_attention`; no timestamp fields.
+- [x] T-4 Add `_render_workspace_status_text(root, projects, summary)` with readable per-project status and bottom summary.
+- [x] T-5 Add top-level `flow workspace status [--root PATH] [--json]` command that scans once via `_detect_project_markers` and renders text/JSON.
 
 ## Phase 2: Fixtures and tests
 
-- [ ] T-6 Create/extend `tests/unit/_workspace_fixtures.py` with reusable `tmp_path` fake project helpers; no hardcoded `C:\dev\proyects`.
-- [ ] T-7 Add `tests/unit/test_cli_workspace_status.py` covering R1 dirty, R2 no-git, R3 no-tests, R4 missing OpenSpec on SDD stack, and R5 informational-only.
-- [ ] T-8 Add JSON envelope tests: key order, `version == "1"`, 8 totals fields, verbatim projects list, deterministic byte-identical output across two invocations.
-- [ ] T-9 Add text output tests: header, `[DIRTY]`, `[NO-GIT]`, `[NO TESTS]`, clean project with no warnings, and bottom summary.
-- [ ] T-10 Add empty-root tests for text and JSON: exit 0, `(no projects to report)`, `totals.projects == 0`, `totals.needs_attention == 0`.
-- [ ] T-11 Add Phase 1 guard test proving `flow projects ls --json` behavior remains parseable and does not gain workspace-status fields.
+- [x] T-6 Create/extend `tests/unit/_workspace_fixtures.py` with reusable `tmp_path` fake project helpers; no hardcoded `C:\dev\proyects`.
+- [x] T-7 Add `tests/unit/test_cli_workspace_status.py` covering R1 dirty, R2 no-git, R3 no-tests, R4 missing OpenSpec on SDD stack, and R5 informational-only.
+- [x] T-8 Add JSON envelope tests: key order, `version == "1"`, 8 totals fields, verbatim projects list, deterministic byte-identical output across two invocations.
+- [x] T-9 Add text output tests: header, `[DIRTY]`, `[NO-GIT]`, `[NO TESTS]`, clean project with no warnings, and bottom summary.
+- [x] T-10 Add empty-root tests for text and JSON: exit 0, `(no projects to report)`, `totals.projects == 0`, `totals.needs_attention == 0`.
+- [x] T-11 Add Phase 1 guard test proving `flow projects ls --json` behavior remains parseable and does not gain workspace-status fields.
 
 ## Phase 3: Verification
 
-- [ ] T-12 Run `uv run --frozen pytest tests/unit/test_cli_projects.py tests/unit/test_cli_workspace_status.py -q`.
-- [ ] T-13 Run full test suite: `uv run --frozen pytest tests/ -q`.
-- [ ] T-14 Run lint/type checks if available: `uv run --frozen ruff check .` and `uv run --frozen mypy src/`.
-- [ ] T-15 Smoke test real workspace: `uv run --frozen flow workspace status --root C:\dev\proyects --json` and verify JSON parses.
+- [x] T-12 Run `uv run --frozen pytest tests/unit/test_cli_projects.py tests/unit/test_cli_workspace_status.py -q`.
+- [x] T-13 Run full test suite: `uv run --frozen pytest tests/ -q`.
+- [x] T-14 Run lint/type checks if available: `uv run --frozen ruff check .` and `uv run --frozen mypy src/`.
+- [x] T-15 Smoke test real workspace: `uv run --frozen flow workspace status --root C:\dev\proyects --json` and verify JSON parses.
 
 ## Commit Plan
 
@@ -63,3 +63,4 @@ Chain strategy: pending
 - Do NOT hardcode `C:\dev\proyects` in tests; use `tmp_path`.
 - Keep `has_graphify` and `has_engram` informational-only in this command.
 - If production diff exceeds ~220 LOC or `_detect_project_markers` changes materially, stop and re-design.
+
