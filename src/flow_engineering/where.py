@@ -18,13 +18,31 @@ the ``_run_search`` private seam which tests monkeypatch.
 """
 from __future__ import annotations
 
+import json
+import re
 import shutil
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 DEFAULT_LIMIT: int = 20
+DEFAULT_GRAPH_PATH: Path = Path(r"c:\dev\proyects\flow-engineering\graphify-out\graph.json")
+"""Default path to the graphify ``graph.json`` snapshot (overridable via env).
+
+Mirrors ``graphify_query.DEFAULT_GRAPH_JSON`` (graphify_query.py:32). Tests
+override via ``monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", ...)`` so
+the production default stays untouched.
+"""
+GRAPH_UNAVAILABLE_MESSAGE: str = "unavailable / no graph index found"
+"""Exact render string for the GRAPH section when no graphify index is available.
+
+The deterministic message is part of the public contract (D3 fail-open + D4
+render): tests + downstream tooling can match on the literal text.
+"""
+
+_TOKEN_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 
 
 @dataclass(frozen=True)
@@ -217,3 +235,116 @@ def grep_sdd_archive(
     # ``work_dir`` (mirrors the ``src/`` / ``tests/`` shape from grep_repo).
     stdout = _run_search(query, ["openspec/changes/archive"], work_dir)
     return _apply_limit(_parse_hits(stdout), limit)
+
+
+# ---------- D3: Graphify fail-open backend ----------
+
+
+def _tokenize(text: str) -> set[str]:
+    """Lowercase token set for Jaccard comparison (mirrors ``graphify_query._tokenize``)."""
+    if not text:
+        return set()
+    return {t.lower() for t in _TOKEN_PATTERN.findall(text)}
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity between two token sets; ``0.0`` when either is empty."""
+    if not a or not b:
+        return 0.0
+    intersection = len(a & b)
+    union = len(a | b)
+    return intersection / union if union else 0.0
+
+
+def _node_tokens(node: dict[str, Any]) -> set[str]:
+    """Build the token set for a graphify ``node`` entry.
+
+    Concatenates ``label`` + ``id`` + ``source_file`` (same fields
+    ``graphify_query._node_tokens`` touches; we duplicate the helper
+    so ``where.py`` stays independently testable per design D3).
+    """
+    parts: list[str] = []
+    for key in ("label", "source_file", "id"):
+        value = node.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    return _tokenize(" ".join(parts))
+
+
+def _parse_graph_line(value: Any) -> int:
+    """Extract a line number from a graphify ``source_location`` field.
+
+    Accepts both ``int`` and strings containing digits (e.g. ``"42"``,
+    ``"42:5"``, ``"L42"``). Returns ``0`` on parse failure so the
+    render layer shows ``:0`` (the same convention as
+    ``graphify_query._parse_line``).
+    """
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        match = re.search(r"\d+", value)
+        if match:
+            return int(match.group(0))
+    return 0
+
+
+def grep_graphify(
+    query: str,
+    *,
+    limit: int = DEFAULT_LIMIT,
+    graph_path: Path | None = None,
+) -> list[WhereHit] | None:
+    """Score graphify nodes by Jaccard overlap with ``query`` (D3).
+
+    Returns ``None`` (NOT an empty list) when the graph index is
+    unavailable — missing file, ``OSError``, ``json.JSONDecodeError``,
+    or an empty ``nodes`` list. Returning ``None`` lets the render
+    layer emit the deterministic ``unavailable / no graph index found``
+    string (D3 + D4 contract) so callers can distinguish "no graph at
+    all" from "graph present but no matches".
+
+    On valid input returns up to ``limit`` ``WhereHit`` entries sorted
+    by Jaccard score descending. The hit's ``snippet`` carries the
+    node ``label`` so the render output mirrors the GRAPH section shape
+    from design D4.
+
+    The ``graph_path`` parameter is resolved at call time from
+    :data:`DEFAULT_GRAPH_PATH` (NOT captured as a default-value
+    expression) so ``monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", ...)``
+    can override the path per-test without monkeypatching this function.
+    """
+    if not query:
+        return None
+    resolved = graph_path if graph_path is not None else DEFAULT_GRAPH_PATH
+    if not resolved.is_file():
+        return None
+    try:
+        data = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    nodes = data.get("nodes", []) if isinstance(data, dict) else []
+    if not isinstance(nodes, list) or not nodes:
+        return None
+
+    query_tokens = _tokenize(query)
+    scored: list[tuple[float, WhereHit]] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_tokens = _node_tokens(node)
+        score = _jaccard(query_tokens, node_tokens)
+        if score <= 0:
+            continue
+        label = str(node.get("label", node.get("id", "")))
+        scored.append(
+            (
+                score,
+                WhereHit(
+                    path=str(node.get("source_file", "")),
+                    line=_parse_graph_line(node.get("source_location")),
+                    snippet=label or None,
+                ),
+            )
+        )
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [hit for _, hit in scored[:limit]]
