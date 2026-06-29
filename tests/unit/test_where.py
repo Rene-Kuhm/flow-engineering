@@ -346,3 +346,106 @@ class TestGrepGraphify:
         assert hits[0].line == 42
         assert hits[0].snippet is not None
         assert "auth.jwt" in hits[0].snippet
+
+
+# ---------- T2.3 — REQ-V1.0.4: where() orchestrator + render_text() ----------
+
+
+class TestWhereOrchestrator:
+    """REQ-V1.0.4: ``where()`` + ``render_text()`` produce the structured output contract."""
+
+    def test_render_text_sections_in_canonical_order(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """All 4 sections render in ``CODE / TESTS / SDD / GRAPH`` order."""
+        _make_src_tree(
+            tmp_path,
+            {
+                "src/auth.py": "def make_jwt():\n    return 'token'\n",
+                "tests/test_auth.py": "def test_jwt():\n    pass\n",
+            },
+        )
+        archive = tmp_path / "openspec" / "changes" / "archive" / "x"
+        archive.mkdir(parents=True)
+        (archive / "spec.md").write_text("jwt mention here\n", encoding="utf-8")
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            json.dumps(
+                {
+                    "nodes": [
+                        {
+                            "id": "src-auth-jwt",
+                            "label": "auth.jwt",
+                            "source_file": "src/auth.py",
+                            "source_location": "1",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", graph)
+
+        result = where.where("jwt", limit=20)
+        text = where.render_text(result)
+        assert text.index("CODE") < text.index("TESTS") < text.index("SDD") < text.index("GRAPH")
+
+    def test_empty_section_renders_no_matches_marker(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Empty sections still render — ``(no matches)`` line in place."""
+        # Empty tree — every backend produces zero hits.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", tmp_path / "nope.json")
+        result = where.where("nothing-matches-x", limit=20)
+        text = where.render_text(result)
+        assert "(no matches)" in text
+        assert "CODE" in text
+        assert "TESTS" in text
+        assert "SDD" in text
+        assert "GRAPH" in text
+
+    def test_no_graph_flag_skips_graph_section(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``--no-graph`` makes GRAPH section disappear entirely (not just empty)."""
+        _make_src_tree(tmp_path, {"src/auth.py": "jwt here\n"})
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", tmp_path / "nope.json")
+        result = where.where("jwt", limit=20, no_graph=True)
+        assert result.graph is None
+        text = where.render_text(result)
+        assert "GRAPH" not in text
+
+    def test_graph_unavailable_renders_exact_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Missing ``graph.json`` → GRAPH section prints the exact fail-open token."""
+        _make_src_tree(tmp_path, {"src/auth.py": "jwt here\n"})
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(where, "DEFAULT_GRAPH_PATH", tmp_path / "missing.json")
+        result = where.where("jwt", limit=20)
+        text = where.render_text(result)
+        assert where.GRAPH_UNAVAILABLE_MESSAGE in text
+        assert text.count(where.GRAPH_UNAVAILABLE_MESSAGE) == 1
+
+    def test_limit_caps_each_backend_independently(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``limit=1`` → CODE / TESTS / SDD each capped at 1; GRAPH if present uses limit too."""
+        _make_src_tree(
+            tmp_path,
+            {
+                "src/a.py": "jwt one\njwt two\n",
+                "tests/ta.py": "jwt one\njwt two\n",
+            },
+        )
+        archive = tmp_path / "openspec" / "changes" / "archive" / "x"
+        archive.mkdir(parents=True)
+        (archive / "spec.md").write_text("jwt one\njwt two\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        result = where.where("jwt", limit=1)
+        assert len(result.code) <= 1
+        assert len(result.tests) <= 1
+        assert len(result.sdd) <= 1
