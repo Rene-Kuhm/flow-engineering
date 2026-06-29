@@ -429,3 +429,53 @@ def test_flow_projects_ls_json_version_field_first(
     )
     assert first_key_line is not None
     assert first_key_line.lstrip().startswith('"version"')
+
+
+def test_flow_projects_ls_json_byte_identical_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC8: Two consecutive ``flow projects ls --json`` invocations on an unchanged
+    filesystem MUST emit byte-identical bytes.
+
+    Regression test added in the AC8 fix-up cycle (2026-06-29). The original
+    envelope assembly injected ``generated_at: _now_iso()`` per invocation,
+    which by design violates byte-determinism. After dropping the timestamp,
+    two invocations on the same fixture must produce identical stdout.
+
+    Pattern follows ``test_flow_projects_ls_json_deterministic_order``:
+    build a tiny fixture in ``tmp_path``, run the command twice in succession
+    (no filesystem changes between calls), and assert ``result1.output ==
+    result2.output``.
+    """
+    root = tmp_path / "projects"
+    root.mkdir()
+    # Two minimal projects — one Go (with .git) + one Python — sorted to
+    # ["go-proj", "py-proj"] in the JSON envelope.
+    make_fake_go_project(root, name="go-proj")
+    make_fake_python_project(root, name="py-proj")
+    monkeypatch.setattr(cli_mod, "_git", _default_branch_fake_git(branch="main"))
+
+    result1 = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+    result2 = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+
+    # Both invocations must succeed.
+    assert result1.exit_code == 0, result1.output
+    assert result2.exit_code == 0, result2.output
+
+    # AC8 byte-identical contract: two consecutive invocations on an unchanged
+    # filesystem MUST emit the same bytes. Any timestamp/clock-dependent field
+    # (e.g. ``generated_at``) would break this — the test is intentionally
+    # strict.
+    assert result1.output == result2.output, (
+        f"AC8 violation: two invocations produced different bytes.\n"
+        f"  First ({len(result1.output)} bytes): {result1.output!r}\n"
+        f"  Second ({len(result2.output)} bytes): {result2.output!r}"
+    )
