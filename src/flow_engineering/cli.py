@@ -2700,7 +2700,6 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
             envelope = {
                 "version": "1",
                 "root": str(root),
-                "generated_at": _now_iso(),
                 "projects": [],
             }
             click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
@@ -2716,7 +2715,6 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
         envelope = {
             "version": "1",
             "root": str(root),
-            "generated_at": _now_iso(),
             "projects": projects,
         }
         click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
