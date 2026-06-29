@@ -71,6 +71,17 @@ _DEFAULT_PROJECTS_ROOT_WIN = "C:\\dev\\proyects"
 _DEFAULT_PROJECTS_ROOT_NIX = "~/dev/proyects"
 
 
+def _resolve_projects_root(root: Path | None) -> Path:
+    """Resolve the workspace projects root used by projects/workspace commands."""
+    if root is not None:
+        return root
+    env_root = os.environ.get("FLOW_PROJECTS_ROOT")
+    if env_root:
+        return Path(env_root)
+    if os.name == "nt":
+        return Path(_DEFAULT_PROJECTS_ROOT_WIN)
+    return Path(_DEFAULT_PROJECTS_ROOT_NIX).expanduser()
+
 def _read_pyproject_min_skill_versions(
     pyproject_path: Path,
 ) -> dict[str, str] | None:
@@ -2471,6 +2482,168 @@ def drift_events_alias_stats(
     )
 
 
+# ---------- Phase 3: flow workspace status ----------
+
+
+_SDD_STACKS_REQUIRING_OPENSPEC = {"Python", "Go", "Rust"}
+
+
+def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize workspace inventory into totals plus needs-attention rows."""
+    needs_attention: list[dict[str, Any]] = []
+    totals = {
+        "projects": len(projects),
+        "dirty": 0,
+        "no_git": 0,
+        "no_tests": 0,
+        "has_openspec": 0,
+        "has_graphify": 0,
+        "has_engram": 0,
+        "needs_attention": 0,
+    }
+
+    for project in projects:
+        reasons: list[str] = []
+        if project.get("dirty") is True:
+            totals["dirty"] += 1
+            if project.get("has_git") is True:
+                reasons.append("R1: uncommitted work")
+        if project.get("has_git") is False:
+            totals["no_git"] += 1
+            reasons.append("R2: no version control")
+        if not project.get("test_commands"):
+            totals["no_tests"] += 1
+            reasons.append("R3: no tests detected")
+        if project.get("has_openspec") is True:
+            totals["has_openspec"] += 1
+        elif project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC:
+            reasons.append("R4: SDD-adjacent stack missing openspec")
+        if project.get("has_graphify") is True:
+            totals["has_graphify"] += 1
+        if project.get("has_engram") is True:
+            totals["has_engram"] += 1
+        if reasons:
+            needs_attention.append(
+                {
+                    "name": str(project.get("name", "")),
+                    "path": str(project.get("path", "")),
+                    "reasons": reasons,
+                }
+            )
+
+    totals["needs_attention"] = len(needs_attention)
+    summary: dict[str, Any] = {"totals": totals, "needs_attention": needs_attention}
+    return summary
+
+
+def _workspace_status_envelope(
+    root: Path,
+    projects: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the deterministic v1 JSON envelope for workspace status."""
+    return {
+        "version": "1",
+        "root": str(root),
+        "totals": summary["totals"],
+        "projects": projects,
+        "needs_attention": summary["needs_attention"],
+    }
+
+
+def _workspace_status_tags(project: dict[str, Any]) -> list[str]:
+    tags: list[str] = []
+    if project.get("dirty") is True:
+        tags.append("[DIRTY]")
+    if project.get("has_git") is False:
+        tags.append("[NO-GIT]")
+    if not project.get("test_commands"):
+        tags.append("[NO TESTS]")
+    if project.get("has_openspec") is False and project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC:
+        tags.append("[NO OPENSPEC]")
+    return tags
+
+
+def _render_workspace_status_text(
+    root: Path,
+    projects: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> str:
+    """Render human-readable workspace status text."""
+    if not projects:
+        return "(no projects to report)"
+
+    lines = [f"WORKSPACE STATUS: {root}", ""]
+    for project in projects:
+        tags = _workspace_status_tags(project)
+        suffix = f" {' '.join(tags)}" if tags else ""
+        lines.append(f"- {project['name']} ({project.get('stack') or 'Unknown'}){suffix}")
+        reasons = [
+            item["reasons"]
+            for item in summary["needs_attention"]
+            if item["name"] == project["name"]
+        ]
+        for reason in (reasons[0] if reasons else []):
+            lines.append(f"  - {reason}")
+    totals = summary["totals"]
+    lines.extend(
+        [
+            "",
+            "SUMMARY",
+            f"projects: {totals['projects']}",
+            f"needs_attention: {totals['needs_attention']}",
+            f"dirty: {totals['dirty']}",
+            f"no_git: {totals['no_git']}",
+            f"no_tests: {totals['no_tests']}",
+            "[INFO: graphify probe is stubbed in v1]",
+        ]
+    )
+    return "\n".join(lines)
+
+
+@main.group(name="workspace")
+def workspace_group() -> None:
+    """Inspect workspace-level status synthesized from project inventory."""
+
+
+@workspace_group.command(name="status")
+@click.option(
+    "--root",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Projects root directory. Defaults to FLOW_PROJECTS_ROOT, then platform default.",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable workspace status JSON (v1 schema).",
+)
+def workspace_status(root: Path | None, json_flag: bool) -> None:
+    """Show which workspace projects need attention."""
+    root = _resolve_projects_root(root)
+    if not root.is_dir():
+        click.echo(f"projects root not found: {root}", err=True)
+        raise SystemExit(1)
+
+    subdirs = sorted([p for p in root.iterdir() if p.is_dir()])
+    projects = sorted(
+        (_detect_project_markers(p) for p in subdirs),
+        key=lambda d: d["name"],
+    )
+    summary = _summarize_workspace_status(projects)
+    if json_flag:
+        click.echo(
+            json.dumps(
+                _workspace_status_envelope(root, projects, summary),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    click.echo(_render_workspace_status_text(root, projects, summary))
+
 # ---------- REQ-24: flow projects backfill ----------
 
 
@@ -2491,7 +2664,7 @@ def projects_group() -> None:
 # ``subprocess.run`` with ``timeout=5s``; tests ``monkeypatch.setattr(cli,
 # "_git", fake_git)`` to inject canned ``CompletedProcess`` instances.
 # Returns the raw ``CompletedProcess``; callers branch on ``returncode``.
-def _git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+def _git(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Run ``git <args>`` with capture, text decoding, and a 5s timeout.
 
     Exit-code contract:
@@ -2697,7 +2870,7 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
     subdirs = sorted([p for p in root.iterdir() if p.is_dir()])
     if not subdirs:
         if json_flag:
-            envelope = {
+            envelope: dict[str, Any] = {
                 "version": "1",
                 "root": str(root),
                 "projects": [],
@@ -4129,3 +4302,6 @@ def prompts_show(
 
 if __name__ == "__main__":
     main()
+
+
+

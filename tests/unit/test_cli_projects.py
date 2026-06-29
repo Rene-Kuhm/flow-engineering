@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -138,7 +139,7 @@ def make_fake_openspec_project(parent: Path, name: str = "os-proj") -> Path:
     return p
 
 
-def _default_branch_fake_git(branch: str = "main") -> "callable":
+def _default_branch_fake_git(branch: str = "main") -> Callable[..., subprocess.CompletedProcess[str]]:
     """Build a fake_git that returns ``branch`` for rev-parse; no remote, clean."""
 
     def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
@@ -479,3 +480,4 @@ def test_flow_projects_ls_json_byte_identical_envelope(
         f"  First ({len(result1.output)} bytes): {result1.output!r}\n"
         f"  Second ({len(result2.output)} bytes): {result2.output!r}"
     )
+
