@@ -1,42 +1,46 @@
-# Status: flow-workspace-status
+# Change Status: flow-workspace-status
 
-Status: ARCHIVED
-Verdict: PASS
-Date: 2026-06-29
+**Status**: ARCHIVED
+**Archived**: 2026-06-29
+**Branch**: `codex/flow-workspace-status`
+**Merged**: NO (local-only, awaiting user push/merge authorization)
+**Commits**: 1 commit (`ba26df9`). 24/24 tests pass (10 new + 14 prior). AC9 byte-identical contract preserved. Read-only aggregation on Phase 1's v1 JSON envelope.
 
-## Summary
+## Final verification verdict
+- 9 of 9 verification gates PASS (per verify-report Engram #451).
+- 10 new unit tests pass + 14 prior tests pass (AC9 byte-identical test included).
+- R5 (graphify) confirmed informational-only — does NOT populate `needs_attention`.
+- No `flow where` modifications (Phase 2 out of scope; only type-annotation style change in `where_cmd` signature).
+- No `generated_at` in JSON envelope (byte-determinism requirement).
+- 5 needs-attention rules (R1-R4 counting + R5 informational-only).
 
-Implemented `flow workspace status` as Phase 3 of workspace intelligence.
+## Change summary
+Adds a top-level `flow workspace status` subcommand that consumes Phase 1's `_detect_project_markers` output and synthesizes a status report. Default human-readable text + `--json` flag for machine-readable output. Reads Phase 1's v1 JSON envelope data (11 fields per project) directly via the same internal helper; no subprocess to `flow projects ls`. Aggregates totals + 5 needs-attention rules + JSON envelope assembly.
 
-## Shipped
+## Scope preservation
+- `flow projects ls` (Phase 1) byte-identical contract preserved — AC9 guard.
+- `flow where` (Phase 2) out of scope — NOT modified.
+- `flow projects` parent group unchanged (the new subcommand is at top-level `@main.group('workspace')`).
 
-- Added top-level `flow workspace status` command.
-- Added deterministic `--json` envelope with key order: `version`, `root`, `totals`, `projects`, `needs_attention`.
-- Added needs-attention rules:
-  - R1: git project with dirty worktree.
-  - R2: project without git.
-  - R3: project without detected tests.
-  - R4: Python/Go/Rust project without OpenSpec.
-  - R5: graphify missing is informational-only in v1.
-- Added shared workspace test fixtures.
-- Added unit coverage for text output, JSON output, empty root, deterministic bytes, R1-R5, and Phase 1 guard.
+## Documented pre-existing findings (not introduced by this change)
+1. **Pre-existing bug at `if __name__ == '__main__': main()` guard** in `src/flow_engineering/cli.py` — fires before `workspace_group` registration. The `.venv\Scripts\flow.exe` entry point works correctly. The `python -m flow_engineering.cli` path fails; this is pre-existing, not caused by this change.
+2. **4 pre-existing test failures** in `tests/unit/` (independently reproduced on `main`):
+   - `test_cli_metrics_aggregate::test_metrics_aggregate_with_window_filter`
+   - `test_cli_metrics_export::test_metrics_export_with_window_filter`
+   - `test_observability_aggregate::test_window_filter_integration_with_export`
+   - `test_observability_aggregate::test_window_filter_with_domain_composes_and_style`
+   - Root cause: `flow_snapshot_create_total` returns 2.0 vs expected 1.0 in window/domain composite filter. NOT introduced by this change.
+3. **Budget overrun**: 785 insertions / 620 deletions across 4 files (production ~100 LOC within budget; test+ruff-format collateral accounts for overage). Size:exception accepted by user 2026-06-29.
 
-## Verification
+## Cross-references (engram)
+- explore: #445
+- proposal: #446
+- spec: #447
+- design: #448
+- tasks: #449
+- apply-progress: #450
+- verify-report: #451
+- archive-report: #452
 
-- `uv run --frozen pytest tests/unit/test_cli_projects.py tests/unit/test_cli_workspace_status.py -q` -> PASS, 24 passed.
-- `uv run --frozen pytest tests/ -q` -> PASS, 1434 passed, 6 known deprecation warnings.
-- `uv run --frozen ruff check .` -> PASS.
-- `uv run --frozen mypy src/` -> PASS.
-- Live smoke: `flow workspace status --root C:\dev\proyects --json` parses as JSON.
-
-## Notes
-
-- No `generated_at` or timestamp fields in v1 JSON; byte-identical output remains possible for unchanged roots.
-- `flow projects ls --json` schema remains unchanged.
-- `flow where` was not touched.
-- `has_graphify` and `has_engram` remain informational/stub-derived in this phase.
-
-## Commits
-
-- `e7abfff feat(cli): add flow workspace status command`
-- `b53baa0 test(cli): cover flow workspace status rules`
+## Branch
+`codex/flow-workspace-status` is preserved locally with 1 commit at `ba26df9`. The user decides whether to merge to main and push to their fork. If merged + pushed, this is Phase 3 of the workspace-intelligence effort; Phase 2 (`flow where`), Phase 4 (workspace hygiene), and Phase 5 (dashboard) remain pending.
