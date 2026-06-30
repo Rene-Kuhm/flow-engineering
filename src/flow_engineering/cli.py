@@ -82,6 +82,7 @@ def _resolve_projects_root(root: Path | None) -> Path:
         return Path(_DEFAULT_PROJECTS_ROOT_WIN)
     return Path(_DEFAULT_PROJECTS_ROOT_NIX).expanduser()
 
+
 def _read_pyproject_min_skill_versions(
     pyproject_path: Path,
 ) -> dict[str, str] | None:
@@ -101,7 +102,9 @@ def _read_pyproject_min_skill_versions(
     except (OSError, ValueError):
         return None
     section = (
-        data.get("tool", {}).get("flow_engineering", {}).get(
+        data.get("tool", {})
+        .get("flow_engineering", {})
+        .get(
             "min_sdd_skill_versions",
         )
     )
@@ -260,7 +263,9 @@ def doctor() -> None:
     default=Path.cwd(),
     help="Project root containing flow-engineering/<change>/.",
 )
-@click.option("--no-strict-tdd", "no_strict_tdd", is_flag=True, help="Disable strict TDD (requires --reason).")
+@click.option(
+    "--no-strict-tdd", "no_strict_tdd", is_flag=True, help="Disable strict TDD (requires --reason)."
+)
 @click.option("--reason", default=None, help="Reason for disabling strict TDD.")
 def apply(change: str, target: Path, no_strict_tdd: bool, reason: str | None) -> None:
     """Apply tasks for a change (TASKED -> APPLYING -> VERIFYING)."""
@@ -330,13 +335,15 @@ def archive(change: str, target: Path, diff: str, no_graphify: bool) -> None:
     default=Path.cwd(),
 )
 @click.option(
-    "--drift", "drift_flag",
+    "--drift",
+    "drift_flag",
     is_flag=True,
     default=False,
     help="REQ-15: also watch apply-progress writes; emit drift summary per merged task.",
 )
 @click.option(
-    "--graph-json", "graph_json",
+    "--graph-json",
+    "graph_json",
     default=None,
     type=click.Path(path_type=Path),
     help="Path to graph.json snapshot (default: ~/.flow-engineering/graph.json).",
@@ -411,9 +418,7 @@ def memory_timeline(target: Path) -> None:
     default=False,
     help="(Future) Emit Unicode output. Default is ASCII-safe for portability (HOTFIX-V1.0.5).",
 )
-def where_cmd(
-    query: str, limit: int, no_graph_flag: bool, pretty_flag: bool
-) -> None:
+def where_cmd(query: str, limit: int, no_graph_flag: bool, pretty_flag: bool) -> None:
     """Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4).
 
     Fans out to repo code + tests, archived SDD specs, and the
@@ -488,8 +493,7 @@ def _ensure_vector_extra() -> None:
     """
     if not _vectors_extra_available():
         click.echo(
-            "Semantic search disabled: install [vectors] extra — "
-            f"{VECTOR_INSTALL_HINT}",
+            f"Semantic search disabled: install [vectors] extra — {VECTOR_INSTALL_HINT}",
             err=True,
         )
         sys.exit(2)
@@ -777,9 +781,7 @@ def search(
     exclusive.
     """
     if semantic_flag and hybrid_flag:
-        click.echo(
-            "ERROR: --semantic and --hybrid are mutually exclusive.", err=True
-        )
+        click.echo("ERROR: --semantic and --hybrid are mutually exclusive.", err=True)
         sys.exit(2)
     if federated_flag and (semantic_flag or hybrid_flag):
         click.echo(
@@ -788,9 +790,7 @@ def search(
         )
         sys.exit(2)
     if not (0.0 <= alpha <= 1.0):
-        click.echo(
-            f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True
-        )
+        click.echo(f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True)
         sys.exit(2)
     if federated_flag and since is not None:
         # Validate the ISO string via _parse_since (epoch conversion is
@@ -920,15 +920,12 @@ def reindex(batch_size: int, dry_run: bool) -> None:
     consistent state — re-invoking ``flow reindex`` finishes the work.
     """
     if batch_size <= 0:
-        click.echo(
-            f"ERROR: --batch-size must be > 0, got {batch_size}", err=True
-        )
+        click.echo(f"ERROR: --batch-size must be > 0, got {batch_size}", err=True)
         sys.exit(2)
 
     if not _sqlite_vec_available():
         click.echo(
-            "reindex disabled: install [vectors] extra — "
-            f"{VECTOR_INSTALL_HINT}",
+            f"reindex disabled: install [vectors] extra — {VECTOR_INSTALL_HINT}",
             err=True,
         )
         sys.exit(2)
@@ -947,9 +944,7 @@ def reindex(batch_size: int, dry_run: bool) -> None:
     if total == 0:
         # Empty corpus short-circuits with the no-op summary line so the
         # done-format is consistent across zero and non-zero runs.
-        click.echo(
-            "reindex: done — 0 observations indexed in 0.0s", err=True
-        )
+        click.echo("reindex: done — 0 observations indexed in 0.0s", err=True)
         observability.increment("reindex_observations_total", count=0)
         observability.increment("reindex_duration_seconds", value=0.0)
         return
@@ -1085,8 +1080,13 @@ def _serialize_inspect_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @main.command()
 @click.argument("change")
-@click.option("--json", "json_flag", is_flag=True, default=False,
-              help="Emit machine-readable JSON instead of a text table.")
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text table.",
+)
 def inspect(change: str, json_flag: bool) -> None:
     """Render decisions for a change as a table (REQ-7).
 
@@ -1129,8 +1129,13 @@ def _summarize_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
 
 
 @main.group(invoke_without_command=True)
-@click.option("--json", "json_flag", is_flag=True, default=False,
-              help="Emit machine-readable JSON instead of a text summary.")
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text summary.",
+)
 @click.pass_context
 def metrics(ctx: click.Context, json_flag: bool) -> None:
     """Dump the JSONL counter sink as a summary (REQ-8 close).
@@ -1171,12 +1176,16 @@ SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
 
 @metrics.command("summary")
 @click.option(
-    "--format", "fmt", default="text",
+    "--format",
+    "fmt",
+    default="text",
     type=click.Choice(["text", "json", "json-detailed"], case_sensitive=False),
     help="Output format (REQ-35: text default, json for machine-readable).",
 )
 @click.option(
-    "--window", "window", default=None,
+    "--window",
+    "window",
+    default=None,
     help=(
         "Rolling time-window filter (REQ-35/REQ-36): preset "
         "(1h|24h|7d|30d) or custom '<int><h|d>' (e.g. 12h, 3d). "
@@ -1184,7 +1193,9 @@ SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
     ),
 )
 @click.option(
-    "--domain", "domain", default=None,
+    "--domain",
+    "domain",
+    default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help=(
         "Prefix-based domain slice (REQ-37): "
@@ -1193,11 +1204,17 @@ SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
     ),
 )
 @click.option(
-    "--since", "since_iso", default=None, metavar="ISO8601",
+    "--since",
+    "since_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
 )
 @click.option(
-    "--until", "until_iso", default=None, metavar="ISO8601",
+    "--until",
+    "until_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
 )
 def metrics_summary(
@@ -1335,10 +1352,7 @@ def _apply_metrics_filters(
         filtered = observability.filter_by_window(filtered, window)
     if domain is not None:
         prefixes = observability._prefixes_for_domain(domain)
-        filtered = [
-            e for e in filtered
-            if any(e.counter_name.startswith(p) for p in prefixes)
-        ]
+        filtered = [e for e in filtered if any(e.counter_name.startswith(p) for p in prefixes)]
     if since_epoch is not None:
         filtered = [e for e in filtered if e.timestamp >= since_epoch]
     if until_epoch is not None:
@@ -1348,7 +1362,9 @@ def _apply_metrics_filters(
 
 @metrics.command("export")
 @click.option(
-    "--format", "fmt", default="text",
+    "--format",
+    "fmt",
+    default="text",
     type=click.Choice(["text", "json", "prometheus"], case_sensitive=False),
     help=(
         "Output format (REQ-38): text default, json for machine-readable "
@@ -1356,7 +1372,9 @@ def _apply_metrics_filters(
     ),
 )
 @click.option(
-    "--out", "out_path", default=None,
+    "--out",
+    "out_path",
+    default=None,
     type=click.Path(),
     help=(
         "Atomic write to <path> (REQ-38 / D10). Default = stdout. "
@@ -1364,22 +1382,29 @@ def _apply_metrics_filters(
     ),
 )
 @click.option(
-    "--window", "window", default=None,
-    help=(
-        "Rolling time-window filter (REQ-36): preset "
-        "(1h|24h|7d|30d) or custom '<int><h|d>'."
-    ),
+    "--window",
+    "window",
+    default=None,
+    help=("Rolling time-window filter (REQ-36): preset (1h|24h|7d|30d) or custom '<int><h|d>'."),
 )
 @click.option(
-    "--since", "since_iso", default=None, metavar="ISO8601",
+    "--since",
+    "since_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
 )
 @click.option(
-    "--until", "until_iso", default=None, metavar="ISO8601",
+    "--until",
+    "until_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
 )
 @click.option(
-    "--domain", "domain", default=None,
+    "--domain",
+    "domain",
+    default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help="Prefix-based domain slice (REQ-37).",
 )
@@ -1465,9 +1490,9 @@ def metrics_export(
                 {
                     "name": ev.counter_name,
                     "fields": ev.labels,
-                    "ts": datetime.fromtimestamp(
-                        ev.timestamp, tz=UTC
-                    ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "ts": datetime.fromtimestamp(ev.timestamp, tz=UTC).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
                 }
                 for ev in filtered
             ],
@@ -1487,10 +1512,7 @@ def metrics_export(
                 content = "(no metrics recorded)\n"
             else:
                 width = max(len(name) for name in flat)
-                lines = [
-                    f"{name.ljust(width)}  {count}"
-                    for name, count in sorted(flat.items())
-                ]
+                lines = [f"{name.ljust(width)}  {count}" for name, count in sorted(flat.items())]
                 content = "\n".join(lines) + "\n"
     else:
         click.echo(f"unknown --format value: {fmt}", err=True)
@@ -1528,9 +1550,11 @@ AGGREGATE_PERCENTILE_CHOICES: list[str] = ["p50", "p95", "p99"]
 
 @metrics.command("aggregate")
 @click.option(
-    "--percentile", "percentiles",
+    "--percentile",
+    "percentiles",
     type=click.Choice(AGGREGATE_PERCENTILE_CHOICES, case_sensitive=False),
-    multiple=True, default=("p95",),
+    multiple=True,
+    default=("p95",),
     help=(
         "Percentile(s) to compute (REQ-39): p50 / p95 / p99. "
         "Repeatable; default = p95. Uses reservoir sampling for "
@@ -1538,34 +1562,43 @@ AGGREGATE_PERCENTILE_CHOICES: list[str] = ["p50", "p95", "p99"]
     ),
 )
 @click.option(
-    "--window", "window", default=None,
-    help=(
-        "Rolling time-window filter (REQ-36): preset "
-        "(1h|24h|7d|30d) or custom '<int><h|d>'."
-    ),
+    "--window",
+    "window",
+    default=None,
+    help=("Rolling time-window filter (REQ-36): preset (1h|24h|7d|30d) or custom '<int><h|d>'."),
 )
 @click.option(
-    "--since", "since_iso", default=None, metavar="ISO8601",
+    "--since",
+    "since_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
 )
 @click.option(
-    "--until", "until_iso", default=None, metavar="ISO8601",
+    "--until",
+    "until_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
 )
 @click.option(
-    "--domain", "domain", default=None,
+    "--domain",
+    "domain",
+    default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help="Prefix-based domain slice (REQ-37).",
 )
 @click.option(
-    "--reservoir-size", "reservoir_size", default=1000, type=int,
-    help=(
-        "Sample-size ceiling per counter for the reservoir sampler "
-        "(REQ-39 / D7). Default 1000."
-    ),
+    "--reservoir-size",
+    "reservoir_size",
+    default=1000,
+    type=int,
+    help=("Sample-size ceiling per counter for the reservoir sampler (REQ-39 / D7). Default 1000."),
 )
 @click.option(
-    "--format", "fmt", default="text",
+    "--format",
+    "fmt",
+    default="text",
     type=click.Choice(["text", "json"], case_sensitive=False),
     help="Output format (REQ-39): text (default aligned table) or json.",
 )
@@ -1789,9 +1822,7 @@ def _now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _write_back_findings(
-    report: decision_drift.DriftReport, change_name: str
-) -> int:
+def _write_back_findings(report: decision_drift.DriftReport, change_name: str) -> int:
     """Persist per-finding metadata via ``EngramClient.update_observation_metadata``.
 
     Per REQ-14, a single-row failure MUST NOT abort the loop — each
@@ -1838,8 +1869,7 @@ def _write_back_findings(
     threshold = _get_skip_warn_threshold()
     if threshold >= 0 and skipped_total >= threshold:
         print(
-            f"WARN: drift write-back skipped {skipped_total} "
-            f"non-int decision_ids",
+            f"WARN: drift write-back skipped {skipped_total} non-int decision_ids",
             file=sys.stderr,
         )
     return success
@@ -1878,24 +1908,41 @@ def drift_group(ctx: click.Context) -> None:
 
 @drift_group.command("run")
 @click.argument("change_name")
-@click.option("--json", "as_json", is_flag=True, default=False,
-              help="Emit machine-readable JSON instead of a text table.")
-@click.option("--include-obsolete", is_flag=True, default=False,
-              help="Opt in to OBSOLETE classification (queries graphify).")
-@click.option("--write-back", is_flag=True, default=False,
-              help="Persist per-finding last_verified_at + last_drift_class metadata.")
-@click.option("--since", default=None,
-              help="Filter observations whose created_at >= this ISO 8601 timestamp.")
-@click.option("--graph-json", "graph_json", default=None,
-              type=click.Path(path_type=Path),
-              help="Path to graph.json snapshot "
-                   "(default: ~/.flow-engineering/graph.json).")
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text table.",
+)
+@click.option(
+    "--include-obsolete",
+    is_flag=True,
+    default=False,
+    help="Opt in to OBSOLETE classification (queries graphify).",
+)
+@click.option(
+    "--write-back",
+    is_flag=True,
+    default=False,
+    help="Persist per-finding last_verified_at + last_drift_class metadata.",
+)
+@click.option(
+    "--since", default=None, help="Filter observations whose created_at >= this ISO 8601 timestamp."
+)
+@click.option(
+    "--graph-json",
+    "graph_json",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Path to graph.json snapshot (default: ~/.flow-engineering/graph.json).",
+)
 @click.option(
     "--snapshot",
     "snapshot_id",
     default=None,
     help="REQ-33: drift-pinned scan via a stored snapshot. "
-         "Reads frozen observations + graph.json from the envelope instead of live disk.",
+    "Reads frozen observations + graph.json from the envelope instead of live disk.",
 )
 def drift_run(
     change_name: str,
@@ -2014,20 +2061,17 @@ def _format_drift_events_text(events: list[DriftEvent]) -> str:
         )
         for ev in events
     ]
-    widths = [
-        max(len(headers[i]), *(len(r[i]) for r in rows)) for i in range(len(headers))
-    ]
+    widths = [max(len(headers[i]), *(len(r[i]) for r in rows)) for i in range(len(headers))]
     sep = "  "
     header_line = sep.join(h.ljust(widths[i]) for i, h in enumerate(headers))
     rule_line = sep.join("-" * w for w in widths)
-    data_lines = [
-        sep.join(r[i].ljust(widths[i]) for i in range(len(headers))) for r in rows
-    ]
+    data_lines = [sep.join(r[i].ljust(widths[i]) for i in range(len(headers))) for r in rows]
     return "\n".join([header_line, rule_line, *data_lines]) + "\n"
 
 
 def _parse_since_until(
-    since: str | None, until: str | None,
+    since: str | None,
+    until: str | None,
 ) -> tuple[float | None, float | None]:
     """Parse ISO 8601 ``--since`` and ``--until`` flags into epoch seconds.
 
@@ -2106,25 +2150,33 @@ def _read_drift_events_with_legacy_policy(
 
 
 @drift_events_group.command(name="list")
-@click.option("--since", default=None,
-              help="Filter events with detected_at >= <iso> (ISO 8601).")
-@click.option("--until", default=None,
-              help="Filter events with detected_at <= <iso> (ISO 8601).")
-@click.option("--change", default=None,
-              help="Filter events for a specific change name.")
-@click.option("--event-class", default=None,
-              help="Filter events by drift class (e.g. LABEL_DRIFT).")
-@click.option("--limit", type=int, default=None,
-              help="Cap the number of returned events.")
-@click.option("--format", "fmt", default="text",
-              type=click.Choice(["text", "json", "prometheus", "csv"]),
-              help="Output format (default: text).")
-@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
-              help="Alternative drift event log path "
-                   "(default: ~/.flow-engineering/drift_events.jsonl).")
-@click.option("--strict", is_flag=True,
-              help="Abort on first legacy str decision_id line "
-                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.option("--since", default=None, help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None, help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option("--change", default=None, help="Filter events for a specific change name.")
+@click.option(
+    "--event-class", default=None, help="Filter events by drift class (e.g. LABEL_DRIFT)."
+)
+@click.option("--limit", type=int, default=None, help="Cap the number of returned events.")
+@click.option(
+    "--format",
+    "fmt",
+    default="text",
+    type=click.Choice(["text", "json", "prometheus", "csv"]),
+    help="Output format (default: text).",
+)
+@click.option(
+    "--path",
+    "log_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Alternative drift event log path (default: ~/.flow-engineering/drift_events.jsonl).",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Abort on first legacy str decision_id line "
+    "(exit code 4 + CHANGELOG v1.0 sed migration hint).",
+)
 def drift_events_list(
     since: str | None,
     until: str | None,
@@ -2143,9 +2195,7 @@ def drift_events_list(
         sys.exit(observability.EXIT_INVALID_VALUE)
 
     log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
-    events = _read_drift_events_with_legacy_policy(
-        log, strict=strict, log_path=log.path
-    )
+    events = _read_drift_events_with_legacy_policy(log, strict=strict, log_path=log.path)
     events = _filter_drift_events(
         events,
         since_ts=since_ts,
@@ -2159,9 +2209,7 @@ def drift_events_list(
         click.echo(_format_drift_events_text(events))
         return
     if fmt == "json":
-        click.echo(
-            json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2)
-        )
+        click.echo(json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2))
         return
     if fmt == "csv":
         buf = io.StringIO()
@@ -2194,21 +2242,33 @@ def drift_events_list(
 
 
 @drift_events_group.command(name="tail")
-@click.option("--limit", type=int, default=10,
-              help="Number of events to show, newest-first (default: 10).")
-@click.option("--change", default=None,
-              help="Filter events for a specific change name.")
-@click.option("--event-class", default=None,
-              help="Filter events by drift class (e.g. LABEL_DRIFT).")
-@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
-              help="Alternative drift event log path "
-                   "(default: ~/.flow-engineering/drift_events.jsonl).")
-@click.option("--format", "fmt", default="text",
-              type=click.Choice(["text", "json"]),
-              help="Output format (default: text).")
-@click.option("--strict", is_flag=True,
-              help="Abort on first legacy str decision_id line "
-                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.option(
+    "--limit", type=int, default=10, help="Number of events to show, newest-first (default: 10)."
+)
+@click.option("--change", default=None, help="Filter events for a specific change name.")
+@click.option(
+    "--event-class", default=None, help="Filter events by drift class (e.g. LABEL_DRIFT)."
+)
+@click.option(
+    "--path",
+    "log_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Alternative drift event log path (default: ~/.flow-engineering/drift_events.jsonl).",
+)
+@click.option(
+    "--format",
+    "fmt",
+    default="text",
+    type=click.Choice(["text", "json"]),
+    help="Output format (default: text).",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Abort on first legacy str decision_id line "
+    "(exit code 4 + CHANGELOG v1.0 sed migration hint).",
+)
 def drift_events_tail(
     limit: int,
     change: str | None,
@@ -2227,9 +2287,7 @@ def drift_events_tail(
     post-filtered.
     """
     log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
-    events = _read_drift_events_with_legacy_policy(
-        log, strict=strict, log_path=log.path
-    )
+    events = _read_drift_events_with_legacy_policy(log, strict=strict, log_path=log.path)
     events = sorted(events, key=lambda ev: ev.detected_at, reverse=True)
     events = _filter_drift_events(
         events,
@@ -2243,29 +2301,36 @@ def drift_events_tail(
     if fmt == "text":
         click.echo(_format_drift_events_text(events))
         return
-    click.echo(
-        json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2)
-    )
+    click.echo(json.dumps([ev.to_json_dict() for ev in events], ensure_ascii=False, indent=2))
 
 
 @drift_events_group.command(name="stats")
-@click.option("--change", default=None,
-              help="Filter stats to a specific change name.")
-@click.option("--since", default=None,
-              help="Filter events with detected_at >= <iso> (ISO 8601).")
-@click.option("--until", default=None,
-              help="Filter events with detected_at <= <iso> (ISO 8601).")
-@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
-              help="Alternative drift event log path "
-                   "(default: ~/.flow-engineering/drift_events.jsonl).")
-@click.option("--format", "fmt", default="text",
-              type=click.Choice(["text", "json"]),
-              help="Output format (default: text).")
-@click.option("--top-n", "top_n", type=int, default=5,
-              help="Top-N decision_ids by frequency (default: 5).")
-@click.option("--strict", is_flag=True,
-              help="Abort on first legacy str decision_id line "
-                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.option("--change", default=None, help="Filter stats to a specific change name.")
+@click.option("--since", default=None, help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None, help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option(
+    "--path",
+    "log_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Alternative drift event log path (default: ~/.flow-engineering/drift_events.jsonl).",
+)
+@click.option(
+    "--format",
+    "fmt",
+    default="text",
+    type=click.Choice(["text", "json"]),
+    help="Output format (default: text).",
+)
+@click.option(
+    "--top-n", "top_n", type=int, default=5, help="Top-N decision_ids by frequency (default: 5)."
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Abort on first legacy str decision_id line "
+    "(exit code 4 + CHANGELOG v1.0 sed migration hint).",
+)
 def drift_events_stats(
     change: str | None,
     since: str | None,
@@ -2289,9 +2354,7 @@ def drift_events_stats(
         sys.exit(observability.EXIT_INVALID_VALUE)
 
     log = DriftEventLog(path=log_path) if log_path is not None else DriftEventLog()
-    events = _read_drift_events_with_legacy_policy(
-        log, strict=strict, log_path=log.path
-    )
+    events = _read_drift_events_with_legacy_policy(log, strict=strict, log_path=log.path)
     events = _filter_drift_events(
         events,
         since_ts=since_ts,
@@ -2314,9 +2377,7 @@ def drift_events_stats(
         payload = {
             "by_event_class": by_event_class,
             "by_change": by_change,
-            "by_decision_id": [
-                {"decision_id": did, "count": n} for did, n in top_decision_ids
-            ],
+            "by_decision_id": [{"decision_id": did, "count": n} for did, n in top_decision_ids],
         }
         click.echo(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -2372,25 +2433,33 @@ def drift_events_alias_group() -> None:
 
 
 @drift_events_alias_group.command(name="list")
-@click.option("--since", default=None,
-              help="Filter events with detected_at >= <iso> (ISO 8601).")
-@click.option("--until", default=None,
-              help="Filter events with detected_at <= <iso> (ISO 8601).")
-@click.option("--change", default=None,
-              help="Filter events for a specific change name.")
-@click.option("--event-class", default=None,
-              help="Filter events by drift class (e.g. LABEL_DRIFT).")
-@click.option("--limit", type=int, default=None,
-              help="Cap the number of returned events.")
-@click.option("--format", "fmt", default="text",
-              type=click.Choice(["text", "json", "prometheus", "csv"]),
-              help="Output format (default: text).")
-@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
-              help="Alternative drift event log path "
-                   "(default: ~/.flow-engineering/drift_events.jsonl).")
-@click.option("--strict", is_flag=True,
-              help="Abort on first legacy str decision_id line "
-                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.option("--since", default=None, help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None, help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option("--change", default=None, help="Filter events for a specific change name.")
+@click.option(
+    "--event-class", default=None, help="Filter events by drift class (e.g. LABEL_DRIFT)."
+)
+@click.option("--limit", type=int, default=None, help="Cap the number of returned events.")
+@click.option(
+    "--format",
+    "fmt",
+    default="text",
+    type=click.Choice(["text", "json", "prometheus", "csv"]),
+    help="Output format (default: text).",
+)
+@click.option(
+    "--path",
+    "log_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Alternative drift event log path (default: ~/.flow-engineering/drift_events.jsonl).",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Abort on first legacy str decision_id line "
+    "(exit code 4 + CHANGELOG v1.0 sed migration hint).",
+)
 @click.pass_context
 def drift_events_alias_list(
     ctx: click.Context,
@@ -2406,27 +2475,45 @@ def drift_events_alias_list(
     """DEPRECATED alias for ``flow drift events list`` (REQ-V1.2.4)."""
     ctx.forward(
         drift_events_list,
-        since=since, until=until, change=change, event_class=event_class,
-        limit=limit, fmt=fmt, log_path=log_path, strict=strict,
+        since=since,
+        until=until,
+        change=change,
+        event_class=event_class,
+        limit=limit,
+        fmt=fmt,
+        log_path=log_path,
+        strict=strict,
     )
 
 
 @drift_events_alias_group.command(name="tail")
-@click.option("--limit", type=int, default=10,
-              help="Number of events to show, newest-first (default: 10).")
-@click.option("--change", default=None,
-              help="Filter events for a specific change name.")
-@click.option("--event-class", default=None,
-              help="Filter events by drift class (e.g. LABEL_DRIFT).")
-@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
-              help="Alternative drift event log path "
-                   "(default: ~/.flow-engineering/drift_events.jsonl).")
-@click.option("--format", "fmt", default="text",
-              type=click.Choice(["text", "json"]),
-              help="Output format (default: text).")
-@click.option("--strict", is_flag=True,
-              help="Abort on first legacy str decision_id line "
-                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.option(
+    "--limit", type=int, default=10, help="Number of events to show, newest-first (default: 10)."
+)
+@click.option("--change", default=None, help="Filter events for a specific change name.")
+@click.option(
+    "--event-class", default=None, help="Filter events by drift class (e.g. LABEL_DRIFT)."
+)
+@click.option(
+    "--path",
+    "log_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Alternative drift event log path (default: ~/.flow-engineering/drift_events.jsonl).",
+)
+@click.option(
+    "--format",
+    "fmt",
+    default="text",
+    type=click.Choice(["text", "json"]),
+    help="Output format (default: text).",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Abort on first legacy str decision_id line "
+    "(exit code 4 + CHANGELOG v1.0 sed migration hint).",
+)
 @click.pass_context
 def drift_events_alias_tail(
     ctx: click.Context,
@@ -2440,29 +2527,42 @@ def drift_events_alias_tail(
     """DEPRECATED alias for ``flow drift events tail`` (REQ-V1.2.4)."""
     ctx.forward(
         drift_events_tail,
-        limit=limit, change=change, event_class=event_class,
-        log_path=log_path, fmt=fmt, strict=strict,
+        limit=limit,
+        change=change,
+        event_class=event_class,
+        log_path=log_path,
+        fmt=fmt,
+        strict=strict,
     )
 
 
 @drift_events_alias_group.command(name="stats")
-@click.option("--change", default=None,
-              help="Filter stats to a specific change name.")
-@click.option("--since", default=None,
-              help="Filter events with detected_at >= <iso> (ISO 8601).")
-@click.option("--until", default=None,
-              help="Filter events with detected_at <= <iso> (ISO 8601).")
-@click.option("--path", "log_path", default=None, type=click.Path(path_type=Path),
-              help="Alternative drift event log path "
-                   "(default: ~/.flow-engineering/drift_events.jsonl).")
-@click.option("--format", "fmt", default="text",
-              type=click.Choice(["text", "json"]),
-              help="Output format (default: text).")
-@click.option("--top-n", "top_n", type=int, default=5,
-              help="Top-N decision_ids by frequency (default: 5).")
-@click.option("--strict", is_flag=True,
-              help="Abort on first legacy str decision_id line "
-                   "(exit code 4 + CHANGELOG v1.0 sed migration hint).")
+@click.option("--change", default=None, help="Filter stats to a specific change name.")
+@click.option("--since", default=None, help="Filter events with detected_at >= <iso> (ISO 8601).")
+@click.option("--until", default=None, help="Filter events with detected_at <= <iso> (ISO 8601).")
+@click.option(
+    "--path",
+    "log_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Alternative drift event log path (default: ~/.flow-engineering/drift_events.jsonl).",
+)
+@click.option(
+    "--format",
+    "fmt",
+    default="text",
+    type=click.Choice(["text", "json"]),
+    help="Output format (default: text).",
+)
+@click.option(
+    "--top-n", "top_n", type=int, default=5, help="Top-N decision_ids by frequency (default: 5)."
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Abort on first legacy str decision_id line "
+    "(exit code 4 + CHANGELOG v1.0 sed migration hint).",
+)
 @click.pass_context
 def drift_events_alias_stats(
     ctx: click.Context,
@@ -2477,8 +2577,13 @@ def drift_events_alias_stats(
     """DEPRECATED alias for ``flow drift events stats`` (REQ-V1.2.4)."""
     ctx.forward(
         drift_events_stats,
-        change=change, since=since, until=until, log_path=log_path,
-        fmt=fmt, top_n=top_n, strict=strict,
+        change=change,
+        since=since,
+        until=until,
+        log_path=log_path,
+        fmt=fmt,
+        top_n=top_n,
+        strict=strict,
     )
 
 
@@ -2488,9 +2593,37 @@ def drift_events_alias_stats(
 _SDD_STACKS_REQUIRING_OPENSPEC = {"Python", "Go", "Rust"}
 
 
-def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any]:
-    """Summarize workspace inventory into totals plus needs-attention rows."""
-    needs_attention: list[dict[str, Any]] = []
+def _summarize_workspace_status(
+    projects: list[dict],
+) -> tuple[dict, list[dict]]:
+    """Aggregate Phase 1 project markers into ``(totals, needs_attention)``.
+
+    Returns a 2-tuple ``(totals_dict, needs_attention_list)``:
+
+    - ``totals_dict`` carries 8 integer fields:
+      ``projects, dirty, no_git, no_tests, has_openspec,
+      has_graphify, has_engram, needs_attention``.
+    - ``needs_attention_list`` is a list of
+      ``{"name", "path", "reasons": [str, ...]}`` entries collapsed
+      per project (multiple reasons per project collapse into one row).
+
+    Rules (LOCKED, design #448 §2):
+
+    ===== ============================================ =================
+    Rule Condition                                        Counts
+    ===== ============================================ =================
+    R1    ``has_git is True AND dirty is True``           YES
+    R2    ``has_git is False``                            YES
+    R3    ``test_commands == []``                         YES
+    R4    ``has_openspec is False AND stack in            YES
+          {Python, Go, Rust}``
+    R5    ``has_graphify is False``                       **NO** (informational)
+    ===== ============================================ =================
+
+    R5 surfaces in the JSON ``totals`` counter but is excluded from
+    ``needs_attention`` (Phase 1 graphify probe is a stub).
+    """
+    needs_attention: list[dict] = []
     totals = {
         "projects": len(projects),
         "dirty": 0,
@@ -2504,23 +2637,36 @@ def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any
 
     for project in projects:
         reasons: list[str] = []
-        if project.get("dirty") is True:
+        has_git = project.get("has_git")
+        is_dirty = project.get("dirty") is True
+        test_cmds = project.get("test_commands") or []
+        has_openspec = project.get("has_openspec")
+        stack = project.get("stack")
+        has_graphify = project.get("has_graphify")
+        has_engram = project.get("has_engram")
+
+        # R1: dirty+git project counts as dirty AND adds a needs_attention reason.
+        if has_git is True and is_dirty:
             totals["dirty"] += 1
-            if project.get("has_git") is True:
-                reasons.append("R1: uncommitted work")
-        if project.get("has_git") is False:
+            reasons.append("R1: uncommitted work")
+        # R2: no-git project always counts.
+        if has_git is False:
             totals["no_git"] += 1
             reasons.append("R2: no version control")
-        if not project.get("test_commands"):
+        # R3: empty test_commands always counts (irrespective of has_git).
+        if not test_cmds:
             totals["no_tests"] += 1
             reasons.append("R3: no tests detected")
-        if project.get("has_openspec") is True:
+        # R4: SDD-adjacent stacks (Python/Go/Rust) without openspec.
+        if has_openspec is True:
             totals["has_openspec"] += 1
-        elif project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC:
+        elif stack in _SDD_STACKS_REQUIRING_OPENSPEC:
             reasons.append("R4: SDD-adjacent stack missing openspec")
-        if project.get("has_graphify") is True:
+        # R5 informational-only: track the positive count but do NOT
+        # add to needs_attention.
+        if has_graphify is True:
             totals["has_graphify"] += 1
-        if project.get("has_engram") is True:
+        if has_engram is True:
             totals["has_engram"] += 1
         if reasons:
             needs_attention.append(
@@ -2532,60 +2678,61 @@ def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any
             )
 
     totals["needs_attention"] = len(needs_attention)
-    summary: dict[str, Any] = {"totals": totals, "needs_attention": needs_attention}
-    return summary
+    return totals, needs_attention
 
 
-def _workspace_status_envelope(
-    root: Path,
-    projects: list[dict[str, Any]],
-    summary: dict[str, Any],
-) -> dict[str, Any]:
-    """Return the deterministic v1 JSON envelope for workspace status."""
-    return {
+def _render_workspace_status_json(root: Path, projects: list[dict]) -> str:
+    """Render the v1 JSON envelope for ``flow workspace status --json``.
+
+    Top-level keys appear in LOCKED order:
+    ``version, root, totals, projects, needs_attention``.
+    ``version`` is the string ``"1"`` and is the first key. No
+    timestamp fields are emitted, so two consecutive invocations on
+    an unchanged root are byte-identical (REQ-WS-JSON-ENVELOPE + AC #8).
+    """
+    totals, needs_attention = _summarize_workspace_status(projects)
+    envelope = {
         "version": "1",
         "root": str(root),
-        "totals": summary["totals"],
+        "totals": totals,
         "projects": projects,
-        "needs_attention": summary["needs_attention"],
+        "needs_attention": needs_attention,
     }
+    return json.dumps(envelope, ensure_ascii=False, indent=2)
 
 
-def _workspace_status_tags(project: dict[str, Any]) -> list[str]:
-    tags: list[str] = []
-    if project.get("dirty") is True:
-        tags.append("[DIRTY]")
-    if project.get("has_git") is False:
-        tags.append("[NO-GIT]")
-    if not project.get("test_commands"):
-        tags.append("[NO TESTS]")
-    if project.get("has_openspec") is False and project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC:
-        tags.append("[NO OPENSPEC]")
-    return tags
+def _render_workspace_status_text(root: Path, projects: list[dict]) -> str:
+    """Render the ASCII-safe human-readable workspace status report.
 
-
-def _render_workspace_status_text(
-    root: Path,
-    projects: list[dict[str, Any]],
-    summary: dict[str, Any],
-) -> str:
-    """Render human-readable workspace status text."""
+    Empty root returns the literal ``"(no projects to report)"``. Per-project
+    tags are derived inline (the prior internal ``_workspace_status_tags``
+    helper was folded into this renderer per design #448 §2).
+    """
+    totals, needs_attention = _summarize_workspace_status(projects)
     if not projects:
         return "(no projects to report)"
 
+    by_name = {item["name"]: item for item in needs_attention}
     lines = [f"WORKSPACE STATUS: {root}", ""]
     for project in projects:
-        tags = _workspace_status_tags(project)
+        tags: list[str] = []
+        if project.get("dirty") is True:
+            tags.append("[DIRTY]")
+        if project.get("has_git") is False:
+            tags.append("[NO-GIT]")
+        if not (project.get("test_commands") or []):
+            tags.append("[NO TESTS]")
+        if (
+            project.get("has_openspec") is False
+            and project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC
+        ):
+            tags.append("[NO OPENSPEC]")
         suffix = f" {' '.join(tags)}" if tags else ""
         lines.append(f"- {project['name']} ({project.get('stack') or 'Unknown'}){suffix}")
-        reasons = [
-            item["reasons"]
-            for item in summary["needs_attention"]
-            if item["name"] == project["name"]
-        ]
-        for reason in (reasons[0] if reasons else []):
-            lines.append(f"  - {reason}")
-    totals = summary["totals"]
+        entry = by_name.get(project["name"])
+        if entry is not None:
+            for reason in entry["reasons"]:
+                lines.append(f"  - {reason}")
     lines.extend(
         [
             "",
@@ -2632,17 +2779,13 @@ def workspace_status(root: Path | None, json_flag: bool) -> None:
         (_detect_project_markers(p) for p in subdirs),
         key=lambda d: d["name"],
     )
-    summary = _summarize_workspace_status(projects)
     if json_flag:
-        click.echo(
-            json.dumps(
-                _workspace_status_envelope(root, projects, summary),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        click.echo(_render_workspace_status_json(root, projects))
         return
-    click.echo(_render_workspace_status_text(root, projects, summary))
+    click.echo(_render_workspace_status_text(root, projects))
+
+
+# ---------- REQ-24: flow projects backfill ----------
 
 # ---------- REQ-24: flow projects backfill ----------
 
@@ -2895,17 +3038,24 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
 
     # Compute column widths
     name_w = max(len("NAME"), max((len(p.name) for p in subdirs), default=4))
-    type_w = max(len("TYPE"), max((len(_detect_project_markers(p)["type"] or "?") for p in subdirs), default=4))
+    type_w = max(
+        len("TYPE"),
+        max((len(_detect_project_markers(p)["type"] or "?") for p in subdirs), default=4),
+    )
     has_flow_w = len("FLOW")
 
-    click.echo(f"{'NAME'.ljust(name_w)}  {'TYPE'.ljust(type_w)}  {'FLOW'.ljust(has_flow_w)}  README")
+    click.echo(
+        f"{'NAME'.ljust(name_w)}  {'TYPE'.ljust(type_w)}  {'FLOW'.ljust(has_flow_w)}  README"
+    )
     click.echo(f"{'-' * name_w}  {'-' * type_w}  {'-' * has_flow_w}  {'-' * 20}")
     for p in subdirs:
         m = _detect_project_markers(p)
         ptype = m["type"] or "?"
         has_flow = m["has_flow"] or "-"
         readme = m["readme_first_line"] or ""
-        click.echo(f"{p.name.ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}")
+        click.echo(
+            f"{p.name.ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}"
+        )
 
 
 @projects_group.command(name="backfill")
@@ -3008,22 +3158,14 @@ def projects_backfill(
     if project_key is not None:
         # Single-key scope (legacy REQ-24 + alias-key re-tag).
         candidates = [
-            o
-            for o in all_observations
-            if (not o.get("project")) or o.get("project") == project_key
+            o for o in all_observations if (not o.get("project")) or o.get("project") == project_key
         ]
     else:
         # No --project: iterate the alias map (REQ-27 integration).
-        candidates = [
-            o
-            for o in all_observations
-            if o.get("project") in alias_map
-        ]
+        candidates = [o for o in all_observations if o.get("project") in alias_map]
 
     if since is not None:
-        candidates = [
-            o for o in candidates if str(o.get("created_at", "")) >= since
-        ]
+        candidates = [o for o in candidates if str(o.get("created_at", "")) >= since]
 
     would_change = 0
     would_skip = 0
@@ -3197,14 +3339,14 @@ def snapshot_group() -> None:
     is_flag=True,
     default=False,
     help="Exclude graph_state.graph_json_content from the envelope. "
-         "Drift-pinned scans of such snapshots will refuse.",
+    "Drift-pinned scans of such snapshots will refuse.",
 )
 @click.option(
     "--project",
     "project_key",
     default=None,
     help="Restrict to a single project at READ time only (D5). "
-         "v1 snapshots always capture the full DB.",
+    "v1 snapshots always capture the full DB.",
 )
 def snapshot_create(
     description_text: str,
@@ -3293,9 +3435,7 @@ def snapshot_show(snap_id: str) -> None:
     default=False,
     help="Emit the diff as a structured JSON object (REQ-31 spec mandate; default output is also JSON).",
 )
-def snapshot_diff(
-    snap_id_a: str, snap_id_b: str | None, json_flag: bool
-) -> None:
+def snapshot_diff(snap_id_a: str, snap_id_b: str | None, json_flag: bool) -> None:
     """Diff two snapshots OR a snapshot against LIVE state (REQ-31).
 
     Two calling forms:
@@ -3319,9 +3459,7 @@ def snapshot_diff(
             err=True,
         )
         sys.exit(2)
-    click.echo(
-        json.dumps(_snapshot_diff_to_dict(diff), ensure_ascii=False, indent=2)
-    )
+    click.echo(json.dumps(_snapshot_diff_to_dict(diff), ensure_ascii=False, indent=2))
 
 
 @snapshot_group.command(name="rollback")
@@ -3340,9 +3478,7 @@ def snapshot_diff(
     default=False,
     help="Override conflict detection (DANGEROUS).",
 )
-def snapshot_rollback(
-    snap_id: str, confirm_flag: bool, force_flag: bool
-) -> None:
+def snapshot_rollback(snap_id: str, confirm_flag: bool, force_flag: bool) -> None:
     """Restore the Engram state to match ``snap_id`` (REQ-32).
 
     Two-phase commit (D11):
@@ -3357,9 +3493,7 @@ def snapshot_rollback(
     """
     manager = _build_snapshot_manager()
     try:
-        result = manager.rollback(
-            snap_id, confirm=confirm_flag, force=force_flag
-        )
+        result = manager.rollback(snap_id, confirm=confirm_flag, force=force_flag)
     except RollbackRefusedError as exc:
         click.echo(
             json.dumps(exc.payload, ensure_ascii=False),
@@ -3412,7 +3546,7 @@ def snapshot_rollback(
     is_flag=True,
     default=False,
     help="REQUIRED to actually delete. Without --confirm the command is "
-         "dry-run and prints the would-delete list.",
+    "dry-run and prints the would-delete list.",
 )
 @click.option(
     "--force",
@@ -3520,7 +3654,8 @@ report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
 
 
 def _emit_check_observability(
-    drifts: list[Any], duration_seconds: float,
+    drifts: list[Any],
+    duration_seconds: float,
 ) -> None:
     """Emit the W2 observability counter set for one ``prompts check`` invocation.
 
@@ -3612,9 +3747,7 @@ def _resolve_check_action(
     catalog = full_catalog
     unknown: str | None = None
     if skill_name is not None:
-        filtered = {
-            k: v for k, v in full_catalog.items() if v.skill_name == skill_name
-        }
+        filtered = {k: v for k, v in full_catalog.items() if v.skill_name == skill_name}
         if not filtered:
             unknown = skill_name
         else:
@@ -3631,9 +3764,7 @@ Both are blocking and warrant the strict exit code per REQ-47 + REQ-50.
 """
 
 
-_LINT_WARNING_CODES = frozenset(
-    {"duplicate_name", "invalid_domain", "undefined_var"}
-)
+_LINT_WARNING_CODES = frozenset({"duplicate_name", "invalid_domain", "undefined_var"})
 """Validation codes that map to "warning" severity (CLI exit 1).
 
 These are quality issues that don't break rendering but signal catalog
@@ -3721,15 +3852,11 @@ def prompts_check(
 
     if action.init_or_update == "init":
         count = osc.init_checksums()
-        click.echo(
-            f"Initialized {count} checksums · sidecar: {osc.SIDECAR_PATH}"
-        )
+        click.echo(f"Initialized {count} checksums · sidecar: {osc.SIDECAR_PATH}")
         return
     if action.init_or_update == "update":
         count = osc.update_checksums()
-        click.echo(
-            f"Updated {count} checksums · sidecar: {osc.SIDECAR_PATH}"
-        )
+        click.echo(f"Updated {count} checksums · sidecar: {osc.SIDECAR_PATH}")
         return
 
     if action.unknown_skill is not None:
@@ -3743,21 +3870,15 @@ def prompts_check(
 
     for drift in drifts:
         status = _STATUS_LABELS.get(drift.drift_kind, "DRIFT")
-        click.echo(
-            f"{drift.skill_name}/{drift.surface}: "
-            f"{drift.expected_version}: {status}"
-        )
+        click.echo(f"{drift.skill_name}/{drift.surface}: {drift.expected_version}: {status}")
 
     drift_count = len(drifts)
     catalog_size = len(action.catalog)
-    click.echo(
-        f"{catalog_size} skills verified · {drift_count} drift detected"
-    )
+    click.echo(f"{catalog_size} skills verified · {drift_count} drift detected")
 
     if drift_count > 0:
         click.echo(
-            f"[WARN] flow prompts check: {drift_count} drifts detected "
-            f"— see stdout for details",
+            f"[WARN] flow prompts check: {drift_count} drifts detected — see stdout for details",
             err=True,
         )
 
@@ -3789,24 +3910,17 @@ def prompts_lint(json_flag: bool) -> None:
     from flow_engineering import prompt_registry
 
     report = prompt_registry.lint_prompts()
-    warning_count = sum(
-        1 for e in report.errors if e.error_code in _LINT_WARNING_CODES
-    )
-    error_count = sum(
-        1 for e in report.errors if e.error_code in _LINT_ERROR_CODES
-    )
+    warning_count = sum(1 for e in report.errors if e.error_code in _LINT_WARNING_CODES)
+    error_count = sum(1 for e in report.errors if e.error_code in _LINT_ERROR_CODES)
 
     if json_flag:
         click.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
     else:
         for err in report.errors:
-            click.echo(
-                f"{err.prompt_name}: {err.error_code}: {err.message}"
-            )
+            click.echo(f"{err.prompt_name}: {err.error_code}: {err.message}")
         catalog_size = len(report.catalog)
         click.echo(
-            f"{catalog_size} prompts linted · "
-            f"{warning_count} warnings · {error_count} errors"
+            f"{catalog_size} prompts linted · {warning_count} warnings · {error_count} errors"
         )
 
     if error_count > 0:
@@ -3979,10 +4093,7 @@ _EXIT_GOLDEN_DRIFT: int = 3
 
 
 _GOLDEN_PROMPTS_DIR: Path = (
-    Path(__file__).resolve().parent.parent.parent
-    / "tests"
-    / "golden"
-    / "prompts"
+    Path(__file__).resolve().parent.parent.parent / "tests" / "golden" / "prompts"
 )
 """Canonical on-disk location for the 4 PROMPT_NAMES golden snapshots.
 
@@ -4024,9 +4135,7 @@ def _parse_var_pair(raw: str) -> tuple[str, str]:
     "--var",
     "var_pairs",
     multiple=True,
-    callback=lambda _ctx, _param, values: [
-        _parse_var_pair(v) for v in values
-    ],
+    callback=lambda _ctx, _param, values: [_parse_var_pair(v) for v in values],
     help=(
         "Variable substitution as key=value (repeatable; last-write-wins). "
         "Per spec REQ-50 S2: missing declared vars get the "
@@ -4165,9 +4274,7 @@ def prompts_show(
                     err=True,
                 )
                 sys.exit(_EXIT_GOLDEN_DRIFT)
-            click.echo(
-                f"snapshot updated: {snap_path} ({len(canonical_render)} bytes)"
-            )
+            click.echo(f"snapshot updated: {snap_path} ({len(canonical_render)} bytes)")
         if check_snapshot:
             if not snap_path.exists():
                 click.echo(
@@ -4231,6 +4338,7 @@ def prompts_show(
     # angle-brackets are not Python format placeholders).
     if "{" in rendered and "}" in rendered:
         import contextlib
+
         with contextlib.suppress(KeyError, IndexError):
             # Missing positional or named placeholder — leave the
             # Jinja2-rendered body as-is; the sentinel subs still
@@ -4244,9 +4352,7 @@ def prompts_show(
     click.echo("-" * 64)
     click.echo(rendered)
     click.echo("-" * 64)
-    click.echo(
-        f"(rendered via Jinja2 · autoescape=on · source: {_entry_location(entry)})"
-    )
+    click.echo(f"(rendered via Jinja2 · autoescape=on · source: {_entry_location(entry)})")
 
     # REQ-V1.1.3 S2: render-count + render-history flags surface the
     # prompt render sink content. Best-effort: a missing sink file
@@ -4271,17 +4377,13 @@ def prompts_show(
         matching = [e for e in events if e.prompt_id == prompt_id]
 
         if render_count:
-            last_at = (
-                max((e.rendered_at for e in matching), default=None)
-            )
+            last_at = max((e.rendered_at for e in matching), default=None)
             last_iso = (
                 datetime.fromtimestamp(last_at, tz=UTC).isoformat()
                 if last_at is not None
                 else "never"
             )
-            click.echo(
-                f"render_count: {len(matching)} (last rendered_at: {last_iso})"
-            )
+            click.echo(f"render_count: {len(matching)} (last rendered_at: {last_iso})")
 
         if history_n > 0:
             tail = matching[-history_n:]
@@ -4289,9 +4391,7 @@ def prompts_show(
             if not tail:
                 click.echo("  (no records)")
             else:
-                click.echo(
-                    f"  {'rendered_at':<22} {'status':<6} {'elapsed_ms':<10} error"
-                )
+                click.echo(f"  {'rendered_at':<22} {'status':<6} {'elapsed_ms':<10} error")
                 for ev in tail:
                     status = "ok" if ev.ok else "fail"
                     click.echo(
@@ -4302,6 +4402,3 @@ def prompts_show(
 
 if __name__ == "__main__":
     main()
-
-
-
