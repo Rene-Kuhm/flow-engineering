@@ -14,6 +14,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from unittest import mock as unittest_mock
 
 import pytest
 from pydantic import ValidationError
@@ -648,6 +649,228 @@ def test_apply_hygiene_rule_happy_path_creates_git_and_registry_entry(
     assert len(reg_after.projects) == 1
     assert reg_after.projects[0].name == "mockup"
     assert reg_after.projects[0].path == project
+
+
+# =============================================================================
+# T-7 fix-up — safety posture (user-found defect caught by code review)
+#
+# Three defects were found in the original `_apply_hygiene_rule`:
+#   1. `_git("init", ...)` return code was discarded; non-zero rc silently
+#      proceeded to registry update, marking the project has_git=True on a
+#      failed git init.
+#   2. `_verify_post_mutation` was conditional on snapshot existence, so
+#      empty projects (no snapshot) skipped verify entirely.
+#   3. Registry update was not gated on verify success for empty projects.
+#
+# The 3 tests below pin the corrected behavior end-to-end through the
+# orchestrator. They are RED-first: each test exercises a path the buggy
+# code would mishandle (or skip coverage for). The fix is in
+# `_apply_hygiene_rule` Steps 5b/6/7.
+# =============================================================================
+
+
+def _stub_git_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    returncode: int = 128,
+    stderr: bytes = b"fatal: unable to init",
+) -> None:
+    """Replace ``cli._git`` with a stub that reports failure (no side effects).
+
+    Unlike :func:`_stub_git_success`, this stub does NOT create a ``.git/``
+    directory on disk. That mirrors a real ``git init`` failure on Windows
+    (e.g., antivirus interference, FS corruption, locked directory) where
+    the rc is non-zero AND no scaffolding was produced.
+    """
+    from flow_engineering import cli as cli_mod
+
+    def fake_git(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=returncode,
+            stdout=b"",
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+
+
+def test_apply_hygiene_rule_empty_git_init_failure_no_registry_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix-up #1: empty project + ``git init`` rc=128 → no mutation, no registry.
+
+    The original code discarded ``_git``'s return code. With the stub
+    reporting rc=128 (and no ``.git/`` side effect), the buggy code skipped
+    verify (snapshot is None for an empty project), fell through to the
+    registry update step, and wrote ``has_git=True`` for a failed init.
+    The fixed code captures the rc and short-circuits to a failure result
+    BEFORE verify and BEFORE the registry update.
+    """
+    stub_home(monkeypatch, tmp_path)
+    _stub_git_failure(monkeypatch, returncode=128, stderr=b"fatal: bad init")
+    entry = _make_project_entry(tmp_path, name="emptyproj")
+    backup_root = tmp_path / "backups"
+
+    result = wh._apply_hygiene_rule(
+        entry,
+        "R2",
+        dry_run=False,
+        yes=True,
+        backup=False,
+        backup_root=backup_root,
+    )
+
+    # The orchestrator reports the failure with the captured return code.
+    assert result.success is False
+    assert result.error is not None
+    assert "git init failed (rc=128)" in result.error
+
+    # The registry MUST NOT contain the project (it was a failed init).
+    reg_after = load_registry()
+    assert all(p.name != "emptyproj" for p in reg_after.projects)
+
+    # The filesystem MUST NOT have a .git/ (the mock did not create one,
+    # and the fix MUST NOT have side-effects after rc != 0).
+    assert not (entry.path / ".git").exists()
+
+
+def test_apply_hygiene_rule_empty_git_init_success_verify_false_no_registry_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix-up #2: empty project + git init rc=0 but verify=False → no registry.
+
+    The original code only ran ``_verify_post_mutation`` when a snapshot
+    existed. For an empty project with ``backup=False``, ``snapshot is None``
+    so the verify step was a no-op and the registry update ran even when
+    verify would have failed. The fixed code runs verify UNCONDITIONALLY.
+    """
+    stub_home(monkeypatch, tmp_path)
+    # rc=0 (git init "succeeded" from subprocess perspective) but verify
+    # will return False (corrupt .git/ — simulate by mocking).
+    _stub_git_failure(
+        monkeypatch, returncode=0, stderr=b""
+    )  # rc=0 with no .git/ side effect
+    monkeypatch.setattr(wh, "_verify_post_mutation", lambda *_a, **_kw: False)
+    # Spy on _restore_from_snapshot: must NOT be called (no snapshot to
+    # restore from for an empty project with backup=False).
+    restore_mock = unittest_mock.MagicMock()
+    monkeypatch.setattr(wh, "_restore_from_snapshot", restore_mock)
+
+    entry = _make_project_entry(tmp_path, name="emptyproj2")
+    backup_root = tmp_path / "backups"
+
+    result = wh._apply_hygiene_rule(
+        entry,
+        "R2",
+        dry_run=False,
+        yes=True,
+        backup=False,
+        backup_root=backup_root,
+    )
+
+    assert result.success is False
+    assert result.error == "verify failed"
+
+    # Registry unchanged.
+    reg_after = load_registry()
+    assert all(p.name != "emptyproj2" for p in reg_after.projects)
+
+    # No restore was attempted (nothing to restore from).
+    assert restore_mock.call_count == 0
+
+
+def test_apply_hygiene_rule_non_empty_backup_verify_false_restores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix-up #3: non-empty + backup + verify=False → restore + no registry.
+
+    Full orchestrator wiring for the pollution-protocol restore path. The
+    original code already triggered restore when ``snapshot is not None``,
+    so this test is a REGRESSION GUARD for that path through the
+    orchestrator (the existing ``test_pollution_protocol_restore_on_verify_fail``
+    only exercised the helpers in isolation, not the orchestrator's wiring).
+    The fix makes the verify check unconditional — this test confirms the
+    non-empty-with-backup path still works after that change.
+    """
+    stub_home(monkeypatch, tmp_path)
+    _stub_git_success(monkeypatch)
+    # Force verify to fail so the orchestrator takes the restore branch.
+    monkeypatch.setattr(wh, "_verify_post_mutation", lambda *_a, **_kw: False)
+
+    project = make_fake_project(
+        "nonempty",
+        with_files=["README.md"],
+        parent=tmp_path,
+    )
+    # Give the pre-mutation files known content so the assertion is exact.
+    (project / "README.md").write_text("hello world", encoding="utf-8")
+    # Nested dir + file: ``make_fake_project`` does not create parents,
+    # so we build the src/ tree explicitly.
+    (project / "src").mkdir()
+    (project / "src" / "main.py").write_text("print('ok')\n", encoding="utf-8")
+
+    entry = ProjectEntry(
+        name="nonempty",
+        path=project,
+        has_git=False,
+        has_openspec=False,
+        has_tests=False,
+        has_graphify=False,
+        last_status_check="2026-06-30T12:00:00Z",
+    )
+    backup_root = tmp_path / "backups"
+
+    # Spy on _restore_from_snapshot: must be called exactly once.
+    real_restore = wh._restore_from_snapshot
+    restore_calls: list[tuple[Path, Path]] = []
+
+    def spy_restore(snapshot: Path, target: Path) -> None:
+        restore_calls.append((snapshot, target))
+        real_restore(snapshot, target)
+
+    monkeypatch.setattr(wh, "_restore_from_snapshot", spy_restore)
+
+    result = wh._apply_hygiene_rule(
+        entry,
+        "R2",
+        dry_run=False,
+        yes=True,
+        backup=True,
+        backup_root=backup_root,
+    )
+
+    assert result.success is False
+    assert result.error == "verify failed"
+
+    # Snapshot directory exists at the expected path.
+    snapshots_for_proj = list((backup_root / "nonempty").iterdir())
+    assert len(snapshots_for_proj) == 1, (
+        f"expected exactly 1 snapshot dir, got {snapshots_for_proj}"
+    )
+    snapshot_dir = snapshots_for_proj[0]
+    assert re.match(r"^\d{8}T\d{6}Z$", snapshot_dir.name), (
+        f"snapshot dir name must match compact UTC format, got {snapshot_dir.name}"
+    )
+    assert (snapshot_dir / "manifest.json").is_file()
+
+    # _restore_from_snapshot was called exactly once.
+    assert len(restore_calls) == 1
+    assert restore_calls[0][0] == snapshot_dir
+    assert restore_calls[0][1] == project
+
+    # Filesystem state is restored: pre-mutation files intact, .git/ gone.
+    assert (project / "README.md").read_text(encoding="utf-8") == "hello world"
+    assert (project / "src" / "main.py").read_text(encoding="utf-8") == (
+        "print('ok')\n"
+    )
+    assert not (project / ".git").exists(), (
+        "restore must remove the .git/ created by the failed init"
+    )
+
+    # Registry unchanged (Step 7 not reached on the verify-fail branch).
+    reg_after = load_registry()
+    assert all(p.name != "nonempty" for p in reg_after.projects)
 
 
 # =============================================================================

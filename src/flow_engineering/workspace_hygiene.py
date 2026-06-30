@@ -272,13 +272,21 @@ def _snapshot_project(
     return snapshot_dir
 
 
-def _verify_post_mutation(project_path: Path, pre_snapshot: Path) -> bool:
+def _verify_post_mutation(
+    project_path: Path, pre_snapshot: Path | None
+) -> bool:
     """Return True iff post-mutation ``.git/`` looks valid.
 
     Currently checks file existence only (fast, no subprocess). A future
     change could add ``git status --porcelain`` for a stricter check; the
     pollution-protocol triple's restore path is the safety net for the
     rare case where existence-check passes but the repo is corrupt.
+
+    ``pre_snapshot`` is accepted as ``Path | None`` for the post-fix-up
+    orchestrator signature: verify now runs unconditionally (even when
+    no snapshot was taken), and the parameter is retained for future
+    stricter checks that may compare pre/post file counts. The current
+    body ignores the value.
     """
     return _git_metadata_intact(project_path)
 
@@ -374,12 +382,43 @@ def _apply_hygiene_rule(
             error=None,
         )
 
-    # Step 5 — mutate.
-    _git("init", str(project.path))
+    # Step 5 — mutate. Capture the ``CompletedProcess`` so we can inspect
+    # ``returncode`` (user-found defect: the previous code discarded the
+    # return value and silently proceeded to verify + registry update even
+    # when ``git init`` failed).
+    cp = _git("init", str(project.path))
 
-    # Step 6 — verify; on fail, restore and return early.
-    if snapshot is not None and not _verify_post_mutation(project.path, snapshot):
-        _restore_from_snapshot(snapshot, project.path)
+    # Step 5b — early exit on git init failure (BEFORE verify, BEFORE
+    # registry update). Failing fast here keeps the registry from claiming
+    # ``has_git=True`` for a project whose ``git init`` actually failed.
+    if cp.returncode != 0:
+        stderr_msg = (
+            cp.stderr.decode("utf-8", errors="replace")  # type: ignore[attr-defined]
+            if cp.stderr
+            else "no stderr"
+        )
+        return HygieneResult(
+            rule_id=rule_id,
+            project=project.name,
+            action_taken="git init",
+            dry_run=False,
+            backup_path=snapshot,
+            success=False,
+            error=f"git init failed (rc={cp.returncode}): {stderr_msg}",
+        )
+
+    # Step 6 — verify (ALWAYS, regardless of snapshot existence).
+    # User-found defect: the previous code only ran ``_verify_post_mutation``
+    # when ``snapshot is not None``, so empty projects (no snapshot) skipped
+    # verify entirely. A corrupted ``.git/`` after a successful-rc ``git
+    # init`` (rare but documented git behavior on Windows with antivirus
+    # interference, FS corruption, etc.) used to get registered as
+    # ``has_git=True`` with no verification. The verify check now runs
+    # unconditionally; if it fails, we restore from snapshot when present
+    # and otherwise return a failure result with the registry untouched.
+    if not _verify_post_mutation(project.path, snapshot):
+        if snapshot is not None:
+            _restore_from_snapshot(snapshot, project.path)
         return HygieneResult(
             rule_id=rule_id,
             project=project.name,
