@@ -167,13 +167,75 @@ Missing file → empty default (`{version: 1, projects: [], archived: []}`). Mal
 
 ---
 
-### REQ-WORKSPACE-DASHBOARD-PLACEHOLDER
+### REQ-WORKSPACE-DASHBOARD-SURFACE
 
-Phase 5 of the workspace-intelligence arc will add a `workspace-dashboard` sub-capability — a TUI (`flow workspace tui`) or web visualization of workspace state (registry + needs_attention + per-project metadata). This REQ is a **placeholder stub**: the full requirement text will live in the Phase 5 delta spec. The root spec remains open until Phase 5 ships.
+A new CLI subcommand `flow workspace dashboard` is registered under `workspace_group` (alongside `status`, `fix`, `archive`, `archived`, `restore`). Default output is visual (Rich tables/panels/colors) for human operators; machine-readable output stays at `flow workspace status --json` — the dashboard command deliberately omits `--json` to preserve a single identity per command (visual for humans vs. structured for tools).
 
-**Source:** Forward-looking (no delta spec yet — see §7 Future Changes for the `workspace-dashboard` follow-up).
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-COMMAND-NAME + REQ-DASHBOARD-FLAGS.
 
-**Out of scope:** Phase 5 implementation; Phase 5 dashboard REQ text; Phase 5 CLI surface decisions (TUI vs. web).
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** CLI handler signature details (see delta REQ-DASHBOARD-COMMAND-NAME); individual flag semantics (see delta REQ-DASHBOARD-FLAGS); the choice of `rich` as the rendering engine (already transitive per `pyproject.toml`).
+
+---
+
+### REQ-WORKSPACE-DASHBOARD-READ-ONLY
+
+The dashboard consumes workspace state but does not mutate it. All mutations stay in the existing Phase 4 verbs (`flow workspace fix`, `flow workspace archive`, `flow workspace restore`) which retain their pollution-protocol triple, `--yes` dry-run gating, and backup semantics. The dashboard subcommand SHALL NOT expose mutation flags (`--fix`, `--archive`, `--restore`, `--yes`).
+
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-READ-ONLY.
+
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** Mutation CLI handlers (Phase 4 — `flow workspace fix/archive/restore`); pollution-protocol triple (Phase 4 stays intact); `MutationGateError` and `EmptyProjectError` (Phase 4 gates unchanged); interactive triggers from UI (deferred to Phase 5.2).
+
+---
+
+### REQ-WORKSPACE-DASHBOARD-CONSUMES-DS1
+
+The dashboard invokes `flow projects ls --json` via `subprocess.run(["flow", "projects", "ls", "--json"], capture_output=True, text=True)` to consume the Phase 1 v1 JSON envelope (11 static metadata fields: `name`, `path`, `has_git`, `branch`, `dirty`, `remote`, `stack`, `test_commands`, `has_openspec`, `has_graphify`, `has_engram`).
+
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-DATA-SOURCES (DS1).
+
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** `flow projects ls` text output (dashboard parses JSON only); the 11 project metadata fields (defined at REQ-WORKSPACE-PROJECT-IDENTITY); `flow where` cross-project search (DS4, deferred to Phase 5.2).
+
+---
+
+### REQ-WORKSPACE-DASHBOARD-CONSUMES-DS2
+
+The dashboard invokes `flow workspace status --json` via `subprocess.run(["flow", "workspace", "status", "--json"], capture_output=True, text=True)` to consume the Phase 3 5-rule needs-attention aggregation (R1 dirty-committed, R2 no-git, R3 no-tests, R4 no-openspec on SDD-adjacent stacks, R5 no-graphify informational).
+
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-DATA-SOURCES (DS2).
+
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** The 5-rule logic itself (defined at REQ-WORKSPACE-STATUS-DISCOVERY); R1 remediation behavior (deferred — REQ-WORKSPACE-R1-DEFERRED); R3/R4 bootstrap (deferred).
+
+---
+
+### REQ-WORKSPACE-DASHBOARD-RENDERS-RICH
+
+Default output uses `rich` tables/panels/colors structured as 4 sections: **A** header panel (totals + per-rule breakdown + timestamp), **B** needs-attention table (project × R1–R5 matrix, color-coded red ≥3 needs, yellow 1–2, green 0), **C** archived projects list (name + path + archived_at + reason from DS5), **D** footer with tip pointers. The `--no-color` flag disables Rich ANSI color codes for CI / piping. `rich` is already a transitive dependency via `uv.lock:1215`; promoting it to a direct dep in `pyproject.toml` is zero-cost (no new packages installed).
+
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-RENDERING + REQ-DASHBOARD-FLAGS (`--no-color`) + REQ-DASHBOARD-ZERO-DEPS.
+
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** Rich color-accessibility hardening (text labels stay alongside colors per the Phase 5 proposal §11 risk register); Rich output width on narrow terminals (column truncation handles this at render time); snapshot-testing strategy for Rich output (golden-text approach — handled in delta REQ-DASHBOARD-RENDERING).
+
+---
+
+### REQ-WORKSPACE-DASHBOARD-DEFER-INTERACTIVE
+
+TUI frameworks (Textual, urwid, prompt_toolkit, Blessed), web frameworks (FastAPI, Streamlit, Dash, Panel, Flask, Tauri), real-time updates, file watching, websocket-style streams, interactive forms / prompts / buttons, mobile support, i18n, theming, historical data / audit logs / trend lines, and multi-user support are ALL deferred to Phase 5.2 (or later). The MVP is strictly read-only, on-demand refresh (operator re-invokes the command), single-user.
+
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-DEFER-INTERACTIVE.
+
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** TUI framework selection; web framework selection; interactive mutation paths from UI; real-time update mechanism; multi-user authentication / authorization; i18n / theming infrastructure; historical telemetry.
 
 ## 4.1 Sub-capability relationship graph
 
