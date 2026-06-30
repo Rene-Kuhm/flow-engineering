@@ -289,11 +289,12 @@ Phase 2 (`flow-where-cross-project`) **belongs to `flow-where`, not `workspace`*
 
 **Follow-up** (`flow-where-cross-project-capability-merge`): See §7 Future Changes.
 
+**[2026-06-30 update — RESOLVED]**: The `flow-where-cross-project-capability-merge` follow-up has landed via the change of the same name. The Phase 2 delta spec was regenerated **byte-identical** from git commit `27111ed` (2026-06-29) to `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` (155 lines; 6 ADDED REQs; 13 Given/When/Then scenarios; 10 acceptance criteria). The 6 REQs were integrated additively into `openspec/specs/flow-where/spec.md` as `REQ-WHERE-CROSS-PROJECT-SCOPE` through `REQ-WHERE-REGEX-OPT-IN`, each with a `Source:` line pointing to the regenerated delta. Merge SHA is `[future-commit-sha]` (placeholder until the apply phase produces the concrete commit). This §6.1 reclassification is now **RESOLVED**; the 5 evidence points above are preserved verbatim and continue to describe *why* Phase 2 belongs to `flow-where`, while this paragraph records *when* the reclassification finally executed. See also §7 row #1 (this follow-up is now removed from Future Changes).
+
 ## 7. Future Changes
 
 | # | Change | Scope | Priority | Trigger |
 |---|--------|-------|----------|---------|
-| 1 | **`flow-where-cross-project-capability-merge`** | Regenerate Phase 2's missing delta spec from Engram #456, then merge the 6 REQs into `openspec/specs/flow-where/spec.md` as `REQ-V1.0.5..V1.0.X` | Medium | Phase 2 follow-up debt — see §6.1 |
 | 2 | **`workspace-dashboard` (Phase 5)** | TUI (`flow workspace tui`) or web visualization of workspace state (registry + needs_attention + per-project metadata). Will add a new delta spec; this root spec is already anchored. | Low | Future change; requires CLI solidification first (per session #483) |
 | 3 | `workspace-hygiene-capability-spec` (optional) | Create `openspec/specs/workspace-hygiene/spec.md` as a top-level capability for the write-side if the delta grows further. | Low | Phase 4 follow-up #2 in archive-report #477 |
 | 4 | `backup-retention-policy` | Currently INDEFINITE in Phase 4 (per locked constraint #12). Needs pruning/TTL strategy at scale. | Low | Operator concern; not blocking |
