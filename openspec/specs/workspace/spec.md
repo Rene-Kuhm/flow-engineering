@@ -13,7 +13,7 @@
 
 **Findings tally**: **0 CRITICAL + 0 WARNING + 0 SUGGESTION** (doc-only change; no behavior moved; pre-existing 3 lint errors at `cli.py:682 RET504` + `test_cli_where_cross_project.py:{33,295}` remain OOS per Phase 4 close-out precedent).
 
-**Carry-forwards documented in Future Changes** (§7): `flow-where-cross-project-capability-merge` (Phase 2 follow-up), Phase 5 `workspace-dashboard`, optional `workspace-hygiene-capability-spec`, `backup-retention-policy` review, R1/R3/R4 deferred rules.
+**Carry-forwards documented in Future Changes** (§7): Phase 5 `workspace-dashboard`, optional `workspace-hygiene-capability-spec`, `backup-retention-policy` review, R1/R3/R4 deferred rules.
 
 ## 1. Purpose
 
@@ -238,7 +238,7 @@ The workspace family does not currently expose a single `workspace: v1.x` envelo
 | Registry schema v2 | Breaking change to `~/.flow-engineering/registry.json` | Bump `REQ-WORKSPACE-REGISTRY-V1` → `REQ-WORKSPACE-REGISTRY-V2`; add migration REQ |
 | New mutation verb (e.g., `flow workspace lock`) | New write-side verb | Add to §3 sub-capabilities + §5 CLI surface; new mutation inherits `REQ-WORKSPACE-MUTATION-SAFETY` + `REQ-WORKSPACE-DRY-RUN-DEFAULT` |
 | R1 remediation ships | `workspace-hygiene-r1` change | Remove `REQ-WORKSPACE-R1-DEFERRED` (the R1 row is then a real REQ with a delta source) |
-| Phase 2 follow-up lands | `flow-where-cross-project-capability-merge` | No change to workspace root spec; `flow-where/spec.md` gains `REQ-V1.0.5..V1.0.X` |
+| Phase 2 follow-up lands | `flow-where-cross-project-capability-merge` | No change to workspace root spec; `flow-where/spec.md` gains `REQ-WHERE-CROSS-PROJECT-SCOPE` through `REQ-WHERE-REGEX-OPT-IN` |
 
 ## 5. Public CLI surface
 
