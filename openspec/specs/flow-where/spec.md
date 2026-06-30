@@ -243,3 +243,104 @@ GRAPH
 - **4 PRE-EXISTING observability/metrics window-filter failures** (W2 carry-forward — unrelated to `flow where`; confirmed failing on baseline commit `7f8da73`).
 
 These carry-forwards do NOT block the archive; they are documented for the next change planning cycle per `verify-report.md` lines 317-327.
+
+---
+
+## 0. How to read this spec
+
+> **Family index, not canonical source.** Canonical cross-project requirements live in the delta spec under `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md`. This file anchors the `flow-where` capability family across two generations (`REQ-V1.0.1..V1.0.4` shipped as v0.8.2 + the Phase 2 `REQ-WHERE-*` family shipped as v0.9.0) and provides cross-references for navigation. Each root-level `REQ-WHERE-*` block below cites its delta source via the `Source:` field. Do not treat this file as the source of truth for cross-project behavior — that is what the delta spec is for.
+
+## 4.b Phase 2 cross-project search (v0.9.0)
+
+**Phase 2** extends `flow where "<query>"` to operate across **N projects under a single `--root PATH`**, scanning exactly **6 locked directories per project** (`src/ internal/ cmd/ tests/ openspec/ graphify-out/`). The extension ships with **3 output formats** (`text/json/tsv`), **2 opt-in flags** (`--regex` + `--engram` stub), and a **new exit-code contract** (0 = match-or-empty, 1 = no-match, 2 = error — replaces v0.8.2's "always exit 0").
+
+The canonical delta spec (full Given/When/Then scenarios + 10 acceptance criteria) lives at:
+
+- **`openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md`** — recovered byte-identical from git commit `27111ed` (2026-06-29, "chore(archive): add flow-where-cross-project artifacts"). 155 lines; 6 `ADDED Requirements`; 13 Given/When/Then scenarios; 10 acceptance criteria.
+
+**Test pointer**: `tests/unit/test_cli_where_cross_project.py` — **10 unit tests** covering text/json/tsv formatting, regex validation, limit caps, root resolution, exit-code trio, engram no-op identity, byte-identical-across-invocations, and scope discipline excluding `node_modules`. All 10 tests ship on `main` HEAD `920d395` (untouched by this doc-only change).
+
+**Private helpers added in Phase 2** (leading underscore; NOT part of public API — covered transitively by the 10 unit tests):
+
+- `_search_projects_for_query(root, query, regex_flag, limit)` — cross-project orchestrator at `cli.py:435-489`
+- `_format_where_text(hits)` / `_format_where_json(hits)` / `_format_where_tsv(hits)` — three output formatters at `cli.py:564-653`
+- `_validate_regex_or_exit(query)` — `re.compile` validation with exit 2 on `re.error` at `cli.py:656-668`
+- `_resolve_cross_project_root(root_arg)` — `--root` path resolution at `cli.py:671-682`
+- `_tag_match_type(file_path)` — path-prefix → type mapping (`code/test/sdd/graph`) at `cli.py:416-432`
+- `_parse_cross_project(output)` — workaround for `where._parse_hits` colon-segmentation bug at `cli.py:516-551`
+- `_strip_trailing_colon(output)` — workaround for rg `:` collision at `cli.py:492-513`
+- `_ascii_safe_local(s)` — inline ASCII-safe normalizer for cross-project formatters at `cli.py:554-561`
+
+### REQ-WHERE-CROSS-PROJECT-SCOPE
+
+`flow where "<query>" --root PATH` MUST fan out across N projects, scanning exactly these 6 locked directories per project: `src/` (type `code`), `internal/` (type `code`), `cmd/` (type `code`), `tests/` (type `test`), `openspec/` (type `sdd`), `graphify-out/` (type `graph`). Missing subdirectories MUST be silently skipped. Files outside the 6 locked directories MUST NEVER be scanned regardless of query match.
+
+**Source:** `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` §REQ-CROSS-PROJECT-SCOPE
+
+**Wording:** Canonical wording (including Given/When/Then scenarios S1 + S2: cross-project scans 6 dirs + missing dir skipped) lives at the source. This root-level summary exists for navigation only.
+
+**Out of scope:** The specific `_search_projects_for_query(root, query, regex_flag, limit)` signature; the per-directory `_run_search` dispatch pattern; the `_CROSS_PROJECT_DIRS` tuple literal at `cli.py:403-410`.
+
+### REQ-WHERE-DEFAULT-TEXT-FORMAT
+
+Without `--format`, the command MUST emit ASCII-safe text grouped by project. Each project section MUST contain: a `project_name` header line, rows of `file:line  content` (tab-aligned), and a TOTAL summary line. The output MUST NOT contain box-drawing characters or non-ASCII bytes. Empty match sets render `(no matches)` per project with `matches: 0` in TOTAL.
+
+**Source:** `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` §REQ-DEFAULT-TEXT-FORMAT
+
+**Wording:** Canonical wording (Given/When/Then scenarios: default multi-project text + empty match renders `(no matches)`) lives at the source.
+
+**Out of scope:** The specific `_format_where_text` row-formatting code path; the `(no matches)` placeholder string literal; the TOTAL summary line schema.
+
+### REQ-WHERE-EXPLICIT-FORMAT-FLAG
+
+`--format {text,json,tsv}` MUST produce exactly one of three formats. `--format=text` is the ASCII-safe grouped text (REQ-WHERE-DEFAULT-TEXT-FORMAT). `--format=json` emits a single JSON envelope with `version: "1"` as the first key, plus `root`, `query`, `format`, `results[]` (each item has `project`, `file`, `line`, `content`, `type`), `totals` (`projects_searched` + `matches`), and an `engram: {enabled: false, phase: "stub"}` field. `--format=tsv` emits TSV with header `project\tfile\tline\ttype\tcontent` and `\n`-escaped content rows.
+
+**Source:** `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` §REQ-EXPLICIT-FORMAT-FLAG
+
+**Wording:** Canonical wording (Given/When/Then scenarios for JSON envelope structure + TSV header/body) lives at the source.
+
+**Out of scope:** The specific `_format_where_json` + `_format_where_tsv` implementations; the exact JSON key ordering invariant; the TSV content escape sequences.
+
+### REQ-WHERE-EXIT-CODE-MAPPING
+
+The system MUST exit with code `0` when matches are found OR when no matches exist (empty set). The system MUST exit with code `1` when NO matches are found. The system MUST exit with code `2` for errors: invalid `--regex` pattern, unreadable `--root` path, or other CLI-level failures.
+
+**Behavior change from v0.8.2**: v0.8.2 was always exit `0`; v0.9.0 introduces exit `1` for the no-match case (greppish convention). Documented as a user-visible change in the v0.9.0 versioning row.
+
+**Source:** `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` §REQ-EXIT-CODE-MAPPING
+
+**Wording:** Canonical wording (Given/When/Then scenarios for exit 0/1/2) lives at the source.
+
+**Out of scope:** The specific `re.error` handling in `_validate_regex_or_exit`; the disk-read error paths in `_resolve_cross_project_root`; the CLI-level exception catch-all.
+
+### REQ-WHERE-ENGRAM-STUB
+
+The `--engram` flag MUST be accepted with no behavior change in v0.9.0. The flag MUST NOT cause an error. In `--format=json` output, the `engram` field MUST be present as `{enabled: false, phase: "stub"}`. Phase 4+ is reserved for real Engram MCP/API integration.
+
+**Source:** `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` §REQ-ENGRAM-STUB
+
+**Wording:** Canonical wording (Given/When/Then scenarios for flag acceptance + JSON envelope stub identity) lives at the source.
+
+**Out of scope:** Real Engram MCP wiring; the `--engram` no-op Click-option line at `cli.py:701-706` (forward-looking placeholder).
+
+### REQ-WHERE-REGEX-OPT-IN
+
+The `--regex` flag MUST enable regex matching. Without `--regex`, matching is case-insensitive substring (default). With `--regex`, `re.compile(query)` MUST be called at the CLI boundary to validate the pattern; on `re.error`, the system MUST exit code `2`.
+
+**Source:** `openspec/changes/flow-where-cross-project-capability-merge/specs/cross-project-search/spec.md` §REQ-REGEX-OPT-IN
+
+**Wording:** Canonical wording (Given/When/Then scenarios for valid-regex match + invalid-regex exit 2) lives at the source.
+
+**Out of scope:** The regex flavor (Python `re` module, not POSIX ERE); the case-sensitivity default (always case-insensitive regardless of `--regex`); the W1 carry-forward `shlex.quote(query)` application (open design deviation from `flow-where-mvp`).
+
+## 8. Drift Detection
+
+> **How drift is mitigated between this root spec and the Phase 2 delta spec.**
+
+- **Source-of-truth rule**: Each `REQ-WHERE-*` block in §4.b carries a `Source:` line citing the exact delta spec path + delta REQ ID. Canonical wording, Given/When/Then scenarios, and acceptance criteria live at the delta spec; root-level summaries exist for navigation only.
+- **Acceptance check**: `sdd-verify` validates that every `REQ-WHERE-*` block in §4.b has a `Source:` line, that the cited delta spec path exists on disk, and that every cited delta REQ ID is found in the cited delta file (mirrors the `workspace-capability-bootstrap` design #492 checks 1–3).
+- **Delta-evolution protocol**: When a delta REQ is updated (or a new delta is added), the corresponding root REQ summary should be reviewed for drift. When a delta REQ is deprecated, remove the root REQ block and the corresponding `Source:` line; do not leave stale root REQs behind.
+- **Behavior-change protocol**: REQ-WHERE-EXIT-CODE-MAPPING documents a user-visible behavior change from v0.8.2 (always exit 0 → 0/1/2 trio). Any future change that touches the exit-code contract MUST update both the delta REQ-EXIT-CODE-MAPPING and this root REQ-WHERE-EXIT-CODE-MAPPING block simultaneously to keep them in lockstep.
+- **Open improvement (out of scope for this change)**: automated drift detection via `sdd-verify` — could parse `Source:` lines and confirm path validity + the cited REQ still exists in the delta spec. Deferred until a CI hook for OpenSpec specs exists.
+
+> **Reviewer hint**: When reviewing a `flow-where`-related PR, start at this root spec for the family shape, then follow each `Source:` line to the canonical delta REQ for full Given/When/Then scenarios and acceptance criteria. Do not edit root-level wording without checking the delta first.
