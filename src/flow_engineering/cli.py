@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+from rich.console import Console
 
 from flow_engineering import decision_drift, observability, workspace_hygiene
 from flow_engineering import where as where_mod
@@ -3029,6 +3030,46 @@ def workspace_status(root: Path | None, json_flag: bool) -> None:
         )
         return
     click.echo(_render_workspace_status_text(root, projects, summary))
+
+
+# REQ-WORKSPACE-DASHBOARD-* — `flow workspace dashboard` (Phase 5, PR3 wiring).
+# Pattern #538 (one identity per command): NO ``--json`` flag here.
+# Machine-readable output stays at ``flow workspace status --json``.
+
+
+@workspace_group.command(name="dashboard")
+@click.option("--filter", "filter_rules", multiple=True,
+              type=click.Choice(["R1", "R2", "R3", "R4", "R5"], case_sensitive=False),
+              help="Filter by needs-attention rules (repeatable).")
+@click.option("--sort", default="name",
+              type=click.Choice(["name", "path", "needs-count"], case_sensitive=False),
+              help="Sort projects by field (default: name).")
+@click.option("--no-color", is_flag=True, default=False,
+              help="Disable Rich colors for CI / piping.")
+def workspace_dashboard_cmd(
+    filter_rules: tuple[str, ...], sort: str, no_color: bool
+) -> None:
+    """Render consolidated workspace state in terminal (read-only)."""
+    from flow_engineering.dashboard import (
+        fetch_archived_projects,
+        fetch_project_list,
+        fetch_status_summary,
+        filter_by_rules,
+        render_dashboard,
+        sort_projects,
+    )
+
+    projects = fetch_project_list()
+    status_envelope = fetch_status_summary()
+    archived = fetch_archived_projects()
+    needs_attention = status_envelope.get("needs_attention", [])
+
+    if filter_rules:
+        projects, needs_attention = filter_by_rules(projects, needs_attention, list(filter_rules))
+    projects = sort_projects(projects, sort)
+
+    console = Console(no_color=no_color, soft_wrap=False)
+    console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
 
 
 # =============================================================================
