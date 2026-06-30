@@ -874,6 +874,94 @@ def test_apply_hygiene_rule_non_empty_backup_verify_false_restores(
 
 
 # =============================================================================
+# Fix-up #2 — robust stderr handling for str/bytes/None (user-found defect
+# caught during code review of fix-up #1)
+#
+# Defect: ``cli._git`` is invoked with ``text=True`` so ``cp.stderr`` is
+# ``str``, not ``bytes``. The fix-up #1 code at Step 5b called
+# ``cp.stderr.decode(...)`` which raises ``AttributeError`` on a ``str``.
+# Safety is intact (Step 7 does not run), but the user saw an ugly
+# traceback instead of a clean error message.
+#
+# The test below pins the production shape (str stderr) end-to-end through
+# the orchestrator. The fix introduces ``_format_git_stderr(stderr)`` which
+# normalizes bytes | str | None into a user-readable string. Empty stderr
+# falls back to "unknown error" so the operator always sees a non-empty
+# diagnostic.
+# =============================================================================
+
+
+def test_apply_hygiene_rule_git_init_failure_with_str_stderr_returns_clean_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fix-up #2 regression guard: ``cp.stderr`` is ``str`` (cli._git text=True).
+
+    The production path returns ``CompletedProcess[str]`` with ``stderr``
+    as a ``str``. Calling ``.decode()`` on a ``str`` raises
+    ``AttributeError``. The fixed code routes through ``_format_git_stderr``
+    which handles bytes | str | None and returns a clean error message
+    without raising.
+    """
+    from flow_engineering import cli as cli_mod
+
+    project_dir = tmp_path / "empty-project"
+    project_dir.mkdir()
+    project = ProjectEntry(
+        name="empty-project",
+        path=project_dir,
+        has_git=False,
+        has_openspec=False,
+        has_tests=False,
+        has_graphify=False,
+        last_status_check="",
+    )
+
+    # Stub cli._git to return CompletedProcess with STR stderr (production shape).
+    # Note: must patch on the source module (cli_mod) because
+    # ``_apply_hygiene_rule`` does ``from flow_engineering.cli import _git``
+    # which resolves via the cli module's namespace at call time.
+    class _StubGit:
+        def __call__(
+            self, *args: str, **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="fatal: not a git repository",
+            )
+
+    monkeypatch.setattr(cli_mod, "_git", _StubGit())
+
+    # Spy on save_registry_atomic — must NOT be called when git init fails.
+    # Patched on the workspace_hygiene module because that is where the
+    # orchestrator references it (the registry helpers are imported into
+    # workspace_hygiene's namespace at module load).
+    written_payloads: list[str] = []
+    monkeypatch.setattr(
+        "flow_engineering.workspace_hygiene.save_registry_atomic",
+        lambda registry, *, path=None: written_payloads.append("called"),
+    )
+
+    result = wh._apply_hygiene_rule(
+        project,
+        "R2",
+        dry_run=False,
+        yes=True,
+        backup=False,
+        backup_root=tmp_path / "backups",
+    )
+
+    # Assertions per locked test contract.
+    assert result.success is False
+    assert "fatal: not a git repository" in (result.error or "")
+    assert "rc=1" in (result.error or "")
+    assert written_payloads == []  # registry was NOT updated
+    assert not (project_dir / ".git").exists()  # filesystem was NOT mutated
+
+
+# =============================================================================
 # T-8 — _archive_project + _restore_archived_project
 # =============================================================================
 

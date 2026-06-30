@@ -220,6 +220,22 @@ def _git_metadata_intact(project_path: Path) -> bool:
     return (git / "config").is_file()
 
 
+def _format_git_stderr(stderr: object) -> str:
+    """Normalize subprocess stderr (bytes | str | None) to a str.
+
+    ``cli._git`` is invoked with ``text=True`` so the production path
+    returns ``str``; tests use a mock that returns ``bytes`` to exercise
+    the decode branch. Both must produce a user-readable error message.
+    Empty or None falls back to ``"unknown error"`` so the operator
+    always sees a non-empty diagnostic.
+    """
+    if isinstance(stderr, bytes):
+        return stderr.decode("utf-8", errors="replace") or "unknown error"
+    if isinstance(stderr, str):
+        return stderr or "unknown error"
+    return "unknown error"
+
+
 # =============================================================================
 # Snapshot / verify / restore (pollution-protocol triple)
 # =============================================================================
@@ -392,11 +408,6 @@ def _apply_hygiene_rule(
     # registry update). Failing fast here keeps the registry from claiming
     # ``has_git=True`` for a project whose ``git init`` actually failed.
     if cp.returncode != 0:
-        stderr_msg = (
-            cp.stderr.decode("utf-8", errors="replace")  # type: ignore[attr-defined]
-            if cp.stderr
-            else "no stderr"
-        )
         return HygieneResult(
             rule_id=rule_id,
             project=project.name,
@@ -404,7 +415,7 @@ def _apply_hygiene_rule(
             dry_run=False,
             backup_path=snapshot,
             success=False,
-            error=f"git init failed (rc={cp.returncode}): {stderr_msg}",
+            error=f"git init failed (rc={cp.returncode}): {_format_git_stderr(cp.stderr)}",
         )
 
     # Step 6 — verify (ALWAYS, regardless of snapshot existence).
@@ -561,6 +572,7 @@ __all__ = [
     "_apply_hygiene_rule",
     "_archive_project",
     "_compute_snapshot_stats",
+    "_format_git_stderr",
     "_git_metadata_intact",
     "_is_empty_project",
     "_list_non_empty_files",
