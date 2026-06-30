@@ -18,7 +18,7 @@ from typing import Any
 
 import click
 
-from flow_engineering import decision_drift, observability
+from flow_engineering import decision_drift, observability, workspace_hygiene
 from flow_engineering import where as where_mod
 from flow_engineering.auto_suggest_code_refs import FLOW_AUTO_SUGGEST_ENV
 from flow_engineering.binding import (
@@ -44,6 +44,14 @@ from flow_engineering.orchestrator import (
     verify_change,
 )
 from flow_engineering.project_detector import apply_tag as _apply_tag
+from flow_engineering.registry import (
+    ArchivedEntry,
+    ProjectEntry,
+    Registry,
+    RegistryError,
+    load_registry,
+    save_registry_atomic,
+)
 from flow_engineering.scaffold import (
     load_change_yaml,
     render_new_project,
@@ -3021,6 +3029,319 @@ def workspace_status(root: Path | None, json_flag: bool) -> None:
         )
         return
     click.echo(_render_workspace_status_text(root, projects, summary))
+
+
+# =============================================================================
+# REQ-HYGIENE-* — `flow workspace {fix,archive,archived,restore}`
+# =============================================================================
+#
+# Phase 4 CLI surface. These 4 Click verbs are a THIN wiring layer over the
+# PR1-verified safety core in ``flow_engineering.workspace_hygiene`` (the
+# orchestrator + pollution-protocol triple) and ``flow_engineering.registry``
+# (the persistent v1 envelope). NO business logic lives here — only Click
+# argument parsing, error mapping, and output formatting.
+#
+# Hard constraints honored:
+#   - Dry-run is the DEFAULT (REQ-HYGIENE-DRY-RUN-DEFAULT).
+#   - ``--yes`` is REQUIRED for any mutation (REQ-HYGIENE-FIX-SURFACE).
+#   - ``--backup`` is REQUIRED for ``git init`` on a NON-EMPTY project
+#     (REQ-HYGIENE-BACKUP-GATE-NONEMPTY).
+#   - NO ``--json`` output flag (REQ-HYGIENE-NO-JSON-MVP).
+#   - R1 dirty-git remediation is OUT OF SCOPE (REQ-HYGIENE-R1-EXPLICITLY-OUT).
+#   - Phase 1/2/3 code paths are strictly READ-ONLY.
+
+
+_BACKUP_ROOT: Path = Path.home() / ".flow-engineering" / "backups"
+"""Backup root directory used by ``workspace fix``.
+
+Resolved at module load (matches ``DEFAULT_REGISTRY_PATH`` precedent in
+:mod:`flow_engineering.registry`). Tests that need an isolated backup root
+monkeypatch ``_resolve_backup_root_for_cli`` rather than this constant.
+"""
+
+
+def _load_registry_for_cli() -> Registry:
+    """Load the registry via the PR1 ``registry`` module.
+
+    Re-evaluates ``Path.home()`` on every call (via ``registry_path()``) so
+    tests that monkeypatch ``Path.home()`` are honored.
+    """
+    return load_registry()
+
+
+def _resolve_backup_root_for_cli() -> Path:
+    """Return the backup root, re-evaluating ``Path.home()`` per call.
+
+    Matches the ``registry_path()`` pattern in ``registry.py:118``.
+    """
+    return Path.home() / ".flow-engineering" / "backups"
+
+
+def _resolve_project_path(name: str, root: Path) -> Path:
+    """Resolve a project name to its directory under ``root``.
+
+    Raises :class:`click.UsageError` if the name is empty, if the resolved
+    path is not a directory, or if the resolved path would land outside
+    ``root`` (path-traversal guard).
+    """
+    if not name:
+        raise click.UsageError("project name is required")
+    target = (root / name).resolve()
+    # Path-traversal guard: the resolved path must stay under root.
+    try:
+        target.relative_to(root.resolve())
+    except ValueError as exc:
+        raise click.UsageError(
+            f"project `{name}` resolves outside the projects root"
+        ) from exc
+    if not target.is_dir():
+        raise click.UsageError(
+            f"project `{name}` not found at {target}"
+        )
+    return target
+
+
+def _workspace_hygiene_exit(exc: Exception) -> None:
+    """Map a ``workspace_hygiene`` exception to stderr + exit 2.
+
+    The PR1 helpers carry a ``user_message`` field for operator-friendly
+    remediation hints. ``MutationGateError`` (PermissionError) and
+    ``EmptyProjectError`` (ValueError) both expose it; ``RegistryError``
+    does too. This helper centralizes the mapping so the 4 CLI commands
+    stay consistent.
+    """
+    user_message = getattr(exc, "user_message", None) or str(exc)
+    click.echo(user_message, err=True)
+    raise SystemExit(2)
+
+
+def _require_yes(yes: bool, command_name: str) -> None:
+    """Gate helper: refuse mutations without ``--yes``.
+
+    Prints a remediation hint to stderr and exits 2. Shared between
+    ``workspace fix``, ``workspace archive``, and ``workspace restore``.
+    """
+    if not yes:
+        click.echo(
+            f"--yes required for `flow workspace {command_name}` mutations",
+            err=True,
+        )
+        raise SystemExit(2)
+
+
+def _format_archived_text_table(entries: list[ArchivedEntry]) -> str:
+    """Render the archived list as a 3-column text table.
+
+    Used by ``flow workspace archived``. NO JSON output (per
+    REQ-HYGIENE-NO-JSON-MVP). The header is fixed; column widths adapt
+    to the widest cell in each column.
+    """
+    if not entries:
+        return "(no archived projects)"
+    header = ("NAME", "ARCHIVED_AT", "REASON")
+    rows: list[tuple[str, str, str]] = [header]
+    for entry in entries:
+        rows.append(
+            (str(entry.name), str(entry.archived_at), str(entry.reason))
+        )
+    widths = [max(len(row[i]) for row in rows) for i in range(3)]
+    lines: list[str] = []
+    for row in rows:
+        lines.append(
+            f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}"
+        )
+    return "\n".join(lines)
+
+
+@workspace_group.command(name="fix")
+@click.argument("project")
+@click.option(
+    "--dry-run/--no-dry-run",
+    default=True,
+    help="Preview the plan without touching the filesystem or registry (default: dry-run).",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Required to commit any mutation.",
+)
+@click.option(
+    "--backup/--no-backup",
+    default=False,
+    help="Snapshot the project's pre-mutation files (required for non-empty projects).",
+)
+@click.option(
+    "--root",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Projects root directory. Defaults to FLOW_PROJECTS_ROOT, then platform default.",
+)
+def workspace_fix_cmd(
+    project: str,
+    dry_run: bool,
+    yes: bool,
+    backup: bool,
+    root: Path | None,
+) -> None:
+    """Initialize git on a project (REQ-HYGIENE-FIX-SURFACE).
+
+    Dry-run is the default. ``--yes`` is required for any mutation.
+    ``--backup`` is required when the project has user-visible files.
+
+    Commit-intent semantics: any of ``--yes``, ``--no-dry-run``, or
+    ``--backup`` flips the effective dry-run off. The orchestrator's
+    mutation gate then fires when ``--yes`` is missing. This is what
+    makes ``flow workspace fix X --backup`` refuse with a ``--yes``
+    hint — the user signaled commit intent but didn't confirm.
+    """
+    projects_root = _resolve_projects_root(root)
+    target = _resolve_project_path(project, projects_root)
+    backup_root = _resolve_backup_root_for_cli()
+
+    # Build a ProjectEntry from the read-only Phase 1 detector. The
+    # orchestrator does NOT call ``_detect_project_markers`` itself; the
+    # CLI is the seam where read-only metadata becomes a write-capable
+    # ProjectEntry. ``has_git`` mirrors the detector so a re-fix on an
+    # already-git project is idempotent (the orchestrator will still
+    # rewrite the registry row, but won't error).
+    markers = _detect_project_markers(target)
+    entry = ProjectEntry(
+        name=markers["name"],
+        path=Path(markers["path"]),
+        has_git=bool(markers["has_git"]),
+        has_openspec=bool(markers["has_openspec"]),
+        has_tests=bool(markers["test_commands"]),
+        has_graphify=bool(markers["has_graphify"]),
+        last_status_check=workspace_hygiene._now_iso_utc(),  # noqa: SLF001
+    )
+
+    # Commit intent: ``--yes``, ``--no-dry-run``, or ``--backup`` all flip
+    # the effective dry-run off. The orchestrator's mutation gate fires
+    # when the user wants to execute but didn't pass ``--yes``.
+    commit_intent = yes or (not dry_run) or backup
+    effective_dry_run = not commit_intent
+
+    try:
+        result = workspace_hygiene._apply_hygiene_rule(  # noqa: SLF001
+            entry,
+            "R2",
+            dry_run=effective_dry_run,
+            yes=yes,
+            backup=backup,
+            backup_root=backup_root,
+        )
+    except workspace_hygiene.MutationGateError as exc:
+        _workspace_hygiene_exit(exc)
+        return  # pragma: no cover — _workspace_hygiene_exit raises SystemExit
+    except workspace_hygiene.EmptyProjectError as exc:
+        _workspace_hygiene_exit(exc)
+        return  # pragma: no cover
+    except RegistryError as exc:
+        _workspace_hygiene_exit(exc)
+        return  # pragma: no cover
+
+    # Render the result as a single-line summary. Dry-run is prefixed so
+    # operators can see at a glance that nothing changed. When the target
+    # project already has ``.git`` and is dirty (per
+    # ``_detect_project_markers``), print the R1 OUT OF SCOPE hint so the
+    # operator knows the orchestrator did NOT remediate the dirty state
+    # (REQ-HYGIENE-R1-EXPLICITLY-OUT). This is informational; the
+    # mutation still ran (``git init`` is idempotent on existing repos).
+    prefix = "[DRY-RUN] " if result.dry_run else ""
+    click.echo(
+        f"{prefix}{result.action_taken} on {result.project}: "
+        f"success={result.success}"
+    )
+    if markers["has_git"] and markers["dirty"]:
+        click.echo(
+            "R1 dirty-git is OUT OF SCOPE for Phase 4 MVP "
+            "(worktree / index / untracked files preserved)."
+        )
+
+    # Mutation failures (e.g., ``git init`` rc != 0, verify failure,
+    # restore-from-snapshot) are returned via ``HygieneResult(success=False,
+    # error=...)`` instead of raising. Surface the error to stderr + exit 2
+    # so callers (CI, scripts) can detect failure via exit code. The
+    # pollution-protocol restore branch (``_verify_post_mutation`` False)
+    # is one such path — per REQ-HYGIENE-POLLUTION-PROTOCOL.
+    if not result.success:
+        if result.error:
+            click.echo(result.error, err=True)
+        raise SystemExit(2)
+
+
+@workspace_group.command(name="archive")
+@click.argument("project")
+@click.option(
+    "--reason",
+    default=None,
+    help="Reason for archiving (defaults to 'manual archive').",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Required to commit any mutation.",
+)
+def workspace_archive_cmd(project: str, reason: str | None, yes: bool) -> None:
+    """Move a registered project to the archived list (REQ-HYGIENE-ARCHIVE-SURFACE).
+
+    Registry-only operation — no filesystem change. ``--yes`` is required.
+    """
+    _require_yes(yes, "archive")
+    try:
+        registry = _load_registry_for_cli()
+        new_registry = workspace_hygiene._archive_project(  # noqa: SLF001
+            registry, project, reason
+        )
+        save_registry_atomic(new_registry)
+    except RegistryError as exc:
+        _workspace_hygiene_exit(exc)
+        return  # pragma: no cover
+
+    effective_reason = reason or "manual archive"
+    click.echo(f"archived: {project} (reason: {effective_reason})")
+
+
+@workspace_group.command(name="archived")
+def workspace_archived_cmd() -> None:
+    """List archived projects as a text table (REQ-HYGIENE-ARCHIVED-LISTING).
+
+    NO ``--json`` flag (REQ-HYGIENE-NO-JSON-MVP). Always prints a 3-column
+    text table (``NAME  ARCHIVED_AT  REASON``) or a clean empty message.
+    """
+    registry = _load_registry_for_cli()
+    click.echo(_format_archived_text_table(list(registry.archived)))
+
+
+@workspace_group.command(name="restore")
+@click.argument("project")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Required to commit any mutation.",
+)
+def workspace_restore_cmd(project: str, yes: bool) -> None:
+    """Reverse a prior archive (REQ-HYGIENE-RESTORE-SURFACE).
+
+    Moves the project from ``archived[]`` back to ``projects[]``.
+    Registry-only — no filesystem change. ``--yes`` is required.
+    """
+    _require_yes(yes, "restore")
+    try:
+        registry = _load_registry_for_cli()
+        new_registry = workspace_hygiene._restore_archived_project(  # noqa: SLF001
+            registry, project
+        )
+        save_registry_atomic(new_registry)
+    except RegistryError as exc:
+        _workspace_hygiene_exit(exc)
+        return  # pragma: no cover
+
+    click.echo(f"restored: {project}")
+
 
 # ---------- REQ-24: flow projects backfill ----------
 
