@@ -6,6 +6,7 @@ import csv as _csv
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -387,6 +388,290 @@ def memory_timeline(target: Path) -> None:
 
 
 # ---------- REQ-V1.0.1..V1.0.4: flow where "<query>" ----------
+# ---------- Phase 2: flow-where-cross-project (REQ-CROSS-PROJECT-SCOPE) ----------
+
+
+#: Per-project search directories (Phase 2 prospec; missing subdirs silently skipped).
+_CROSS_PROJECT_DIRS: tuple[str, ...] = (
+    "src",
+    "internal",
+    "cmd",
+    "tests",
+    "openspec",
+    "graphify-out",
+)
+
+#: Default limit for the cross-project path (bumped from 20 for N-projects scale).
+_CROSS_PROJECT_DEFAULT_LIMIT: int = 50
+
+
+def _tag_match_type(file_path: str) -> str:
+    """Return the match-type tag for a file path under a project root.
+
+    Mapping per Phase 2 design D3:
+    - ``tests/`` → ``test``
+    - ``openspec/`` → ``sdd``
+    - ``graphify-out/`` → ``graph``
+    - everything else (``src/``, ``internal/``, ``cmd/``) → ``code``
+    """
+    norm = file_path.replace("\\", "/")
+    if norm.startswith("tests/"):
+        return "test"
+    if norm.startswith("openspec/"):
+        return "sdd"
+    if norm.startswith("graphify-out/"):
+        return "graph"
+    return "code"
+
+
+def _search_projects_for_query(
+    root: Path,
+    query: str,
+    regex_flag: bool,
+    limit: int = _CROSS_PROJECT_DEFAULT_LIMIT,
+) -> tuple[list[dict[str, Any]], int]:
+    """Walk projects under ``root`` and search the 6 prospec dirs per project.
+
+    Returns ``(hits, projects_searched)``. Each hit dict has
+    ``{project, file, line, content, type}``. ``projects_searched`` is the
+    number of directory entries iterated under ``root`` (matches are capped
+    per project at ``limit``). Missing subdirs are silently skipped — the
+    orchestrator walks each existing subdir independently so a partial tree
+    (only ``src/`` + ``tests/``, no ``openspec/``) still produces hits.
+
+    Pure orchestration: no printing, no Click exit, no global state. Reuses
+    ``where_mod._run_search`` + ``where_mod._parse_hits`` (read-only seam;
+    ``where.py`` module API stays untouched). The cross-project path needs
+    the ``content`` field for the JSON / text / TSV renderers, so we
+    normalise the rg/grep output before parsing — see :func:`_strip_trailing_colon`.
+    """
+    hits: list[dict[str, Any]] = []
+    if not root.is_dir():
+        return (hits, 0)
+    projects_searched = 0
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        projects_searched += 1
+        # Call _run_search once per existing prospec subdir so a missing
+        # dir doesn't cause rg/grep to exit non-zero and discard matches
+        # from the dirs that DO exist (rg's rc=2 fails the whole run when
+        # any path is missing; see ``where._run_search`` fail-open contract).
+        project_hits: list[dict[str, Any]] = []
+        for sub in _CROSS_PROJECT_DIRS:
+            sub_path = entry / sub
+            if not sub_path.is_dir():
+                continue
+            raw = where_mod._run_search(query, [sub], entry)
+            # Custom parser: robust to colons in matched text (see
+            # :func:`_parse_cross_project` for the rationale).
+            project_hits.extend(_parse_cross_project(raw))
+        # Sort: file path asc → line asc; cap at `limit`.
+        project_hits.sort(key=lambda h: (h["path"], h["line"]))
+        for hit in project_hits[: max(0, limit)]:
+            hits.append(
+                {
+                    "project": entry.name,
+                    "file": hit["path"],
+                    "line": hit["line"],
+                    "content": hit["content"],
+                    "type": _tag_match_type(hit["path"]),
+                }
+            )
+    return (hits, projects_searched)
+
+
+def _strip_trailing_colon(output: str) -> str:
+    """Strip a trailing ``:`` from each rg/grep output line.
+
+    ``where._parse_hits`` uses ``split(":", 3)`` and assumes 3-part lines
+    are ``path:line:text`` (grep shape) and 4-part lines are ``path:line:col:text``
+    (rg shape). When the matched line content has no internal colons and
+    happens to end with one (e.g. ``def foo():``), the actual output is
+    ``path:1:def foo():`` which Python splits into 4 parts with the last
+    part empty — the parser then sees an empty snippet. Stripping the
+    trailing colon collapses it to ``path:1:def foo()`` so the parser
+    reads the snippet correctly. Read-only normalisation — we never modify
+    ``where.py``.
+    """
+    if not output:
+        return output
+    out_lines: list[str] = []
+    for raw in output.splitlines():
+        line = raw.rstrip("\r")
+        if line.endswith(":"):
+            line = line[:-1]
+        out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def _parse_cross_project(output: str) -> list[dict[str, Any]]:
+    """Cross-project parser for rg/grep ``path:line:text`` output.
+
+    Mirrors :func:`where_mod._parse_hits` semantics but is robust to the
+    case where the matched line content contains colons. ``where._parse_hits``
+    uses ``split(":", 3)`` and treats 4-part output as ``path:line:col:text``;
+    in practice for ``--line-number`` output the 4 parts are usually
+    ``path:line:half1:half2`` where ``half1:half2`` IS the text. We
+    re-join the trailing parts with ``:`` to recover the full text.
+
+    Read-only — never modifies ``where.py``. Read the rg/grep stdout,
+    return ``list[dict]`` with keys ``path`` / ``line`` / ``content``.
+    """
+    hits: list[dict[str, Any]] = []
+    if not output:
+        return hits
+    for raw in output.splitlines():
+        line = raw.rstrip("\r")
+        if not line:
+            continue
+        # Strip the trailing ":" so a line ending in ":" doesn't yield an
+        # empty trailing part after the split.
+        if line.endswith(":"):
+            line = line[:-1]
+        parts = line.split(":", 3)
+        if len(parts) < 3:
+            continue
+        path = parts[0].replace("\\", "/")
+        try:
+            line_no = int(parts[1])
+        except ValueError:
+            continue
+        # Recover the text by re-joining whatever was left after `line:`
+        content = ":".join(parts[2:]).strip()
+        hits.append({"path": path, "line": line_no, "content": content})
+    return hits
+
+
+def _ascii_safe_local(s: str) -> str:
+    """ASCII-safe helper (mirrors ``where_mod._ascii_safe`` for the formatters).
+
+    Defined inline so the cross-project formatters do not depend on
+    ``where.py`` private helpers (``where.py`` module API stays untouched
+    per Phase 2 design).
+    """
+    return s.encode("ascii", "replace").decode("ascii")
+
+
+def _format_where_text(
+    hits: list[dict[str, Any]],
+    projects_searched: int,
+    hits_total: int,
+    query: str,
+) -> str:
+    """ASCII-safe text output grouped by project (Phase 2 REQ-DEFAULT-TEXT-FORMAT).
+
+    Layout::
+
+        proj-a
+          proj-a/src/foo.py:1  def foo():
+          proj-a/tests/test_foo.py:1  def test_foo():
+        proj-b
+          proj-b/src/bar.py:2  def bar():
+        TOTAL: projects=2 matches=3
+
+    No box-drawing characters. ASCII-safe via :func:`_ascii_safe_local`.
+    """
+    if not hits:
+        return f"(no matches)\nTOTAL: projects={projects_searched} matches=0"
+    # Group hits by project, preserving the global project-alpha order.
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    project_order: list[str] = []
+    for hit in hits:
+        proj = hit["project"]
+        if proj not in grouped:
+            grouped[proj] = []
+            project_order.append(proj)
+        grouped[proj].append(hit)
+    lines: list[str] = []
+    for proj in project_order:
+        lines.append(proj)
+        for hit in grouped[proj]:
+            content = _ascii_safe_local(str(hit.get("content", "")))
+            lines.append(f"  {hit['file']}:{hit['line']}  {content}")
+    lines.append(f"TOTAL: projects={projects_searched} matches={hits_total}")
+    return "\n".join(lines)
+
+
+def _format_where_json(
+    root: Path,
+    query: str,
+    hits: list[dict[str, Any]],
+    projects_searched: int,
+    hits_total: int,
+    engram_stub: bool = False,
+) -> str:
+    """JSON envelope ``version:"1"`` (Phase 2 REQ-EXPLICIT-FORMAT-FLAG).
+
+    Top-level keys in order: ``version, root, query, format, results, totals, engram``.
+    Results sorted: project alpha → file path → line. No ``generated_at`` field
+    (byte-deterministic; mirrors AC9 byte-identical discipline).
+    """
+    sorted_hits = sorted(hits, key=lambda h: (h["project"], h["file"], h["line"]))
+    payload: dict[str, Any] = {
+        "version": "1",
+        "root": str(root),
+        "query": query,
+        "format": "json",
+        "results": [
+            {
+                "project": h["project"],
+                "file": h["file"],
+                "line": h["line"],
+                "content": _ascii_safe_local(str(h.get("content", ""))),
+                "type": h["type"],
+            }
+            for h in sorted_hits
+        ],
+        "totals": {"projects_searched": projects_searched, "matches": hits_total},
+        "engram": {"enabled": False, "phase": "stub"} if engram_stub else {"enabled": False, "phase": "stub"},
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _format_where_tsv(hits: list[dict[str, Any]]) -> str:
+    """TSV with header ``project\\\\tfile\\\\tline\\\\ttype\\\\tcontent`` (Phase 2 REQ-EXPLICIT-FORMAT-FLAG).
+
+    Newlines in ``content`` are escaped to the literal sequence ``\\n`` (two
+    chars: backslash + n) so each row stays on a single line. UTF-8 in content
+    is preserved (no ASCII-stripping at this layer — TSV is meant for piping).
+    """
+    lines: list[str] = ["project\tfile\tline\ttype\tcontent"]
+    for hit in hits:
+        content = str(hit.get("content", "")).replace("\r", "").replace("\n", "\\n")
+        lines.append(
+            f"{hit['project']}\t{hit['file']}\t{hit['line']}\t{hit['type']}\t{content}"
+        )
+    return "\n".join(lines)
+
+
+def _validate_regex_or_exit(query: str) -> None:
+    """Validate ``query`` as a regex at the CLI boundary; exit 2 on ``re.error``.
+
+    Mirrors the per-gate exit contract from REQ-V1.0.4 (D9): actionable stderr
+    line, exit code 2, no traceback. Used only when ``--regex`` is set on
+    ``flow where``.
+    """
+    try:
+        re.compile(query)
+    except re.error as exc:
+        click.echo(f"invalid --regex pattern: {exc}", err=True)
+        ctx = click.get_current_context()
+        ctx.exit(2)
+
+
+def _resolve_cross_project_root(root_path: Path | None) -> Path | None:
+    """Resolve ``--root`` from the explicit flag or the legacy projects helper.
+
+    Returns the explicit ``root_path`` when provided; otherwise falls back to
+    :func:`_resolve_projects_root` so ``FLOW_PROJECTS_ROOT`` and the platform
+    default still apply. Returns ``None`` when the resolved path is not a
+    directory (caller decides the exit code).
+    """
+    if root_path is not None:
+        return root_path
+    resolved = _resolve_projects_root(None)
+    return resolved
 
 
 @main.command(name="where")
@@ -411,26 +696,119 @@ def memory_timeline(target: Path) -> None:
     default=False,
     help="(Future) Emit Unicode output. Default is ASCII-safe for portability (HOTFIX-V1.0.5).",
 )
+@click.option(
+    "--root",
+    "root_path",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Projects root to search across (default: FLOW_PROJECTS_ROOT or platform default).",
+)
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json", "tsv"]),
+    default="text",
+    help="Output format: text (default ASCII-safe grouped), json (envelope), tsv (header + tabs).",
+)
+@click.option(
+    "--regex",
+    "regex_flag",
+    is_flag=True,
+    default=False,
+    help="Treat query as a regex (case-insensitive). Exit 2 on invalid pattern.",
+)
+@click.option(
+    "--engram",
+    "engram_flag",
+    is_flag=True,
+    default=False,
+    help="Reserved for Phase 4+ Engram MCP integration. No-op in v1.",
+)
 def where_cmd(
-    query: str, limit: int, no_graph_flag: bool, pretty_flag: bool
+    query: str,
+    limit: int,
+    no_graph_flag: bool,
+    pretty_flag: bool,
+    root_path: Path | None,
+    format_type: str,
+    regex_flag: bool,
+    engram_flag: bool,
 ) -> None:
-    """Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4).
+    """Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4 + Phase 2 cross-project).
 
-    Fans out to repo code + tests, archived SDD specs, and the
-    graphify index (fail-open). Renders structured ``CODE / TESTS /
-    SDD / GRAPH`` text sections (always in that order). Exit code
-    ``0`` always — ``(no matches)`` renders empty sections; missing
-    ``graph.json`` renders the deterministic
-    ``unavailable / no graph index found`` line.
+    Legacy mode (no ``--root``/``--format``/``--regex``/``--engram``) keeps the
+    existing :func:`where_mod.where` orchestrator + CODE/TESTS/SDD/GRAPH text
+    rendering — byte-identical to the pre-Phase-2 contract.
+
+    Cross-project mode (any of the four Phase 2 flags present) walks the 6
+    locked directories (``src/``, ``internal/``, ``cmd/``, ``tests/``,
+    ``openspec/``, ``graphify-out/``) under ``--root`` and renders one of
+    three output formats. Exit codes: 0 = match-or-empty, 1 = no-match,
+    2 = error (bad regex, unreadable root).
 
     Output is ASCII-safe by default (Windows cp1252 friendly). The
     ``--pretty`` flag is reserved for future Unicode output (Opción
     media UX work) and is currently a no-op.
     """
-    result = where_mod.where(query, limit=limit, no_graph=no_graph_flag)
-    # TODO Opción media: when ``--pretty`` lands full Unicode output,
-    # branch here on ``pretty_flag`` and call a Unicode-emitting renderer.
-    click.echo(where_mod.render_text(result))
+    # Phase 2 dispatch: any of the new flags activates the cross-project path.
+    cross_project_active = (
+        root_path is not None
+        or format_type != "text"
+        or regex_flag
+        or engram_flag
+    )
+
+    if not cross_project_active:
+        # Legacy path — unchanged behavior.
+        result = where_mod.where(query, limit=limit, no_graph=no_graph_flag)
+        click.echo(where_mod.render_text(result))
+        return
+
+    # Phase 2 cross-project path.
+    if regex_flag:
+        _validate_regex_or_exit(query)
+
+    resolved_root = _resolve_cross_project_root(root_path)
+    if resolved_root is None or not resolved_root.is_dir():
+        click.echo(
+            f"error: --root path not found or not a directory: {resolved_root}",
+            err=True,
+        )
+        ctx = click.get_current_context()
+        ctx.exit(2)
+
+    # Bump limit to cross-project scale when the user kept the legacy default.
+    effective_limit = (
+        _CROSS_PROJECT_DEFAULT_LIMIT
+        if limit == where_mod.DEFAULT_LIMIT
+        else limit
+    )
+
+    hits, projects_searched = _search_projects_for_query(
+        resolved_root, query, regex_flag, limit=effective_limit
+    )
+    hits_total = len(hits)
+
+    if format_type == "json":
+        click.echo(
+            _format_where_json(
+                resolved_root,
+                query,
+                hits,
+                projects_searched,
+                hits_total,
+                engram_stub=engram_flag,
+            )
+        )
+    elif format_type == "tsv":
+        click.echo(_format_where_tsv(hits))
+    else:
+        click.echo(_format_where_text(hits, projects_searched, hits_total, query))
+
+    # Exit-code mapping per Phase 2 REQ-EXIT-CODE-MAPPING:
+    # 0 = matches OR empty match set; 1 = no matches.
+    ctx = click.get_current_context()
+    ctx.exit(0 if hits_total > 0 else 1)
 
 
 FLOW_VECTOR_SEARCH_ENV: str = "FLOW_VECTOR_SEARCH"
