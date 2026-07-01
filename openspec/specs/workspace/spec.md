@@ -66,7 +66,7 @@ projects root. The capability:
 | "Init git on the no-git project `mockup`." | ✅ YES | Project hygiene (Phase 4) |
 | "Find where I implemented X across projects." | ❌ `flow-where` | Cross-project content search (Phase 2) |
 | "Archive `mockup` — I no longer maintain it." | ✅ YES | Project hygiene (Phase 4) |
-| "Show me a TUI of my workspace." | ✅ YES (Phase 5) | Project dashboard |
+| "Show me my workspace dashboard." | ✅ YES (Phase 5) | Rich dashboard |
 
 ## 3. Sub-capabilities
 
@@ -266,7 +266,7 @@ TUI frameworks (Textual, urwid, prompt_toolkit, Blessed), web frameworks (FastAP
                               │  protocol + registry v1 + dry-run     │
                               └──────────────────┬───────────────────┘
                                                  ▲
-                                                 │ Phase 5 (future)
+                                                 │ Phase 5 (shipped)
                                                  │
                               ┌──────────────────────────────────────┐
                               │  workspace-dashboard (P5)             │
@@ -289,7 +289,7 @@ TUI frameworks (Textual, urwid, prompt_toolkit, Blessed), web frameworks (FastAP
 
 - Phase 3 depends on Phase 1 helper (`_detect_project_markers`, read-only).
 - Phase 4 depends on Phase 3 registry gating + Phase 1 helper (read-only).
-- Phase 5 (future) will depend on Phase 3 (read aggregation) + Phase 4 (registry).
+- Phase 5 depends on Phase 3 (read aggregation) + Phase 4 (registry).
 
 ## 4.2 Versioning
 
