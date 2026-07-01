@@ -432,3 +432,104 @@ def test_workspace_dashboard_cmd_console_uses_explicit_width(
     # soft_wrap=True is the knob that prevents Unicode U+2026 truncation.
     assert captured.get("soft_wrap") is True
 
+
+# ============================================================================
+# T-D7..T-D8 — Sub-batch D (R1 detail CLI integration)
+# ============================================================================
+#
+# Anchors REQ-WORKSPACE-DASHBOARD-R1-DETAIL end-to-end: the CLI handler
+# propagates dirty_files from the needs_attention entry into the
+# rendered Section E, with cap-20 truncation at the boundary.
+
+
+def _make_needs_with_dirty(name: str, reasons: list[str], dirty_files: list[str]) -> dict:
+    """Build a DS2 needs_attention entry carrying ``dirty_files`` (R1-triggered)."""
+    return {"name": name, "reasons": reasons, "dirty_files": dirty_files}
+
+
+def test_workspace_dashboard_cmd_renders_section_e_when_r1_triggered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``flow workspace dashboard`` MUST render Section E when R1 is triggered.
+
+    Anchors AC9: Section E renders when exactly one project has R1
+    triggered. The handler threads ``dirty_files`` through ``render_dashboard``
+    so Section E consumes the data and surfaces it on stdout.
+    """
+    projects = [_make_project("alpha")]
+    needs_attention = [
+        _make_needs_with_dirty(
+            "alpha",
+            ["R1: uncommitted work"],
+            [" M src/foo.py", "?? src/bar.py"],
+        ),
+    ]
+    summary = {
+        "totals": {"projects": 1, "needs_attention": 1,
+                   "dirty": 1, "no_git": 0, "no_tests": 0},
+        "needs_attention": needs_attention,
+        "archived_count": 0,
+    }
+    monkeypatch.setattr(dashboard_mod, "fetch_project_list", lambda: projects)
+    monkeypatch.setattr(dashboard_mod, "fetch_status_summary", lambda: summary)
+    monkeypatch.setattr(dashboard_mod, "fetch_archived_projects", lambda: [])
+
+    result = runner.invoke(main, ["workspace", "dashboard", "--no-color"])
+
+    assert result.exit_code == 0, result.output
+    plain = _ANSI_ESCAPE_RE.sub("", result.output)
+    # Section A + Section E both rendered.
+    assert "Workspace" in plain
+    # Dirty file paths surface in the rendered output.
+    assert " M src/foo.py" in plain
+    assert "?? src/bar.py" in plain
+    # ASCII ellipsis invariant.
+    assert "\u2026" not in plain
+
+
+def test_workspace_dashboard_cmd_section_e_truncates_at_20_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``flow workspace dashboard`` MUST cap Section E at 20 files per project with ASCII ``...``.
+
+    Anchors AC11: 25 dirty files → first 19 + ``...`` + footer hint
+    substring visible in stdout. The cap mechanism is the
+    ``_truncate_dirty_files`` helper at the dashboard layer.
+    """
+    projects = [_make_project("alpha")]
+    dirty_files = [f" M f_{i}.py" for i in range(25)]
+    needs_attention = [
+        _make_needs_with_dirty(
+            "alpha",
+            ["R1: uncommitted work"],
+            dirty_files,
+        ),
+    ]
+    summary = {
+        "totals": {"projects": 1, "needs_attention": 1,
+                   "dirty": 1, "no_git": 0, "no_tests": 0},
+        "needs_attention": needs_attention,
+        "archived_count": 0,
+    }
+    monkeypatch.setattr(dashboard_mod, "fetch_project_list", lambda: projects)
+    monkeypatch.setattr(dashboard_mod, "fetch_status_summary", lambda: summary)
+    monkeypatch.setattr(dashboard_mod, "fetch_archived_projects", lambda: [])
+
+    result = runner.invoke(main, ["workspace", "dashboard", "--no-color"])
+
+    assert result.exit_code == 0, result.output
+    plain = _ANSI_ESCAPE_RE.sub("", result.output)
+    # The first 19 file entries appear (cap-1), the 20th+ do not.
+    for i in range(19):
+        assert f" M f_{i}.py" in plain, f"Missing f_{i} in output"
+    for i in range(19, 25):
+        assert f" M f_{i}.py" not in plain, (
+            f"f_{i} should be truncated; found in output"
+        )
+    # ASCII ellipsis marker present.
+    assert "..." in plain
+    # Footer hint substring present.
+    assert "git status" in plain.lower()
+    # Unicode U+2026 NEVER appears.
+    assert "\u2026" not in plain
+
