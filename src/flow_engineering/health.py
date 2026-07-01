@@ -3,16 +3,30 @@
 Library-first module per Constitution Article I. Public surface is
 exported via ``__all__``.
 
-This PR (sub-batch B-verdict-only + B-R9) ships:
+This PR (sub-batches B-verdict-only + B-R9 + C-summary) ships:
   - verdict math primitives (``_categorize_verdict`` + threshold
     constants)
   - R9 detector (``_detect_committed_tooling_dirs``) with hard-coded
     Python + Node pattern constants and a private ``_git_ls_files``
     subprocess seam
+  - per-project record builder (``summarize_project_health``) +
+    internal ``_summarize_per_project`` helper
+  - stack-suppression constants (``_R7_SUPPRESSED_STACKS`` +
+    ``_R8_SUPPRESSED_STACKS``)
+  - per-rule recommendation copy registry
+    (``_R6_RECOMMENDATION`` / ``_R7_RECOMMENDATIONS`` /
+    ``_R8_RECOMMENDATION`` / ``_R9_RECOMMENDATION``) +
+    ``_recommendations_for`` dispatcher (private dependency of
+    ``_summarize_per_project``; the recommendation-copy strings
+    MUST be available for the per-project builder to populate the
+    record's ``recommendations`` field, so the registry ships with
+    C-summary). The ``TestRecommendationLock`` grep audit on
+    these constants lands in PR2c.
 
-The recommendation copy, the summary builder, the filter, the
-envelope composer, the fetch, and the Rich renderer land in later
-sub-batches (PR2/C, PR3, PR4).
+The output-only filter (``filter_health_by_rules``), the
+recommendation-lock grep audit, the workspace-wide fetch + Rich
+render, and the CLI wiring land in later sub-batches
+(PR2c + PR3 + PR4).
 """
 
 from __future__ import annotations
@@ -27,8 +41,17 @@ __all__ = [
     "_VERDICT_CRITICAL_MIN_TRIGGERS",
     "_R9_PYTHON_PATTERNS",
     "_R9_NODE_PATTERNS",
+    "_R7_SUPPRESSED_STACKS",
+    "_R8_SUPPRESSED_STACKS",
+    "_R6_RECOMMENDATION",
+    "_R7_RECOMMENDATIONS",
+    "_R8_RECOMMENDATION",
+    "_R9_RECOMMENDATION",
     "_categorize_verdict",
     "_detect_committed_tooling_dirs",
+    "_summarize_per_project",
+    "_recommendations_for",
+    "summarize_project_health",
 ]
 
 
@@ -188,3 +211,216 @@ def _detect_committed_tooling_dirs(project_dir: Path) -> list[str]:
             hits.append(f"{pattern} ({count} files)")
             emitted.add(pattern)
     return hits
+
+
+# ---------------------------------------------------------------------------
+# Stack-suppression sets (REQ-WORKSPACE-HEALTH-R7-TESTS-INFRA + R8-OPENSPEC).
+# ---------------------------------------------------------------------------
+#
+# R7 is suppressed when the project's detected stack has no canonical
+# test runner to recommend (Nix/Unknown). R8 is suppressed outside the
+# Python/Go/Rust scope (mirrors R4 from the status surface). R9 has no
+# stack guard — any stack can have committed tooling dirs.
+
+_R7_SUPPRESSED_STACKS: frozenset[str] = frozenset({"Nix", "Unknown"})
+
+_R8_SUPPRESSED_STACKS: frozenset[str] = frozenset(
+    {"Astro", "Next", "WXT", "Node", "Flutter", "Nix", "Unknown"}
+)
+
+
+# ---------------------------------------------------------------------------
+# Recommendation copy (REQ-WORKSPACE-HEALTH-READ-ONLY).
+# ---------------------------------------------------------------------------
+#
+# LOCKED to references of existing ``flow workspace {fix, archive,
+# restore, new-project}`` verbs + plain English. NEVER raw filesystem
+# mutations (``rm -rf``, ``git rm -r --cached``, ``--force``). The
+# locked strings are exported via ``__all__`` so the
+# recommendation-lock grep test can audit them statically.
+
+_R6_RECOMMENDATION: str = (
+    "Add a 'README.md' (or 'README.rst') at the project root "
+    "describing purpose and usage; consult 'flow workspace fix' for "
+    "remediation tips."
+)
+
+_R7_RECOMMENDATIONS: dict[str, str] = {
+    "Python": (
+        "Add a 'tests/' directory and a '[tool.pytest]' section in "
+        "'pyproject.toml', or run 'flow workspace new-project <name> "
+        "--cross-projects <this>' to scaffold SDD-aligned test infra."
+    ),
+    "Go": (
+        "Add a 'go test ./...' entry; existing 'go.mod' is sufficient "
+        "if tests live in '<pkg>_test.go' files alongside packages; "
+        "see 'flow workspace fix' for details."
+    ),
+    "Rust": (
+        "'cargo test' is automatic on a 'Cargo.toml'; ensure at least "
+        "one 'tests/*.rs' file exists; consult 'flow workspace fix' "
+        "for the standard layout."
+    ),
+    "Node": (
+        "Add a 'vitest' or 'jest' config and a 'tests/' directory; "
+        "'package.json' already declares a 'test' script; see "
+        "'flow workspace fix' for the Node setup."
+    ),
+}
+
+_R8_RECOMMENDATION: str = (
+    "OpenSpec is missing — consider 'flow workspace new-project <name> "
+    "--cross-projects <this>' or copy the 'openspec/' tree from a "
+    "sibling SDD-adjacent project."
+)
+
+_R9_RECOMMENDATION: str = (
+    "Consider untracking tooling dirs: append the offending patterns to "
+    "'.gitignore' and consult 'flow workspace fix' for remediation "
+    "(operator's discretion — 'flow workspace health' does NOT execute "
+    "this)."
+)
+
+
+# ---------------------------------------------------------------------------
+# Per-project record builder (REQ-WORKSPACE-HEALTH-SURFACE).
+# ---------------------------------------------------------------------------
+#
+# The v1 envelope schema is documented at design §5.3. This module
+# does NOT compose the workspace-wide envelope (that's PR3's
+# ``fetch_workspace_health``). It exposes ``summarize_project_health``
+# so PR3 + PR4 can call it per project without re-deriving the
+# stack-suppression logic.
+
+
+def _summarize_per_project(
+    name: str,
+    path: str,
+    *,
+    stack: str,
+    has_readme: bool,
+    has_pytest_config: bool,
+    has_openspec: bool,
+    tooling_hits: list[str],
+) -> dict[str, object]:
+    """Build the per-project v1 record for the health envelope.
+
+    Internal helper used by ``summarize_project_health`` to keep the
+    public surface's signature small (just markers + tooling_hits).
+
+    Trigger computation (per spec REQ-WORKSPACE-HEALTH-VERDICT-MATH +
+    R6/R7/R8/R9 + stack-guard):
+
+      - R6: missing README → ``"R6"`` in ``triggers``
+      - R7: missing pytest infra → ``"R7"`` in ``triggers``,
+        SUPPRESSED when ``stack in _R7_SUPPRESSED_STACKS``
+      - R8: missing openspec → ``"R8"`` in ``triggers``,
+        SUPPRESSED when ``stack in _R8_SUPPRESSED_STACKS``
+      - R9: any tooling hits → ``"R9"`` in ``triggers`` (no stack
+        guard — any stack can have committed tooling dirs)
+
+    Recommendations list contains one copy per TRIGGERED (not
+    suppressed) rule. Suppressed rules are surfaced in a separate
+    ``suppressed`` list so operators understand WHY no verdict hit
+    a stack-guard rule (per spec REQ-WORKSPACE-HEALTH-R8-OPENSPEC).
+    """
+    triggers: list[str] = []
+    suppressed: list[str] = []
+    # R6
+    if not has_readme:
+        triggers.append("R6")
+    # R7
+    if stack in _R7_SUPPRESSED_STACKS:
+        suppressed.append("R7")
+    elif not has_pytest_config:
+        triggers.append("R7")
+    # R8
+    if stack in _R8_SUPPRESSED_STACKS:
+        suppressed.append("R8")
+    elif not has_openspec:
+        triggers.append("R8")
+    # R9 — no stack guard; any tooling hit counts
+    if tooling_hits:
+        triggers.append("R9")
+    verdict = _categorize_verdict(triggers)
+    recommendations = _recommendations_for(triggers, stack)
+    return {
+        "name": name,
+        "path": path,
+        "stack": stack,
+        "verdict": verdict,
+        "triggers": triggers,
+        "recommendations": recommendations,
+        "suppressed": suppressed,
+    }
+
+
+def summarize_project_health(
+    markers: dict[str, object],
+    *,
+    tooling_hits: list[str] | None = None,
+) -> dict[str, object]:
+    """Build the per-project v1 record from extended markers + tooling hits.
+
+    Public entry point (REQ-WORKSPACE-HEALTH-SURFACE). Reads the
+    additive keys from ``_detect_project_markers`` (R6 source =
+    ``has_readme``; R7 source = ``has_pytest_config``; R8 source =
+    ``has_openspec``) plus the R9 source from
+    ``_detect_committed_tooling_dirs`` (the ``tooling_hits`` list).
+
+    Args:
+        markers: Per-project marker dict from
+            ``_detect_project_markers``. Must include ``name``,
+            ``path``, ``stack``, ``has_readme``, ``has_pytest_config``,
+            and ``has_openspec``.
+        tooling_hits: Non-empty list → R9 triggered. ``[]`` (default)
+            → R9 not triggered.
+
+    Returns:
+        A new per-project v1 record (see ``_summarize_per_project``).
+    """
+    return _summarize_per_project(
+        name=str(markers.get("name", "")),
+        path=str(markers.get("path", "")),
+        stack=str(markers.get("stack", "Unknown")),
+        has_readme=bool(markers.get("has_readme", False)),
+        has_pytest_config=bool(markers.get("has_pytest_config", False)),
+        has_openspec=bool(markers.get("has_openspec", False)),
+        tooling_hits=list(tooling_hits) if tooling_hits else [],
+    )
+
+
+def _recommendations_for(triggers: list[str], stack: str) -> list[str]:
+    """Build the per-project recommendation list (locked copy).
+
+    Only TRIGGERED rules produce recommendations. Suppressed rules
+    are NOT in the recommendation list (they're surfaced separately
+    via the ``suppressed`` field per spec REQ-WORKSPACE-HEALTH-R8).
+
+    R7 recommendations are stack-specific (Python/Go/Rust/Node).
+    For Nix/Unknown stacks, R7 is suppressed and produces no
+    recommendation (no canonical hint available).
+
+    Copy lock (REQ-WORKSPACE-HEALTH-READ-ONLY):
+      - NEVER raw filesystem mutations (``rm -rf``, ``git rm``,
+        ``--force``)
+      - ONLY existing ``flow workspace {fix, archive, restore,
+        new-project}`` verbs + plain English
+      - A test (``TestRecommendationLock``, lands in PR2c) greps
+        the output of this function for the forbidden tokens and
+        fails the build if any are present.
+    """
+    out: list[str] = []
+    for trigger in triggers:
+        if trigger == "R6":
+            out.append(_R6_RECOMMENDATION)
+        elif trigger == "R7":
+            rec = _R7_RECOMMENDATIONS.get(stack)
+            if rec:
+                out.append(rec)
+        elif trigger == "R8":
+            out.append(_R8_RECOMMENDATION)
+        elif trigger == "R9":
+            out.append(_R9_RECOMMENDATION)
+    return out
+

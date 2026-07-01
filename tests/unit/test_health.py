@@ -219,3 +219,110 @@ class TestDetectCommittedToolingDirs:
         result = _detect_committed_tooling_dirs(project)
 
         assert result == []
+
+
+# ============================================================================
+# T-C.1 RED -- per-project record builder (REQ-WORKSPACE-HEALTH-SURFACE).
+# ============================================================================
+
+
+class TestSummarizeProjectHealth:
+    """REQ-WORKSPACE-HEALTH-SURFACE: per-project v1 record builder.
+
+    The record shape is locked at design §5.3:
+    ``{name, path, stack, verdict, triggers[], recommendations[],
+    suppressed[]}``. Stack guards are applied: R7 suppressed for
+    ``{"Nix", "Unknown"}``; R8 suppressed outside ``{Python, Go, Rust}``.
+    R9 has no stack guard (any stack can have committed tooling dirs).
+    """
+
+    def test_python_project_with_no_triggers(self) -> None:
+        """All 4 rules satisfied (README + tests + openspec + no tooling) → HEALTHY."""
+        from flow_engineering.health import summarize_project_health
+
+        markers = {
+            "name": "py-clean",
+            "path": "/tmp/py-clean",
+            "stack": "Python",
+            "has_readme": True,
+            "has_pytest_config": True,
+            "has_openspec": True,
+        }
+
+        record = summarize_project_health(markers, tooling_hits=[])
+
+        assert record["verdict"] == "HEALTHY"
+        assert record["triggers"] == []
+        assert record["recommendations"] == []
+        assert record["suppressed"] == []
+
+    def test_python_project_with_r7_and_r8_triggered(self) -> None:
+        """Python project missing pytest + openspec → 2 triggers + 2 recommendations.
+
+        Verdict = ``NEEDS-ATTENTION`` (2 triggers < 3 critical threshold).
+        The recommendations list contains one copy per triggered rule.
+        """
+        from flow_engineering.health import summarize_project_health
+
+        markers = {
+            "name": "py-bare",
+            "path": "/tmp/py-bare",
+            "stack": "Python",
+            "has_readme": True,
+            "has_pytest_config": False,
+            "has_openspec": False,
+        }
+
+        record = summarize_project_health(markers, tooling_hits=[])
+
+        assert record["verdict"] == "NEEDS-ATTENTION"
+        assert "R7" in record["triggers"]
+        assert "R8" in record["triggers"]
+        assert len(record["recommendations"]) == 2
+        assert record["suppressed"] == []
+
+    def test_nix_project_suppresses_r7_and_r8(self) -> None:
+        """Nix stack suppresses R7 + R8 even when infra missing → HEALTHY."""
+        from flow_engineering.health import summarize_project_health
+
+        markers = {
+            "name": "nix-proj",
+            "path": "/tmp/nix-proj",
+            "stack": "Nix",
+            "has_readme": True,
+            "has_pytest_config": False,
+            "has_openspec": False,
+        }
+
+        record = summarize_project_health(markers, tooling_hits=[])
+
+        assert record["verdict"] == "HEALTHY"
+        assert record["triggers"] == []
+        assert "R7" in record["suppressed"]
+        assert "R8" in record["suppressed"]
+        # Suppressed rules produce NO recommendations
+        assert record["recommendations"] == []
+
+    def test_recommendations_only_for_triggered_rules(self) -> None:
+        """Only triggered (non-suppressed) rules produce recommendations.
+
+        An R6-only project has 1 trigger and 1 recommendation; R7/R8/R9
+        are NOT in the recommendations list even though they're
+        "defined" — they're only emitted when triggered.
+        """
+        from flow_engineering.health import summarize_project_health
+
+        markers = {
+            "name": "py-no-readme",
+            "path": "/tmp/py-no-readme",
+            "stack": "Python",
+            "has_readme": False,
+            "has_pytest_config": True,
+            "has_openspec": True,
+        }
+
+        record = summarize_project_health(markers, tooling_hits=[])
+
+        assert record["triggers"] == ["R6"]
+        assert len(record["recommendations"]) == 1
+        assert "README" in record["recommendations"][0]
