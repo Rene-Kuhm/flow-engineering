@@ -481,3 +481,42 @@ def test_flow_projects_ls_json_byte_identical_envelope(
         f"  Second ({len(result2.output)} bytes): {result2.output!r}"
     )
 
+
+def test_flow_projects_ls_subdir_scan_excludes_dot_prefix_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``flow projects ls --json`` MUST exclude dot-prefix entries.
+
+    Mirrors the workspace_status contract per REQ-WORKSPACE-PROJECT-IDENTITY:
+    tooling/config directories are filtered at scan time. The v1 envelope
+    shape is preserved (no new top-level keys).
+    """
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_fake_python_project(root, name="alpha")
+    make_fake_python_project(root, name="beta")
+    make_fake_python_project(root, name="gamma")
+    for dot_name in (".atl", ".opencode", ".venv", ".pytest_cache", ".github"):
+        (root / dot_name).mkdir()
+    monkeypatch.setenv("FLOW_PROJECTS_ROOT", str(root))
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="main\n", stderr=""
+        )
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    by_name = {p["name"] for p in payload["projects"]}
+    assert by_name == {"alpha", "beta", "gamma"}
+    # v1 envelope shape preserved — no new top-level keys (AC8 byte-identical).
+    assert list(payload.keys()) == ["version", "root", "projects"]
+    assert payload["version"] == "1"
+

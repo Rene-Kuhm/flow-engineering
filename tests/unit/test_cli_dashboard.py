@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import re
 
+import click.testing
 import pytest
 from click.testing import CliRunner
+from rich.console import Console as RealConsole
 
 from flow_engineering import dashboard as dashboard_mod
 from flow_engineering.cli import main
@@ -195,10 +197,13 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 def test_workspace_dashboard_cmd_with_no_color_suppresses_ansi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``--no-color`` MUST emit no ANSI escape sequences.
+    """``--no-color`` MUST emit no ANSI escape sequences + Console MUST
+    use the explicit ``width`` binding (per design §3).
 
-    The handler constructs ``Console(no_color=no_color, ...)`` per design §4.5;
-    when the flag is set, Rich drops ANSI codes (CI / piping contract).
+    Tightened in T-B10 (workspace-dashboard-usability-pass): the handler
+    constructs ``Console(width=<int>, soft_wrap=True, no_color=no_color)``;
+    when ``--no-color`` is set, Rich drops ANSI codes (CI / piping
+    contract) AND the explicit width binding takes effect.
     """
     projects = [_make_project("alpha")]
     summary = {
@@ -210,12 +215,35 @@ def test_workspace_dashboard_cmd_with_no_color_suppresses_ansi(
     monkeypatch.setattr(dashboard_mod, "fetch_status_summary", lambda: summary)
     monkeypatch.setattr(dashboard_mod, "fetch_archived_projects", lambda: [])
 
+    # Track Console construction to verify the explicit width binding.
+    console_init: dict[str, object] = {}
+    original_console_init = RealConsole.__init__
+
+    def tracking_console_init(self: object, *args: object, **kwargs: object) -> None:
+        # Capture the first Console built in the handler path (post-probe).
+        if "width" in kwargs and "soft_wrap" in kwargs:
+            console_init.setdefault("width", kwargs.get("width"))
+            console_init.setdefault("soft_wrap", kwargs.get("soft_wrap"))
+            console_init.setdefault("no_color", kwargs.get("no_color"))
+        original_console_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(RealConsole, "__init__", tracking_console_init)
+
     result = runner.invoke(main, ["workspace", "dashboard", "--no-color"])
 
     assert result.exit_code == 0, result.output
     assert _ANSI_ESCAPE_RE.search(result.output) is None, (
         f"--no-color must suppress ANSI escapes; got: {result.output!r}"
     )
+    # Explicit width binding (post-T-B6): terminal-introspected or 120 fallback.
+    assert console_init.get("width") is not None, (
+        f"Console(width=None) is forbidden — width MUST be explicit; got {console_init!r}"
+    )
+    assert console_init.get("width") == 120 or (
+        isinstance(console_init.get("width"), int) and console_init["width"] > 0
+    )
+    assert console_init.get("soft_wrap") is True
+    assert console_init.get("no_color") is True
 
 
 # =============================================================================
@@ -293,4 +321,114 @@ def test_workspace_dashboard_cmd_passes_needs_by_name_to_sort_projects(
         f"Caller did not forward needs_by_name from needs_attention; "
         f"captured={captured.get('needs_by_name')!r}, expected={expected!r}"
     )
+
+
+# =============================================================================
+# T-B1 — workspace_dashboard_cmd: sys.stdout.reconfigure OSError fallback (Pattern #551)
+# =============================================================================
+
+
+def test_workspace_dashboard_cmd_console_reconfigure_handles_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``sys.stdout.reconfigure(encoding="utf-8")`` MUST be wrapped in try/except OSError.
+
+    Anchors AC3: legacy terminals / redirected pipes raise ``OSError`` from
+    ``reconfigure``; the handler MUST swallow it, fall back to current
+    behavior, and complete with exit 0. The replacement character ``\\ufffd``
+    MUST NOT appear in stdout for ASCII-only project names.
+    """
+    projects = [_make_project("alpha")]
+    summary = {
+        "totals": {"projects": 1, "needs_attention": 0,
+                   "dirty": 0, "no_git": 0, "no_tests": 0},
+        "needs_attention": [],
+        "archived_count": 0,
+    }
+    monkeypatch.setattr(dashboard_mod, "fetch_project_list", lambda: projects)
+    monkeypatch.setattr(dashboard_mod, "fetch_status_summary", lambda: summary)
+    monkeypatch.setattr(dashboard_mod, "fetch_archived_projects", lambda: [])
+
+    reconfigure_calls: list[dict[str, object]] = []
+
+    def fake_reconfigure(self: object, **kwargs: object) -> None:
+        reconfigure_calls.append(kwargs)
+        raise OSError("reconfigure not supported on this stream")
+
+    # Patch the class method — Click's CliRunner replaces sys.stdout with
+    # its own ``_NamedTextIOWrapper`` during invocation, so monkeypatching
+    # ``sys.stdout`` directly is ineffective. Patching the class captures
+    # every instance CliRunner creates.
+    monkeypatch.setattr(
+        click.testing._NamedTextIOWrapper, "reconfigure", fake_reconfigure
+    )
+
+    result = runner.invoke(main, ["workspace", "dashboard", "--no-color"])
+
+    # Production code MUST actually call reconfigure (otherwise OSError is
+    # a no-op and the test proves nothing about the reconfigure guard).
+    assert reconfigure_calls, "Handler did not call sys.stdout.reconfigure"
+    assert reconfigure_calls[0].get("encoding") == "utf-8"
+    # OSError is swallowed; handler still completes with exit 0.
+    assert result.exit_code == 0, (
+        f"OSError on reconfigure MUST be swallowed; got exit {result.exit_code}: {result.output!r}"
+    )
+    plain = _ANSI_ESCAPE_RE.sub("", result.output)
+    # No replacement character on ASCII names.
+    assert "\ufffd" not in plain
+    # ASCII project name still appears.
+    assert "alpha" in plain
+
+
+# =============================================================================
+# T-B2 — workspace_dashboard_cmd: Console(width=..., soft_wrap=True) explicit binding
+# =============================================================================
+
+
+def test_workspace_dashboard_cmd_console_uses_explicit_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``Console(...)`` in ``workspace_dashboard_cmd`` MUST be built with an
+    explicit ``width`` kwarg (terminal-introspected, fallback 120) and
+    ``soft_wrap=True`` so long names wrap rather than truncate with the
+    Unicode U+2026 ellipsis.
+
+    Anchors AC1 + AC4 + AC6 (per-column overflow + width binding).
+    """
+    import flow_engineering.cli as cli_mod
+
+    projects = [_make_project("alpha")]
+    summary = {
+        "totals": {"projects": 1, "needs_attention": 0,
+                   "dirty": 0, "no_git": 0, "no_tests": 0},
+        "needs_attention": [],
+        "archived_count": 0,
+    }
+    monkeypatch.setattr(dashboard_mod, "fetch_project_list", lambda: projects)
+    monkeypatch.setattr(dashboard_mod, "fetch_status_summary", lambda: summary)
+    monkeypatch.setattr(dashboard_mod, "fetch_archived_projects", lambda: [])
+
+    captured: dict[str, object] = {}
+
+    class TrackingConsole(RealConsole):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            captured["width"] = kwargs.get("width")
+            captured["soft_wrap"] = kwargs.get("soft_wrap")
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(cli_mod, "Console", TrackingConsole)
+
+    result = runner.invoke(main, ["workspace", "dashboard", "--no-color"])
+
+    assert result.exit_code == 0, result.output
+    # The handler MUST pass an explicit width (not None — None = auto-detect,
+    # which produces non-deterministic snapshot output).
+    assert captured.get("width") is not None, (
+        "Console(width=None) is forbidden — width MUST be explicit"
+    )
+    # Width MUST be a positive int (terminal-introspected or 120 fallback).
+    assert isinstance(captured.get("width"), int)
+    assert captured["width"] > 0
+    # soft_wrap=True is the knob that prevents Unicode U+2026 truncation.
+    assert captured.get("soft_wrap") is True
 
