@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import csv as _csv
 import io
 import json
@@ -3098,7 +3099,22 @@ def workspace_dashboard_cmd(
 
     projects = sort_projects(projects, sort, needs_by_name=needs_by_name)
 
-    console = Console(no_color=no_color, soft_wrap=False)
+    # Encoding reconfigure — Pattern #551. Falls back gracefully on legacy
+    # Windows terminals / non-TTY pipes where ``reconfigure`` raises OSError.
+    # ``sys.stdout`` is typed as ``TextIO | Any`` and TextIO has no
+    # ``reconfigure`` method (Python 3.7+ on TextIOWrapper only); use
+    # ``getattr`` so mypy strict is happy + non-TextIO streams are skipped.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        with contextlib.suppress(OSError):
+            reconfigure(encoding="utf-8")
+    # Width introspection: probe once, cache the result. Best-effort
+    # auto-detect first, explicit fallback to 120 (matches snapshot test
+    # precedent at ``tests/unit/test_dashboard.py:87``).
+    probe = Console().size
+    width_value = probe.width if probe.width and probe.width > 0 else 120
+
+    console = Console(width=width_value, soft_wrap=True, no_color=no_color)
     console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
 
 

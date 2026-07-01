@@ -668,6 +668,69 @@ class TestRenderNeedsTable:
         # ``no_color=True`` strips ANSI codes (Rich `no_color` console flag).
         assert "\x1b[" not in text_no_color
 
+    def test_render_needs_table_folds_long_names(self) -> None:
+        """A 35-char project name + narrow terminal MUST wrap (not truncate)
+        with NO Unicode U+2026 anywhere in the output.
+
+        Anchors AC4: Section B columns use ``OverflowMethod.fold`` so long
+        project names appear on multiple lines instead of being truncated
+        with the Unicode single-char ellipsis (the source of the ``\\ufffd``
+        bug on cp1252 terminals).
+        """
+        long_name = "a" * 35
+        projects = [{"name": long_name, "path": f"/p/{long_name}"}]
+        needs_attention = [
+            {"name": long_name, "path": f"/p/{long_name}",
+             "reasons": ["R1: dirty"]},
+        ]
+
+        console = Console(
+            width=40,
+            no_color=True,
+            record=True,
+            file=io.StringIO(),
+        )
+        table = render_needs_table(projects, needs_attention)
+        console.print(table)
+        text = console.export_text()
+        # Every char of the name MUST be present (fold wraps onto multiple
+        # lines but never drops chars; truncation shortens the name).
+        # Count the ``a`` characters in the rendered text — Rich's ``fold``
+        # overflow method may split the name across column boundaries
+        # (interspersed with box-drawing chars), so a naive ``in`` check
+        # is brittle. Counting chars is exact and bug-anchored.
+        a_count = text.count("a")
+        assert a_count >= len(long_name), (
+            f"render_needs_table MUST preserve all {len(long_name)} chars of "
+            f"the name; found {a_count} 'a' chars in: {text!r}"
+        )
+        # The Unicode ellipsis is FORBIDDEN in any output. This is the
+        # explicit invariant: the cp1252 bug repros as ``\ufffd`` from the
+        # Unicode U+2026 char.
+        assert "\u2026" not in text, (
+            f"render_needs_table MUST NOT emit Unicode U+2026; got: {text!r}"
+        )
+
+    def test_render_needs_table_no_unicode_ellipsis_in_output(self) -> None:
+        """Plain Section B render MUST NOT contain ``\\u2026`` even with a
+        long-but-fits project name (triangulates T-B3 with a less-extreme
+        but still truncatable case at width=120).
+
+        Anchors the design §3 invariant: per-column ``OverflowMethod.fold``
+        never inserts the Unicode U+2026 single-char ellipsis (Rich fold
+        uses literal ``\\n`` instead).
+        """
+        long_but_fits = "a" * 50  # 50 chars; longer than the 30-char column
+        projects = [{"name": long_but_fits, "path": f"/p/{long_but_fits}"}]
+        needs_attention = [
+            {"name": long_but_fits, "path": f"/p/{long_but_fits}",
+             "reasons": ["R1: dirty"]},
+        ]
+        text = _render_text(render_needs_table(projects, needs_attention))
+        assert "\u2026" not in text, (
+            f"Unicode U+2026 ellipsis is FORBIDDEN in dashboard output; got: {text!r}"
+        )
+
 
 # ============================================================================
 # T9 — render_archived (Section C — Table or None)
@@ -697,6 +760,54 @@ class TestRenderArchived:
         text = _render_text(table)
         assert "retired-a" in text
         assert "manual archive" in text
+
+    def test_render_archived_no_unicode_ellipsis(self) -> None:
+        """``render_archived`` MUST NOT emit Unicode U+2026 in any cell.
+
+        Triangulates the design §3 invariant: per-column widths keep short
+        content intact, and the ``archived_at`` ISO timestamp is the
+        longest cell — it must NOT be truncated with the Unicode single-
+        char ellipsis (the cp1252 bug source).
+        """
+        archived = [
+            {
+                "name": "retired-x",
+                "path": "/p/retired-x",
+                "archived_at": "2026-06-15T08:30:00Z",
+                "reason": "stale",
+            },
+        ]
+        table = render_archived(archived)
+        text = _render_text(table)
+        assert "\u2026" not in text, (
+            f"render_archived MUST NOT emit Unicode U+2026; got: {text!r}"
+        )
+
+    def test_render_archived_uses_explicit_column_widths(self) -> None:
+        """Render of ``render_archived`` MUST keep the ISO ``archived_at``
+        timestamp intact (no Unicode truncation) at the standard width=120.
+
+        Anchors the design §3 contract: per-column ``min_width`` /
+        ``max_width`` are honored. The 20-char ISO timestamp fits
+        comfortably in the column's ``max_width=25`` slot and MUST appear
+        verbatim — Rich's column overflow does NOT collapse it to the
+        Unicode U+2026 single-char ellipsis.
+        """
+        archived = [
+            {
+                "name": "retired-x",
+                "path": "/p/retired-x",
+                "archived_at": "2026-06-15T08:30:00Z",
+                "reason": "stale",
+            },
+        ]
+        text = _render_text(render_archived(archived))
+        # The ISO timestamp MUST be present (column max_width >= 19).
+        assert "2026-06-15T08:30:00Z" in text, (
+            f"render_archived MUST preserve the ISO timestamp; got: {text!r}"
+        )
+        # No Unicode U+2026 in any cell.
+        assert "\u2026" not in text
 
 
 # ============================================================================
