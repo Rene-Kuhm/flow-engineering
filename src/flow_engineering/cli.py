@@ -3548,6 +3548,37 @@ def _detect_test_commands(project_dir: Path, stack: str) -> list[str]:
     return []  # Nix / Unknown — no probe
 
 
+def _has_pytest_config(project_dir: Path) -> bool:
+    """Return True if the project has any pytest test infrastructure (R7 signal).
+
+    Three signals are OR'd (REQ-WORKSPACE-HEALTH-R7-TESTS-INFRA):
+      - ``tests/`` directory at the project root
+      - ``pytest.ini`` file at the project root
+      - ``[tool.pytest]`` section in ``pyproject.toml`` (parsed via stdlib
+        ``tomllib``)
+
+    The ``[tool.pytest]`` check is purely structural (key presence under
+    ``tool``); it does NOT validate the section's contents. A malformed
+    ``pyproject.toml`` returns ``False`` (no exception propagates, per
+    Pattern #551).
+    """
+    if (project_dir / "tests").is_dir():
+        return True
+    if (project_dir / "pytest.ini").is_file():
+        return True
+    pyproject = project_dir / "pyproject.toml"
+    if not pyproject.is_file():
+        return False
+    try:
+        import tomllib
+
+        with pyproject.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, ValueError):
+        return False
+    return "pytest" in data.get("tool", {})
+
+
 def _detect_project_markers(project_dir: Path) -> dict[str, Any]:
     """Detect workspace-intel fields + legacy markers for a project directory.
 
@@ -3617,6 +3648,14 @@ def _detect_project_markers(project_dir: Path) -> dict[str, Any]:
             out["readme_first_line"] = first[0].lstrip("#").strip() if first else ""
         except OSError:
             pass
+    # Health-advisor additive keys (14 -> 16; Pattern #548 — existing 14 keys
+    # preserved; consumers ignore unknown keys per Pattern #538).
+    # R6 source: README presence (file existence only; 0-byte is present).
+    out["has_readme"] = (project_dir / "README.md").is_file() or (
+        project_dir / "README.rst"
+    ).is_file()
+    # R7 source: pytest test infra (tests/ OR pytest.ini OR [tool.pytest]).
+    out["has_pytest_config"] = _has_pytest_config(project_dir)
     return out
 
 
