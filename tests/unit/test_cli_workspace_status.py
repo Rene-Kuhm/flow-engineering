@@ -126,6 +126,32 @@ def test_workspace_status_text_output(tmp_path: Path, monkeypatch) -> None:
     assert "SUMMARY" in result.output
 
 
+def test_workspace_status_subdir_scan_excludes_dot_prefix_dirs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """``flow workspace status --json`` MUST exclude dot-prefix entries.
+
+    View-only filter per REQ-WORKSPACE-PROJECT-IDENTITY: tooling/config
+    directories (``.atl``, ``.opencode``, ``.venv``) are not user projects.
+    3 regular + 5 dot-prefix subdirs in the root → 3 projects reported.
+    """
+    root = tmp_path / "projects"
+    root.mkdir()
+    make_python_project(root, "alpha")
+    make_python_project(root, "beta")
+    make_python_project(root, "gamma")
+    for dot_name in (".atl", ".opencode", ".venv", ".pytest_cache", ".github"):
+        (root / dot_name).mkdir()
+
+    payload = _payload(root, monkeypatch)
+
+    by_name = {p["name"] for p in payload["projects"]}
+    assert by_name == {"alpha", "beta", "gamma"}
+    assert payload["totals"]["projects"] == 3
+    for excluded in (".atl", ".opencode", ".venv", ".pytest_cache", ".github"):
+        assert excluded not in by_name
+
+
 def test_workspace_status_empty_root_text_and_json(tmp_path: Path) -> None:
     root = tmp_path / "projects"
     root.mkdir()
@@ -139,6 +165,38 @@ def test_workspace_status_empty_root_text_and_json(tmp_path: Path) -> None:
     payload = json.loads(js.output)
     assert payload["totals"]["projects"] == 0
     assert payload["totals"]["needs_attention"] == 0
+
+
+def test_iter_project_subdirs_helper_excludes_dot_prefix(tmp_path: Path) -> None:
+    """``_iter_project_subdirs`` MUST drop dot-prefix entries and return sorted output.
+
+    Anchors REQ-WORKSPACE-PROJECT-IDENTITY at the helper level: callers
+    that bypass the public ``workspace_status`` / ``projects_ls`` paths
+    must still see the same filtered set.
+    """
+    from flow_engineering.cli import _iter_project_subdirs
+
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "beta").mkdir()
+    (tmp_path / ".atl").mkdir()
+    (tmp_path / ".opencode").mkdir()
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".github").mkdir()
+    (tmp_path / "stray.txt").write_text("not a dir", encoding="utf-8")
+
+    result = _iter_project_subdirs(tmp_path)
+
+    assert [p.name for p in result] == ["alpha", "beta"]
+
+
+def test_iter_project_subdirs_helper_empty_when_only_dot_dirs(tmp_path: Path) -> None:
+    """``_iter_project_subdirs`` returns ``[]`` when only dot-prefix dirs exist."""
+    from flow_engineering.cli import _iter_project_subdirs
+
+    for dot_name in (".atl", ".opencode", ".venv"):
+        (tmp_path / dot_name).mkdir()
+
+    assert _iter_project_subdirs(tmp_path) == []
 
 
 def test_workspace_status_json_byte_identical(tmp_path: Path, monkeypatch) -> None:
