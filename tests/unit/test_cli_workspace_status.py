@@ -241,3 +241,159 @@ def test_workspace_status_does_not_change_projects_ls_schema(tmp_path: Path, mon
     assert "totals" not in payload
     assert "needs_attention" not in payload
 
+
+# ============================================================================
+# T-C1..T-C5 — Sub-batch C (R1 detail data plumbing)
+# ============================================================================
+#
+# Anchors REQ-WORKSPACE-DASHBOARD-R1-DETAIL: the Section E renderer
+# consumes the ``dirty_files`` field on the project dict + needs_attention
+# entry. Capture happens once at detection time inside
+# ``_detect_project_markers``; the data flows through ``_summarize_workspace_status``
+# without a second subprocess per project.
+
+
+def test_detect_project_markers_captures_dirty_files(tmp_path: Path, monkeypatch) -> None:
+    """``_detect_project_markers`` MUST capture ``git status --porcelain`` stdout as ``dirty_files``.
+
+    REQ-WORKSPACE-DASHBOARD-R1-DETAIL: the Section E renderer consumes this
+    list verbatim (one ``git status --porcelain`` line per row, 2-char XY
+    status + space + path). Capture happens once at detection time.
+    """
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    (project_dir / ".git").mkdir()
+
+    porcelain = " M src/foo.py\n?? tmp/bar\n"
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        if args and args[0] == "status":
+            return subprocess.CompletedProcess(
+                args=["git", *args], returncode=0, stdout=porcelain, stderr=""
+            )
+        return subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="main\n", stderr=""
+        )
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+
+    out = cli_mod._detect_project_markers(project_dir)
+
+    assert out["dirty_files"] == [" M src/foo.py", "?? tmp/bar"]
+    assert out["dirty"] is True
+
+
+def test_detect_project_markers_dirty_files_empty_on_clean_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When ``git status --porcelain`` returns empty stdout, ``dirty_files`` MUST be ``[]``.
+
+    Defensive default for clean projects (and for the post-splitlines
+    boundary on empty input — ``"".splitlines()`` is ``[]``, no `[""]`
+    sentinel).
+    """
+    project_dir = tmp_path / "clean"
+    project_dir.mkdir()
+    (project_dir / ".git").mkdir()
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        if args and args[0] == "status":
+            return subprocess.CompletedProcess(
+                args=["git", *args], returncode=0, stdout="", stderr=""
+            )
+        return subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="main\n", stderr=""
+        )
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+
+    out = cli_mod._detect_project_markers(project_dir)
+
+    assert out["dirty_files"] == []
+    assert out["dirty"] is False
+
+
+def test_detect_project_markers_dirty_files_empty_on_subprocess_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When ``_git`` raises ``OSError``, ``dirty_files`` MUST default to ``[]``.
+
+    The existing try/except block preserves ``dirty=None`` for broken
+    ``.git`` / missing git binary. ``dirty_files`` must follow the same
+    default — never raise, never leak ``None`` to the renderer.
+    """
+    project_dir = tmp_path / "broken"
+    project_dir.mkdir()
+    (project_dir / ".git").mkdir()
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        raise OSError("git not installed")
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+
+    out = cli_mod._detect_project_markers(project_dir)
+
+    assert out["dirty_files"] == []
+    assert out["dirty"] is None
+
+
+def test_summarize_threads_dirty_files_when_r1() -> None:
+    """When R1 reason is appended, ``dirty_files`` MUST be copied onto the needs_attention entry.
+
+    REQ-WORKSPACE-DASHBOARD-R1-DETAIL: Section E renders the dirty_files
+    list per R1-triggered project. The threading happens inside
+    ``_summarize_workspace_status`` — the renderer never reads the project
+    dict directly (DS2 envelope carries the data).
+    """
+    from flow_engineering.cli import _summarize_workspace_status
+
+    projects = [
+        {
+            "name": "alpha",
+            "path": "/p/alpha",
+            "dirty": True,
+            "has_git": True,
+            "dirty_files": [" M a.py", "?? b.py", " M c.py"],
+            "has_openspec": True,  # avoid R4 noise
+            "stack": "Unknown",
+            "test_commands": ["make test"],  # avoid R3 noise
+        },
+    ]
+
+    summary = _summarize_workspace_status(projects)
+    entry = summary["needs_attention"][0]
+
+    assert entry["reasons"] == ["R1: uncommitted work"]
+    assert entry["dirty_files"] == [" M a.py", "?? b.py", " M c.py"]
+
+
+def test_summarize_omits_dirty_files_when_not_r1() -> None:
+    """When R1 is NOT in reasons, the ``dirty_files`` key MUST NOT be present on the entry.
+
+    Spec requirement: ``dirty_files`` is OPTIONAL on the needs_attention
+    entry; absent when R1 is not triggered (additive field, consumers
+    ignore unknown keys). The project dict itself may still carry
+    ``dirty_files`` (e.g. for DS1 envelope), but the DS2 needs_attention
+    entry stays clean.
+    """
+    from flow_engineering.cli import _summarize_workspace_status
+
+    projects = [
+        {
+            "name": "beta",
+            "path": "/p/beta",
+            "dirty": False,
+            "has_git": False,
+            "dirty_files": [],
+            "has_openspec": True,
+            "stack": "Unknown",
+            "test_commands": ["make test"],
+        },
+    ]
+
+    summary = _summarize_workspace_status(projects)
+    entry = summary["needs_attention"][0]
+
+    assert "R1: uncommitted work" not in entry["reasons"]
+    assert "dirty_files" not in entry
+
