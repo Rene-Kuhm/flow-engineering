@@ -25,7 +25,7 @@ projects root. The capability:
 - aggregates per-project signals into a **5-rule needs-attention report** (`flow workspace status [--json]`) — R1 dirty-committed, R2 no-git, R3 no-tests, R4 no-openspec on SDD-adjacent stacks, R5 no-graphify (informational only in v1);
 - remediates R2 (no-git → `git init`) and provides a registry-mediated archive/restore escape hatch for projects the user no longer maintains (`flow workspace {fix,archive,archived,restore}`);
 - persists a **registry v1** at `~/.flow-engineering/registry.json` for the `projects[]` + `archived[]` split (atomic writes; read-only consumers do not create it);
-- (Phase 5 placeholder) will surface workspace state in a TUI or web visualization.
+- visualizes workspace state in a read-only Rich dashboard for human operators (flow workspace dashboard with --filter RULES, --sort FIELD, --no-color; no --json per Pattern #538).
 
 **What `workspace` is NOT**: a content search/retrieval surface. Cross-project code/archive search belongs to `flow-where` (Phase 2 reclassification — see §6). The two capabilities have different verbs (CRUD vs. search), different mental models (project identity & state vs. file content traversal), and different change cadences (workspace mutations vs. append-heavy search indexes).
 
@@ -270,10 +270,11 @@ TUI frameworks (Textual, urwid, prompt_toolkit, Blessed), web frameworks (FastAP
                                                  │
                               ┌──────────────────────────────────────┐
                               │  workspace-dashboard (P5)             │
-                              │  flow workspace tui / web             │
-                              │  STATUS: PLACEHOLDER STUB             │
-                              │  (see REQ-WORKSPACE-DASHBOARD-         │
-                              │   PLACEHOLDER + §7 Future Changes)    │
+                              │  flow workspace dashboard             │
+                              │  Phase 5: 6 REQs incl. Rich MVP +     │
+                              │  --filter RULES / --sort FIELD /      │
+                              │  --no-color (no --json per #538)      │
+                              │  Source: phase-5-dashboard (shipped)  │
                               └──────────────────────────────────────┘
 
    ┌──────────────────────────────────────────────────────────────────┐
