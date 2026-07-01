@@ -520,3 +520,65 @@ def test_flow_projects_ls_subdir_scan_excludes_dot_prefix_dirs(
     assert list(payload.keys()) == ["version", "root", "projects"]
     assert payload["version"] == "1"
 
+
+# ============================================================================
+# T-C6 — Sub-batch C (R1 detail data plumbing — DS1 envelope additive field)
+# ============================================================================
+#
+# Anchors REQ-WORKSPACE-DASHBOARD-R1-DETAIL + the spec's additive DS1
+# envelope contract. ``flow projects ls --json`` MAY include ``dirty_files``
+# on each entry; the v1 envelope shape is preserved (no new top-level keys).
+
+
+def test_flow_projects_ls_json_envelope_includes_dirty_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``flow projects ls --json`` MUST include ``dirty_files`` on each entry.
+
+    REQ-WORKSPACE-DASHBOARD-R1-DETAIL: the ``dirty_files`` field is
+    additive on the DS1 envelope. Projects with no git / clean projects
+    carry ``dirty_files: []`` (downstream consumers iterate with
+    ``if entry.get("dirty_files"):`` semantics — empty list is falsy).
+    The v1 envelope shape is preserved.
+    """
+    root = tmp_path / "projects"
+    root.mkdir()
+    alpha = make_fake_python_project(root, name="alpha")
+    beta = make_fake_python_project(root, name="dirty-beta")
+    # Both projects get .git/ so ``_detect_project_markers`` calls git status.
+    (alpha / ".git").mkdir()
+    (beta / ".git").mkdir()
+
+    monkeypatch.setenv("FLOW_PROJECTS_ROOT", str(root))
+
+    def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
+        cwd = Path(str(kwargs.get("cwd", "")))
+        if args and args[0] == "status":
+            stdout = " M src/foo.py\n" if "dirty" in cwd.name else ""
+            return subprocess.CompletedProcess(
+                args=["git", *args], returncode=0, stdout=stdout, stderr=""
+            )
+        return subprocess.CompletedProcess(
+            args=["git", *args], returncode=0, stdout="main\n", stderr=""
+        )
+
+    monkeypatch.setattr(cli_mod, "_git", fake_git)
+
+    result = runner.invoke(
+        main,
+        ["projects", "ls", "--json"],
+        env={"FLOW_PROJECTS_ROOT": str(root)},
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    by_name = {p["name"]: p for p in payload["projects"]}
+
+    # v1 envelope shape preserved (no new top-level keys).
+    assert list(payload.keys()) == ["version", "root", "projects"]
+    assert payload["version"] == "1"
+    # dirty-beta: 1 dirty file captured from git status --porcelain.
+    assert by_name["dirty-beta"]["dirty_files"] == [" M src/foo.py"]
+    # alpha: clean project, empty list default.
+    assert by_name["alpha"]["dirty_files"] == []
+

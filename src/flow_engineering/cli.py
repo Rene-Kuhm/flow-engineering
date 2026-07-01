@@ -2904,10 +2904,12 @@ def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any
 
     for project in projects:
         reasons: list[str] = []
+        r1_triggered = False
         if project.get("dirty") is True:
             totals["dirty"] += 1
             if project.get("has_git") is True:
                 reasons.append("R1: uncommitted work")
+                r1_triggered = True
         if project.get("has_git") is False:
             totals["no_git"] += 1
             reasons.append("R2: no version control")
@@ -2923,13 +2925,17 @@ def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any
         if project.get("has_engram") is True:
             totals["has_engram"] += 1
         if reasons:
-            needs_attention.append(
-                {
-                    "name": str(project.get("name", "")),
-                    "path": str(project.get("path", "")),
-                    "reasons": reasons,
-                }
-            )
+            entry: dict[str, Any] = {
+                "name": str(project.get("name", "")),
+                "path": str(project.get("path", "")),
+                "reasons": reasons,
+            }
+            # Additive field per REQ-WORKSPACE-DASHBOARD-R1-DETAIL — only
+            # populated when R1 is in reasons; DS2 envelope consumers
+            # ignore unknown keys. Defensive copy for list isolation.
+            if r1_triggered:
+                entry["dirty_files"] = list(project.get("dirty_files") or [])
+            needs_attention.append(entry)
 
     totals["needs_attention"] = len(needs_attention)
     summary: dict[str, Any] = {"totals": totals, "needs_attention": needs_attention}
@@ -3562,6 +3568,7 @@ def _detect_project_markers(project_dir: Path) -> dict[str, Any]:
     out["has_git"] = has_git
     out["branch"] = None
     out["dirty"] = None
+    out["dirty_files"] = []
     out["remote"] = None
     if has_git:
         try:
@@ -3573,7 +3580,14 @@ def _detect_project_markers(project_dir: Path) -> dict[str, Any]:
         try:
             cp = _git("status", "--porcelain", cwd=project_dir)
             if cp.returncode == 0:
+                # ``bool(cp.stdout.strip())`` is safe (only the truthiness
+                # of the whole output matters); for ``dirty_files`` we MUST
+                # preserve the leading-space 2-char XY status on each line,
+                # so we splitlines() on the raw stdout (NOT on the stripped
+                # version — that would drop the leading ``" "`` of the
+                # first line).
                 out["dirty"] = bool(cp.stdout.strip())
+                out["dirty_files"] = cp.stdout.splitlines()
         except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
             pass
         try:
