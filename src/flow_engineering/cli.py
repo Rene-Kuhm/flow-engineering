@@ -3066,7 +3066,25 @@ def workspace_dashboard_cmd(
 
     if filter_rules:
         projects, needs_attention = filter_by_rules(projects, needs_attention, list(filter_rules))
-    projects = sort_projects(projects, sort)
+
+    # Build needs_by_name from DS2 needs_attention (keyed by 'name' — see
+    # REQ-DASHBOARD-SORT-DATA-FLOW + design §3). The 'name' key is the
+    # canonical project identifier locked by the producer in
+    # ``_summarize_workspace_status`` (cli.py:2913-2919). Empty-name
+    # entries are dropped defensively.
+    #
+    # Inline-by-design: this builder is local to the single caller today;
+    # extraction to ``build_needs_by_name`` is tracked as the
+    # ``extract-build-needs-by-name-helper`` follow-up (trigger: Phase 5.2
+    # TUI/web surface OR a 3rd caller of ``sort_projects``).
+    needs_by_name: dict[str, list[str]] = {}
+    for need in needs_attention:
+        name = need.get("name", "")
+        reasons = need.get("reasons", [])
+        if name and isinstance(reasons, list):
+            needs_by_name[name] = reasons
+
+    projects = sort_projects(projects, sort, needs_by_name=needs_by_name)
 
     console = Console(no_color=no_color, soft_wrap=False)
     console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
