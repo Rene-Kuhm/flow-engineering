@@ -48,6 +48,7 @@ from flow_engineering.dashboard import (
     DashboardFlowNotFoundError,
     DashboardParseError,
     DashboardSubprocessError,
+    _truncate_dirty_files,
     color_code,
     fetch_archived_projects,
     fetch_project_list,
@@ -58,6 +59,7 @@ from flow_engineering.dashboard import (
     render_footer,
     render_header,
     render_needs_table,
+    render_r1_detail,
     sort_projects,
 )
 from flow_engineering.registry import (
@@ -892,3 +894,156 @@ class TestRenderDashboard:
         assert "Tip" in text
         # No archived table emitted — anchor on the absence of the title.
         assert "Archived projects" not in text
+
+
+# ============================================================================
+# T-D1..T-D6 — Sub-batch D (R1 detail render — Section E)
+# ============================================================================
+#
+# Anchors REQ-WORKSPACE-DASHBOARD-R1-DETAIL: when at least one project has
+# R1 triggered, the dashboard MUST render a Section E listing the dirty
+# files (cap 20 per project, ASCII `...` ellipsis, footer hint). The
+# section MUST be omitted when no R1 triggered. ACs 9/10/11/12/16 anchor.
+
+
+class TestTruncateDirtyFiles:
+    """``_truncate_dirty_files`` caps a file list at ``cap`` entries with ASCII ``...``.
+
+    Pure helper, no I/O — easy to unit test without mocking. The cap
+    defaults to 20 per design §4.2; the test exercises both the below-cap
+    and above-cap paths.
+    """
+
+    def test_truncate_dirty_files_below_cap_unchanged(self) -> None:
+        """When ``len(files) <= cap``, the list is returned unchanged (no copy mutation)."""
+        files = [" M a.py", " M b.py", " M c.py"]
+        result = _truncate_dirty_files(files, cap=20)
+        assert result == files
+
+    def test_truncate_dirty_files_above_cap_truncated(self) -> None:
+        """When ``len(files) > cap``, slice to ``cap-1`` + ASCII ``\"...\"`` marker."""
+        files = [f" M file_{i}.py" for i in range(25)]
+        result = _truncate_dirty_files(files, cap=20)
+        # cap-1 = 19 file entries + the ASCII marker
+        assert len(result) == 20
+        assert result[-1] == "..."
+        # The first cap-1 entries are preserved verbatim.
+        assert result[:19] == files[:19]
+
+    def test_truncate_dirty_files_uses_ascii_ellipsis_not_unicode(self) -> None:
+        """The truncation marker MUST be ASCII ``\"...\"`` (3 dots), NEVER Unicode ``\\u2026``.
+
+        Triangulates the design §3 invariant: the Unicode U+2026 single-char
+        ellipsis is the cp1252 bug source; all dashboard ellipses must be
+        ASCII.
+        """
+        files = [f" M f_{i}.py" for i in range(25)]
+        result = _truncate_dirty_files(files, cap=20)
+        joined = "\n".join(result)
+        assert "\u2026" not in joined
+        assert "..." in joined
+
+
+class TestRenderR1Detail:
+    """``render_r1_detail`` produces Section E Table for R1-triggered projects."""
+
+    def test_r1_detail_returns_none_when_no_r1_triggered(self) -> None:
+        """Empty ``needs_attention`` MUST return ``None`` (caller omits Section E)."""
+        assert render_r1_detail([]) is None
+
+    def test_r1_detail_returns_none_when_no_dirty_files(self) -> None:
+        """When no entry has ``dirty_files``, return ``None`` — Section E hidden.
+
+        Defensive: a needs_attention entry from a non-R1 reason (R2/R3/R4)
+        must NOT trigger Section E even if the entry is present.
+        """
+        needs = [
+            {"name": "alpha", "reasons": ["R2: no version control"]},
+            {"name": "beta", "reasons": ["R3: no tests detected"]},
+        ]
+        assert render_r1_detail(needs) is None
+
+    def test_r1_detail_returns_table_when_r1_triggered(self) -> None:
+        """One R1 project with 3 dirty files MUST render a Table containing the project + files."""
+        needs = [
+            {
+                "name": "alpha",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": [" M a.py", "?? b.py", " M c.py"],
+            },
+        ]
+        table = render_r1_detail(needs)
+        assert isinstance(table, Table)
+        text = _render_text(table)
+        assert "alpha" in text
+        # All 3 dirty files appear in the rendered table (under cap).
+        assert " M a.py" in text
+        assert "?? b.py" in text
+        assert " M c.py" in text
+
+    def test_r1_detail_hides_project_with_empty_dirty_files(self) -> None:
+        """A needs_attention entry with ``dirty=True`` but ``dirty_files=[]`` is hidden from Section E.
+
+        Anchors spec scenario: 'Section E for a project with 0 dirty files
+        is hidden'. The R1 reason may be present but the data is empty;
+        Section E only lists projects with non-empty ``dirty_files``.
+        """
+        needs = [
+            {
+                "name": "alpha",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": [],
+            },
+            {
+                "name": "beta",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": [" M b.py"],
+            },
+        ]
+        table = render_r1_detail(needs)
+        assert isinstance(table, Table)
+        text = _render_text(table)
+        # alpha is hidden (no dirty files)
+        assert text.count("alpha") == 0
+        # beta appears
+        assert "beta" in text
+        assert " M b.py" in text
+
+    def test_r1_detail_caps_at_20_files_with_ascii_ellipsis(self) -> None:
+        """25 dirty files MUST truncate to 19 files + ASCII ``\"...\"`` marker + footer hint substring.
+
+        Anchors AC11: cap 20 with ASCII ellipsis. Footer hint substring
+        appears in the Section E rendered text (via the table title or
+        row content — exact placement is design's choice).
+        """
+        dirty_files = [f" M file_{i}.py" for i in range(25)]
+        needs = [
+            {
+                "name": "alpha",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": dirty_files,
+            },
+        ]
+        table = render_r1_detail(needs)
+        assert isinstance(table, Table)
+        text = _render_text(table)
+        # 19 file entries (cap-1) + the ASCII "..." marker.
+        assert text.count("...") >= 1
+        # Footer hint substring present (case-insensitive; design chooses the exact wording).
+        assert "git status" in text.lower()
+
+    def test_r1_detail_uses_ascii_ellipsis_not_unicode(self) -> None:
+        """Section E MUST NOT emit Unicode U+2026 anywhere; ASCII ``...`` only."""
+        dirty_files = [f" M f_{i}.py" for i in range(25)]
+        needs = [
+            {
+                "name": "alpha",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": dirty_files,
+            },
+        ]
+        table = render_r1_detail(needs)
+        text = _render_text(table)
+        assert "\u2026" not in text, (
+            f"Section E MUST NOT emit Unicode U+2026; got: {text!r}"
+        )
