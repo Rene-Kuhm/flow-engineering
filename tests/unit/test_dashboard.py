@@ -225,7 +225,7 @@ class TestFetchProjectList:
 
 
 class TestFetchStatusSummary:
-    """``fetch_status_summary`` consumes the DS2 5-rule aggregation envelope."""
+    """``fetch_status_summary`` consumes the DS2 JSON 5-rule aggregation envelope."""
 
     def test_happy_path_returns_envelope(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Valid status envelope → returned dict preserves all top-level keys."""
@@ -253,7 +253,7 @@ class TestFetchStatusSummary:
         }
 
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
-            assert argv == ["flow", "workspace", "status"]
+            assert argv == ["flow", "workspace", "status", "--json"]
             return _completed(argv, returncode=0, stdout=json.dumps(envelope))
 
         monkeypatch.setattr(dashboard_mod.subprocess, "run", fake_run)

@@ -4,7 +4,7 @@ PR1 scope: subprocess wrappers + fetchers ONLY.
 
   - ``_run_subprocess_json`` — generic subprocess → JSON wrapper
   - ``fetch_project_list`` — DS1: ``flow projects ls --json``
-  - ``fetch_status_summary`` — DS2: ``flow workspace status``
+  - ``fetch_status_summary`` — DS2: ``flow workspace status --json``
   - ``fetch_archived_projects`` — DS5: direct ``load_registry()`` read
 
 Out of scope here (PR2 / PR3 territory):
@@ -150,13 +150,13 @@ def fetch_project_list(*, flow_bin: str = "flow") -> list[dict[str, Any]]:
 
 
 def fetch_status_summary(*, flow_bin: str = "flow") -> dict[str, Any]:
-    """Fetch the workspace status envelope via ``flow workspace status`` (DS2).
+    """Fetch the workspace status envelope via ``flow workspace status --json`` (DS2).
 
     Returns the parsed envelope (totals + projects + needs_attention). The
     dashboard renders the totals as the header and the needs_attention list
     drives the per-row color coding.
     """
-    return _run_subprocess_json([flow_bin, "workspace", "status"])
+    return _run_subprocess_json([flow_bin, "workspace", "status", "--json"])
 
 
 def fetch_archived_projects() -> list[dict[str, Any]]:
@@ -437,8 +437,8 @@ def _truncate_path(path: str, max_len: int = _PATH_TRUNCATE_LEN) -> str:
 
 
 def _format_rule_cell(triggered: bool, rule: str) -> str:
-    """Render a per-rule cell: ``✓`` (clean) or ``R#`` (triggered)."""
-    return f"[red]{rule}[/red]" if triggered else "[green]✓[/green]"
+    """Render a per-rule cell: ``OK`` (clean) or ``R#`` (triggered)."""
+    return f"[red]{rule}[/red]" if triggered else "[green]OK[/green]"
 
 
 def render_needs_table(
