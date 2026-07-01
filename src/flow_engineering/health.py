@@ -57,6 +57,7 @@ __all__ = [
     "_summarize_per_project",
     "_recommendations_for",
     "summarize_project_health",
+    "filter_health_by_rules",
 ]
 
 
