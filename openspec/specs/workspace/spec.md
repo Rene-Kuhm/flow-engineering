@@ -70,14 +70,14 @@ projects root. The capability:
 
 ## 3. Sub-capabilities
 
-The workspace family has **3 confirmed sub-capabilities + 1 placeholder**:
+The workspace family has **4 confirmed sub-capabilities**:
 
 | Phase | Sub-capability | CLI surface | Role | Status | Delta spec |
 |-------|---------------|-------------|------|--------|------------|
 | 1 | `projects-ls-extension` | `flow projects ls [--json]` | Read discovery — project metadata enumeration | ✅ Shipped (local-only branch `codex/workspace-intelligence`) | `openspec/changes/workspace-intelligence/specs/projects-ls-extension/spec.md` |
 | 3 | `workspace-status` | `flow workspace status [--json]` | Read aggregation — 5 needs-attention rules R1–R5 | ✅ Shipped (local-only branch `codex/flow-workspace-status`) | `openspec/changes/flow-workspace-status/specs/workspace-status/spec.md` |
 | 4 | `workspace-hygiene` | `flow workspace {fix,archive,archived,restore}` | Write/mutation — registry-mediated lifecycle (R2 + archive) | ✅ Shipped + archived at `d077d75` | `openspec/changes/archive/2026-06-30-workspace-hygiene/specs/workspace-hygiene/spec.md` |
-| 5 (future) | `workspace-dashboard` | `flow workspace tui` / web | Visualization — TBD | 📌 **Placeholder** | (no delta spec yet — see Future Changes §7) |
+| 5 | `workspace-dashboard` | `flow workspace dashboard` | Visualization — read-only Rich MVP for human operators; supports `--filter RULES`, `--sort FIELD`, `--no-color` (no `--json` — Pattern #538) | ✅ Shipped + archived at `phase-5-dashboard` | `openspec/changes/archive/2026-06-30-phase-5-dashboard/specs/workspace-dashboard/spec.md` |
 
 **Phase 2 is OUT of this family** — see §6 Cross-Impact.
 
@@ -314,7 +314,7 @@ The `workspace` capability exposes these user-facing commands (no new Python pub
 | `flow workspace archive` | `<project> [--reason TEXT] --yes` (Phase 4) | 4 | Move project to `registry.archived[]` |
 | `flow workspace archived` | (Phase 4) | 4 | TEXT-only listing of archived projects |
 | `flow workspace restore` | `<project> --yes` (Phase 4) | 4 | Move project back to `registry.projects[]` |
-| `flow workspace tui` (future) | (Phase 5) | 5 (placeholder) | Dashboard — not yet implemented |
+| `flow workspace dashboard` | `[--filter RULES] [--sort FIELD] [--no-color]` (Phase 5) | 5 | Read-only Rich MVP (A header + B needs-attention + C archived + D footer); no `--json` (Pattern #538) |
 
 **Exit codes (workspace mutations)**:
 
@@ -357,12 +357,11 @@ Phase 2 (`flow-where-cross-project`) **belongs to `flow-where`, not `workspace`*
 
 | # | Change | Scope | Priority | Trigger |
 |---|--------|-------|----------|---------|
-| 2 | **`workspace-dashboard` (Phase 5)** | TUI (`flow workspace tui`) or web visualization of workspace state (registry + needs_attention + per-project metadata). Will add a new delta spec; this root spec is already anchored. | Low | Future change; requires CLI solidification first (per session #483) |
-| 3 | `workspace-hygiene-capability-spec` (optional) | Create `openspec/specs/workspace-hygiene/spec.md` as a top-level capability for the write-side if the delta grows further. | Low | Phase 4 follow-up #2 in archive-report #477 |
-| 4 | `backup-retention-policy` | Currently INDEFINITE in Phase 4 (per locked constraint #12). Needs pruning/TTL strategy at scale. | Low | Operator concern; not blocking |
-| 5 | `workspace-hygiene-r1` (deferred) | R1 dirty-git remediation: stash/worktree handling, interactive prompts, status integration. Explicitly OUT of Phase 4. | Low | Future change if requested |
-| 6 | `workspace-hygiene-r3` + `workspace-hygiene-r4` (deferred) | R3 no-tests bootstrap (template-dependent) + R4 no-openspec bootstrap (semantic scaffold). | Low | Future change if requested |
-| 7 | Artifact-hygiene move | Phases 1 + 3 still in `openspec/changes/{workspace-intelligence,flow-workspace-status}/` (not yet in `archive/`). | Low | Out of scope for this change; separate cleanup |
+| 2 | `workspace-hygiene-capability-spec` (optional) | Create `openspec/specs/workspace-hygiene/spec.md` as a top-level capability for the write-side if the delta grows further. | Low | Phase 4 follow-up #2 in archive-report #477 |
+| 3 | `backup-retention-policy` | Currently INDEFINITE in Phase 4 (per locked constraint #12). Needs pruning/TTL strategy at scale. | Low | Operator concern; not blocking |
+| 4 | `workspace-hygiene-r1` (deferred) | R1 dirty-git remediation: stash/worktree handling, interactive prompts, status integration. Explicitly OUT of Phase 4. | Low | Future change if requested |
+| 5 | `workspace-hygiene-r3` + `workspace-hygiene-r4` (deferred) | R3 no-tests bootstrap (template-dependent) + R4 no-openspec bootstrap (semantic scaffold). | Low | Future change if requested |
+| 6 | Artifact-hygiene move | Phases 1 + 3 still in `openspec/changes/{workspace-intelligence,flow-workspace-status}/` (not yet in `archive/`). | Low | Out of scope for this change; separate cleanup |
 
 ## 8. Drift Detection
 
