@@ -93,9 +93,11 @@ The 7 root-level REQs below are **synthesized family-level summaries**. Canonica
 
 A project is identified by 11 static metadata fields emitted by `flow projects ls`/`flow projects ls --json`: `name`, `path`, `has_git`, `branch`, `dirty`, `remote`, `stack`, `test_commands`, `has_openspec`, `has_graphify`, `has_engram`. The v1 JSON envelope uses `version: "1"` as its first key. The `projects` array is sorted alphabetically by `name`. Missing data is represented by JSON `null` (not `""` or omitted). The `has_engram` field is a documented stub (always `false` until a later phase un-stubs it).
 
-**Source:** `openspec/changes/workspace-intelligence/specs/projects-ls-extension/spec.md` → REQ-`--json`-FLAG + REQ-FIELD-EXTENSION + REQ-HAS-ENGRAM-STUB + REQ-SCHEMA-VERSIONING + REQ-DETERMINISTIC-ORDER.
+**Sub-clause — Dot-prefix enumeration filter (added by `workspace-dashboard-usability-pass`):** The list of projects enumerated by `flow projects ls` (and the workspace-status summaries derived from it) MUST be the set of immediate subdirectories of the projects root, EXCLUDING any entry whose name starts with `.` (dot). Dot-prefix entries (`.atl`, `.opencode`, `.venv`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.specify`, `.github`, etc.) are tooling/config — never user projects. The filter is **view-only**: dot-prefix directories MUST NOT be deleted, archived, moved, or otherwise mutated; they remain on disk in their original location; the filter only excludes them from the enumerated project list (and from any aggregates derived from that list, such as `flow workspace status` totals and the dashboard's Section A header).
 
-**Out of scope:** The specific git-detection subprocess mechanics; the stack-detection heuristics; the Phase 1 un-stubbing of `has_engram` (deferred).
+**Source:** `openspec/changes/workspace-intelligence/specs/projects-ls-extension/spec.md` → REQ-`--json`-FLAG + REQ-FIELD-EXTENSION + REQ-HAS-ENGRAM-STUB + REQ-SCHEMA-VERSIONING + REQ-DETERMINISTIC-ORDER. Sub-clause: `openspec/changes/workspace-dashboard-usability-pass/specs/workspace-dashboard/spec.md` → REQ-WORKSPACE-PROJECT-IDENTITY MODIFY.
+
+**Out of scope:** The specific git-detection subprocess mechanics; the stack-detection heuristics; the Phase 1 un-stubbing of `has_engram` (deferred); the `flow where` cross-project search at `where.py:461` (also unfiltered — flagged for a future `flow-where-followup` audit, NOT in scope for this change); real projects that happen to be dot-prefix (they remain hidden — view-only caveat; no rename, archive, or move is exposed by the filter).
 
 ---
 
@@ -219,11 +221,37 @@ The dashboard invokes `flow workspace status --json` via `subprocess.run(["flow"
 
 Default output uses `rich` tables/panels/colors structured as 4 sections: **A** header panel (totals + per-rule breakdown + timestamp), **B** needs-attention table (project × R1–R5 matrix, color-coded red ≥3 needs, yellow 1–2, green 0), **C** archived projects list (name + path + archived_at + reason from DS5), **D** footer with tip pointers. The `--no-color` flag disables Rich ANSI color codes for CI / piping. `rich` is already a transitive dependency via `uv.lock:1215`; promoting it to a direct dep in `pyproject.toml` is zero-cost (no new packages installed).
 
-**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-RENDERING + REQ-DASHBOARD-FLAGS (`--no-color`) + REQ-DASHBOARD-ZERO-DEPS.
+**Sub-clause — Output integrity (added by `workspace-dashboard-usability-pass`):** The dashboard MUST render correctly on terminals using cp1252 or UTF-8 encoding; long project names MUST wrap (not truncate) within their column bounds; the Unicode U+2026 ellipsis MUST NOT appear in dashboard output. Specifically:
+
+- The CLI handler MUST attempt `sys.stdout.reconfigure(encoding="utf-8")` wrapped in `try/except OSError`; the encoding MUST default to UTF-8 when reconfigure succeeds and fall back to the current behavior when it does not.
+- The `rich.console.Console` MUST be instantiated with `soft_wrap=True` and an explicit `width` (terminal-detected with a sensible default of 120).
+- Section B, Section C, and Section E columns MUST declare explicit `min_width` + `max_width` + `overflow=OverflowMethod.fold` (wrap) or `OverflowMethod.crop` (no ellipsis); the Unicode U+2026 ellipsis MUST NEVER appear in any rendered column.
+
+**Source:** `openspec/changes/phase-5-dashboard/specs/workspace-dashboard/spec.md` → REQ-DASHBOARD-RENDERING + REQ-DASHBOARD-FLAGS (`--no-color`) + REQ-DASHBOARD-ZERO-DEPS. Sub-clause: `openspec/changes/workspace-dashboard-usability-pass/specs/workspace-dashboard/spec.md` → REQ-WORKSPACE-DASHBOARD-RENDERS-RICH EXTEND.
 
 **Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
 
-**Out of scope:** Rich color-accessibility hardening (text labels stay alongside colors per the Phase 5 proposal §11 risk register); Rich output width on narrow terminals (column truncation handles this at render time); snapshot-testing strategy for Rich output (golden-text approach — handled in delta REQ-DASHBOARD-RENDERING).
+**Out of scope:** Rich color-accessibility hardening (text labels stay alongside colors per the Phase 5 proposal §11 risk register); Rich output width on narrow terminals (column truncation handles this at render time); snapshot-testing strategy for Rich output (golden-text approach — handled in delta REQ-DASHBOARD-RENDERING); the `width=120` fallback when terminal-introspection returns 0 (redirected pipe / no TTY); promoting `rich` to a direct dep in `pyproject.toml` (zero-cost but separate change); the new "5-section" structure counting Section E (covered by REQ-WORKSPACE-DASHBOARD-R1-DETAIL below).
+
+---
+
+### REQ-WORKSPACE-DASHBOARD-R1-DETAIL
+
+When at least one project has `R1: uncommitted work` triggered, the dashboard MUST render a new **Section E** listing, per R1-triggered project, the list of dirty file paths as reported by `git status --porcelain`. The section MUST be omitted entirely when no project has R1 triggered (mirrors Section C's conditional shape).
+
+**Constraints:**
+
+- Per-project dirty file list MUST be **capped at 20 entries**. Projects with more than 20 dirty files MUST be rendered with a trailing ASCII `...` (three periods, `0x2E 0x2E 0x2E`) ellipsis and a footer hint reading `run `git status` for full list` (ASCII `...` only — NEVER the Unicode U+2026 single-character ellipsis).
+- The dirty-file list MUST come from the existing `git status --porcelain` subprocess already invoked by `_detect_project_markers` (cli.py:3545-3550) — the system MUST NOT issue a second subprocess per project to gather this data; the stdout is captured once and re-used.
+- The `dirty_files: list[str]` field on the `needs_attention` entry MUST be **additive** to the DS1 + DS2 envelope shape (`version: "1"` is preserved). Existing consumers that ignore unknown keys (pydantic `extra="ignore"`, plain JSON-object iteration) MUST continue working without modification.
+- The dashboard MUST remain **read-only**. Section E surfaces information only; no mutation path (`git stash`, `git checkout`, `git add`, etc.) is exposed — operators run `git status` themselves for the full unfiltered list.
+- Section E MUST be rendered between Section B and Section C in the dashboard composition (order: A → B → E → C → D), conditional on `render_r1_detail` returning a non-`None` Table.
+
+**Source:** `openspec/changes/workspace-dashboard-usability-pass/specs/workspace-dashboard/spec.md` → REQ-WORKSPACE-DASHBOARD-R1-DETAIL (NEW).
+
+**Wording:** The canonical wording lives at the source delta spec. This root-level summary exists for navigation only.
+
+**Out of scope:** R1 remediation (`flow workspace fix <project>` R1 action remains deferred per REQ-WORKSPACE-R1-DEFERRED); per-file interactive actions (clicking a dirty file to open, staging, or reverting — all deferred to Phase 5.2); a `--detail` / `--show-dirty` flag on the dashboard (forbidden by `REQ-WORKSPACE-DASHBOARD-READ-ONLY` and Pattern #538); the byte-exact `git status --porcelain` output formatting (the leading 2-char XY status + space is preserved verbatim; consumers parse the same way they would parse raw `git status` output); pinning the 20-file cap as a flag (it is a constant; changing it would require a new REQ).
 
 ---
 
