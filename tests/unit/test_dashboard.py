@@ -1047,3 +1047,111 @@ class TestRenderR1Detail:
         assert "\u2026" not in text, (
             f"Section E MUST NOT emit Unicode U+2026; got: {text!r}"
         )
+
+
+class TestRenderDashboardComposesSectionE:
+    """``render_dashboard`` composes Section E between B and C conditionally on R1."""
+
+    def test_render_dashboard_includes_section_e_when_r1_triggered(self) -> None:
+        """When at least one needs_attention entry has ``dirty_files``, Section E appears."""
+        summary = {"totals": {"projects": 1}, "archived_count": 0}
+        projects = [{"name": "alpha", "path": "/p/alpha"}]
+        needs_attention = [
+            {
+                "name": "alpha",
+                "path": "/p/alpha",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": [" M a.py"],
+            },
+        ]
+
+        group = render_dashboard(projects, summary, [], needs_attention)
+        text = _render_text(group)
+
+        # Section A (header) + Section E (R1 detail) present.
+        assert "Workspace" in text
+        assert " M a.py" in text
+
+    def test_render_dashboard_omits_section_e_when_no_r1(self) -> None:
+        """When no project has ``dirty_files``, Section E MUST be omitted."""
+        summary = {"totals": {"projects": 1}, "archived_count": 0}
+        projects = [{"name": "alpha", "path": "/p/alpha"}]
+        needs_attention: list[dict[str, Any]] = []
+
+        group = render_dashboard(projects, summary, [], needs_attention)
+        text = _render_text(group)
+
+        # Section A + footer present, but no dirty-file rows.
+        assert "Workspace" in text
+        assert "Tip" in text
+        # No M-prefix dirty file rows in the dashboard output.
+        assert " M " not in text
+
+    def test_render_dashboard_section_e_appears_between_b_and_c(self) -> None:
+        """Section E MUST appear between Section B (needs table) and Section C (archived).
+
+        Anchors design §1 composition: A → B → E → (C if any) → D.
+
+        We anchor on substring FIRST occurrences in the rendered text.
+        " M a.py" is unique to Section E (the dirty-file row); the
+        archived table title "Archived projects" is unique to Section C
+        (the table title); "Tip" is unique to the footer. Names like
+        ``alpha`` / ``retired-x`` may appear in multiple sections, so we
+        avoid them as anchors.
+        """
+        summary = {"totals": {"projects": 2}, "archived_count": 1}
+        projects = [
+            {"name": "alpha", "path": "/p/alpha"},
+            {"name": "retired-x", "path": "/p/retired-x"},
+        ]
+        needs_attention = [
+            {
+                "name": "alpha",
+                "path": "/p/alpha",
+                "reasons": ["R1: uncommitted work"],
+                "dirty_files": [" M a.py"],
+            },
+        ]
+        archived = [
+            {
+                "name": "retired-x",
+                "path": "/p/retired-x",
+                "archived_at": "2026-06-15T08:30:00Z",
+                "reason": "stale",
+            },
+        ]
+
+        group = render_dashboard(projects, summary, archived, needs_attention)
+        text = _render_text(group)
+
+        # All section anchors present in the rendered output.
+        idx_dirty = text.find(" M a.py")
+        idx_archived_title = text.find("Archived projects")
+        idx_tip = text.find("Tip")
+        assert idx_dirty != -1, f"dirty row ' M a.py' not in text: {text!r}"
+        assert idx_archived_title != -1, (
+            f"archived title 'Archived projects' not in text: {text!r}"
+        )
+        assert idx_tip != -1, f"footer 'Tip' not in text: {text!r}"
+        # Order: A + B → E (dirty row) → C (archived table) → D (footer tip).
+        assert idx_dirty < idx_archived_title < idx_tip, (
+            f"Section order violated: dirty={idx_dirty} "
+            f"archived_title={idx_archived_title} tip={idx_tip}"
+        )
+
+
+def test_render_footer_includes_section_e_hint() -> None:
+    """The footer Text MUST include a tip pointer for Section E when R1 is triggered.
+
+    Anchors AC12: 'Footer hint appears for capped projects' — the
+    design §7.3 3rd tip line is unconditional, but its content MUST
+    mention Section E + ``git status`` so operators know where to find
+    the dirty file list.
+    """
+    footer = render_footer()
+    assert isinstance(footer, Text)
+
+    text = _render_text(footer)
+    # Substring anchors (case-insensitive where natural).
+    assert "Section E" in text
+    assert "git status" in text
