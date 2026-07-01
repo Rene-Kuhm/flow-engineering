@@ -326,3 +326,184 @@ class TestSummarizeProjectHealth:
         assert record["triggers"] == ["R6"]
         assert len(record["recommendations"]) == 1
         assert "README" in record["recommendations"][0]
+
+
+# ============================================================================
+# T-C.2 RED -- output-only filter (REQ-WORKSPACE-HEALTH-ENVELOPE).
+# ============================================================================
+
+
+class TestFilterHealthByRules:
+    """REQ-WORKSPACE-HEALTH-ENVELOPE: filter reasons by rule name.
+
+    Operates on a list of per-project v1 records; filters each
+    project's ``triggers[]`` + ``recommendations[]`` to the named
+    rule set. The verdict is recomputed from the filtered triggers
+    (per REQ-WORKSPACE-HEALTH-VERDICT-MATH).
+    """
+
+    def test_filter_r9_only_keeps_r9_triggers(self) -> None:
+        """``--filter R9`` retains only R9 triggers per project.
+
+        A project with R6 only has its R6 trigger dropped (and
+        recommendation); a project with R9 only retains R9; a
+        project with both retains only R9.
+        """
+        from flow_engineering.health import filter_health_by_rules
+
+        projects = [
+            {
+                "name": "a",
+                "path": "/tmp/a",
+                "stack": "Python",
+                "verdict": "NEEDS-ATTENTION",
+                "triggers": ["R6"],
+                "recommendations": ["Add a README"],
+                "suppressed": [],
+            },
+            {
+                "name": "b",
+                "path": "/tmp/b",
+                "stack": "Python",
+                "verdict": "NEEDS-ATTENTION",
+                "triggers": ["R9"],
+                "recommendations": ["Untrack tooling dirs"],
+                "suppressed": [],
+            },
+            {
+                "name": "c",
+                "path": "/tmp/c",
+                "stack": "Python",
+                "verdict": "NEEDS-ATTENTION",
+                "triggers": ["R6", "R9"],
+                "recommendations": ["Add a README", "Untrack tooling dirs"],
+                "suppressed": [],
+            },
+        ]
+
+        filtered = filter_health_by_rules(projects, ["R9"])
+
+        by_name = {p["name"]: p for p in filtered}
+        # a: R6 filtered out → empty triggers → HEALTHY
+        assert by_name["a"]["triggers"] == []
+        assert by_name["a"]["recommendations"] == []
+        assert by_name["a"]["verdict"] == "HEALTHY"
+        # b: R9 retained
+        assert by_name["b"]["triggers"] == ["R9"]
+        assert by_name["b"]["recommendations"] == ["Untrack tooling dirs"]
+        # c: R6 dropped, R9 retained
+        assert by_name["c"]["triggers"] == ["R9"]
+        assert by_name["c"]["recommendations"] == ["Untrack tooling dirs"]
+
+    def test_unknown_filter_token_keeps_all(self) -> None:
+        """An unknown rule token (e.g. ``R99``) is silently ignored.
+
+        The filter set is empty after the unknown token is dropped,
+        so the filter has no effect — all triggers + recommendations
+        remain. This matches the lenient interpretation: the health
+        envelope is additive, and stale ``R10``-style tokens (not yet
+        defined) MUST NOT break the filter.
+        """
+        from flow_engineering.health import filter_health_by_rules
+
+        projects = [
+            {
+                "name": "a",
+                "path": "/tmp/a",
+                "stack": "Python",
+                "verdict": "NEEDS-ATTENTION",
+                "triggers": ["R6", "R7"],
+                "recommendations": ["r6 rec", "r7 rec"],
+                "suppressed": [],
+            },
+        ]
+
+        filtered = filter_health_by_rules(projects, ["R99"])
+
+        assert filtered[0]["triggers"] == ["R6", "R7"]
+        assert filtered[0]["recommendations"] == ["r6 rec", "r7 rec"]
+
+
+# ============================================================================
+# T-C.3 RED -- recommendation copy lock (REQ-WORKSPACE-HEALTH-READ-ONLY).
+# ============================================================================
+
+
+class TestRecommendationLock:
+    """REQ-WORKSPACE-HEALTH-READ-ONLY: recommendation copy grep audit.
+
+    The recommendation strings MUST reference ONLY the existing
+    ``flow workspace {fix, archive, restore, new-project}`` verbs
+    + plain English. Forbidden tokens (``rm -rf``, ``git rm -r
+    --cached``, ``--force``) MUST NOT appear in the output of
+    ``_recommendations_for``.
+
+    These tests grep the entire recommendation registry across
+    every stack so a future copy change that introduces a
+    forbidden token fails the build (regression lint).
+    """
+
+    def test_no_rm_rf_in_recommendations(self) -> None:
+        """``rm -rf`` MUST NOT appear in any recommendation string."""
+        from flow_engineering.health import _recommendations_for
+
+        # Exercise every rule combination across every supported stack
+        # to ensure the grep catches any future regression.
+        for stack in ("Python", "Go", "Rust", "Node", "Nix", "Unknown"):
+            for triggers in (
+                ["R6"],
+                ["R7"],
+                ["R8"],
+                ["R9"],
+                ["R6", "R7", "R8", "R9"],
+            ):
+                recs = _recommendations_for(triggers, stack)
+                for rec in recs:
+                    assert "rm -rf" not in rec, (
+                        f"forbidden token in {stack} {triggers}: {rec!r}"
+                    )
+
+    def test_no_git_rm_r_cached_in_recommendations(self) -> None:
+        """``git rm -r --cached`` MUST NOT appear in any recommendation string.
+
+        Per the PR2 lock (per the user prompt), the recommendation
+        copy is locked to ``flow workspace`` verbs + plain English;
+        raw git-mutation advice is deferred to a future change if
+        operator demand surfaces.
+        """
+        from flow_engineering.health import _recommendations_for
+
+        for stack in ("Python", "Go", "Rust", "Node", "Nix", "Unknown"):
+            for triggers in (
+                ["R6"],
+                ["R7"],
+                ["R8"],
+                ["R9"],
+                ["R6", "R7", "R8", "R9"],
+            ):
+                recs = _recommendations_for(triggers, stack)
+                for rec in recs:
+                    assert "git rm -r --cached" not in rec, (
+                        f"forbidden token in {stack} {triggers}: {rec!r}"
+                    )
+                    assert "git rm " not in rec, (
+                        f"forbidden token in {stack} {triggers}: {rec!r}"
+                    )
+
+    def test_all_recommendations_reference_flow_workspace_verbs(self) -> None:
+        """Every recommendation string MUST mention ``flow workspace``."""
+        from flow_engineering.health import _recommendations_for
+
+        for stack in ("Python", "Go", "Rust", "Node", "Nix", "Unknown"):
+            for triggers in (
+                ["R6"],
+                ["R7"],
+                ["R8"],
+                ["R9"],
+                ["R6", "R7", "R8", "R9"],
+            ):
+                recs = _recommendations_for(triggers, stack)
+                for rec in recs:
+                    assert "flow workspace" in rec, (
+                        f"missing flow workspace verb in {stack} {triggers}: {rec!r}"
+                    )
