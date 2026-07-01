@@ -685,15 +685,18 @@ def render_r1_detail(needs_attention: list[dict[str, Any]]) -> Table | None:
 
 
 def render_footer() -> Text:
-    """Render Section D: a Text with 2 tip pointers.
+    """Render Section D: a Text with 3 tip pointers.
 
-    Implements design §4.4. The tip wording is byte-stable (no timestamps),
-    so snapshot tests can use exact-string matches for the verbatim substrings.
-    Both pointers guide operators to the right next-step:
+    Implements design §4.4 + §7.3 (the 3rd tip line is a PR2 add per
+    REQ-WORKSPACE-DASHBOARD-R1-DETAIL). The tip wording is byte-stable
+    (no timestamps), so snapshot tests can use exact-string matches for
+    the verbatim substrings. The pointers guide operators to the right
+    next-step:
 
       - ``flow workspace status --json`` → machine-readable status (Pattern #538).
       - ``flow workspace fix <project> --yes --backup`` → Phase 4 remediation
         command (preserved untouched per Pattern #536).
+      - Section E + ``git status`` → dirty-file detail when R1 is triggered.
 
     Returns:
         A Rich ``Text`` (not yet printed). Markup uses ``[dim]`` for the
@@ -701,7 +704,9 @@ def render_footer() -> Text:
     """
     return Text.from_markup(
         "[dim]Tip:[/dim] Run [bold]flow workspace status --json[/bold] for JSON output.\n"
-        "[dim]Tip:[/dim] Run [bold]flow workspace fix <project> --yes --backup[/bold] to remediate."
+        "[dim]Tip:[/dim] Run [bold]flow workspace fix <project> --yes --backup[/bold] to remediate.\n"
+        "[dim]Tip:[/dim] When [red]R1[/red] is triggered, see Section E for dirty files "
+        "(capped at 20 per project). Run [bold]git status[/bold] in the project for the full list."
     )
 
 
@@ -716,13 +721,16 @@ def render_dashboard(
     *,
     no_color: bool = False,
 ) -> Group:
-    """Compose Sections A + B + (C if any) + D into a single Rich ``Group``.
+    """Compose Sections A + B + (E if R1) + (C if any) + D into a single Rich ``Group``.
 
     Implements design §4.5. Sections are appended in order:
 
       - A: :func:`render_header` (always).
       - B: :func:`render_needs_table` (always — empty projects render an
         empty table with headers + footer only).
+      - E: :func:`render_r1_detail` (only when at least one project has R1
+        triggered AND non-empty ``dirty_files``; ``None`` sentinel triggers
+        omission). Added in workspace-dashboard-usability-pass.
       - C: :func:`render_archived` (only when ``archived`` is non-empty;
         ``None`` sentinel triggers omission).
       - D: :func:`render_footer` (always).
@@ -736,13 +744,20 @@ def render_dashboard(
         no_color: When ``True``, no per-row color is applied (CI / piping).
 
     Returns:
-        A Rich ``Group`` containing 3 or 4 renderables. The caller renders
+        A Rich ``Group`` containing 3 to 5 renderables. The caller renders
         via a ``Console`` — see ``tasks.md`` T12 for the CLI integration.
     """
     sections: list[Any] = [
         render_header(summary, no_color=no_color),
         render_needs_table(projects, needs_attention, no_color=no_color),
     ]
+    # Section E — R1 dirty file detail (conditional on at least one
+    # needs_attention entry having non-empty ``dirty_files``).
+    # REQ-WORKSPACE-DASHBOARD-R1-DETAIL: inserted between B and C per
+    # design §1 composition shape (A → B → E → C? → D).
+    r1_table = render_r1_detail(needs_attention)
+    if r1_table is not None:
+        sections.append(r1_table)
     archived_table = render_archived(archived)
     if archived_table is not None:
         sections.append(archived_table)
