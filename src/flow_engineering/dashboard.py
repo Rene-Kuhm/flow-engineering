@@ -29,7 +29,7 @@ import subprocess
 import warnings
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from rich.console import Group
 from rich.panel import Panel
@@ -37,6 +37,15 @@ from rich.table import Table
 from rich.text import Text
 
 from flow_engineering.registry import load_registry
+
+# Per-column overflow mode. ``rich.console.OverflowMethod`` is a
+# ``typing.Literal`` in this Rich version (14.x), so we use the string
+# literals directly to keep mypy strict-mode happy. ``"fold"`` wraps
+# long content onto multiple lines; ``"crop"`` truncates without an
+# ellipsis. The Unicode U+2026 single-char ellipsis (the cp1252 bug
+# source) is emitted by ``"ellipsis"`` — FORBIDDEN in dashboard output.
+_OVERFLOW_FOLD: Literal["fold", "crop", "ellipsis", "ignore"] = "fold"
+_OVERFLOW_CROP: Literal["fold", "crop", "ellipsis", "ignore"] = "crop"
 
 # ---------- Public exception types ----------
 #
@@ -477,8 +486,24 @@ def render_needs_table(
         show_lines=False,
         header_style="bold" if not no_color else None,
     )
-    for header in _NEEDS_COLUMN_HEADERS:
-        table.add_column(header)
+    # Per-column widths: ``name`` and ``path`` use ``fold`` (wrap onto
+    # multiple lines) so long project names never collapse to the
+    # Unicode U+2026 single-char ellipsis (the cp1252 bug source).
+    # Rule columns and ``total`` use ``crop`` (truncate without ellipsis).
+    _column_specs = (
+        ("project", 12, 30, _OVERFLOW_FOLD),
+        ("path", 30, 60, _OVERFLOW_FOLD),
+        ("R1", 3, 5, _OVERFLOW_CROP),
+        ("R2", 3, 5, _OVERFLOW_CROP),
+        ("R3", 3, 5, _OVERFLOW_CROP),
+        ("R4", 3, 5, _OVERFLOW_CROP),
+        ("R5", 3, 5, _OVERFLOW_CROP),
+        ("total", 3, 4, _OVERFLOW_CROP),
+    )
+    for header, min_w, max_w, overflow in _column_specs:
+        table.add_column(
+            header, min_width=min_w, max_width=max_w, overflow=overflow
+        )
 
     rule_totals: dict[str, int] = dict.fromkeys(_NEEDS_RULE_COLUMNS, 0)
 
@@ -557,10 +582,20 @@ def render_archived(archived: list[dict[str, Any]]) -> Table | None:
         show_lines=False,
         header_style="bold",
     )
-    table.add_column("name")
-    table.add_column("path")
-    table.add_column("archived_at")
-    table.add_column("reason")
+    # Per-column widths: keep the ISO ``archived_at`` timestamp intact at
+    # narrow terminals (``max_width=25`` accommodates the 20-char ISO
+    # string with 5 chars of headroom). ``name`` and ``path`` use ``fold``
+    # so long entries wrap; ``reason`` also folds (free-form prose).
+    _archived_column_specs = (
+        ("name", 12, 30, _OVERFLOW_FOLD),
+        ("path", 30, 60, _OVERFLOW_FOLD),
+        ("archived_at", 19, 25, _OVERFLOW_CROP),
+        ("reason", 20, 40, _OVERFLOW_FOLD),
+    )
+    for header, min_w, max_w, overflow in _archived_column_specs:
+        table.add_column(
+            header, min_width=min_w, max_width=max_w, overflow=overflow
+        )
 
     for entry in archived:
         if not isinstance(entry, dict):
