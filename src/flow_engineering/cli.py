@@ -92,6 +92,18 @@ def _resolve_projects_root(root: Path | None) -> Path:
         return Path(_DEFAULT_PROJECTS_ROOT_WIN)
     return Path(_DEFAULT_PROJECTS_ROOT_NIX).expanduser()
 
+
+def _iter_project_subdirs(root: Path) -> list[Path]:
+    """Return sorted immediate subdirectories of ``root`` excluding dot-prefix entries.
+
+    Dot-prefix entries (``.atl``, ``.opencode``, ``.venv``, ``.mypy_cache``,
+    ``.pytest_cache``, ``.ruff_cache``, ``.specify``, ``.github``, etc.)
+    are tooling/config -- never user projects. They are skipped at scan
+    time so the workspace stays focused on real code (view-only filter;
+    no directory is modified, archived, or deleted).
+    """
+    return sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
+
 def _read_pyproject_min_skill_versions(
     pyproject_path: Path,
 ) -> dict[str, str] | None:
@@ -3014,7 +3026,7 @@ def workspace_status(root: Path | None, json_flag: bool) -> None:
         click.echo(f"projects root not found: {root}", err=True)
         raise SystemExit(1)
 
-    subdirs = sorted([p for p in root.iterdir() if p.is_dir()])
+    subdirs = _iter_project_subdirs(root)
     projects = sorted(
         (_detect_project_markers(p) for p in subdirs),
         key=lambda d: d["name"],
@@ -3625,7 +3637,7 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
         click.echo(f"projects root not found: {root}", err=True)
         raise SystemExit(1)
 
-    subdirs = sorted([p for p in root.iterdir() if p.is_dir()])
+    subdirs = _iter_project_subdirs(root)
     if not subdirs:
         if json_flag:
             envelope: dict[str, Any] = {
