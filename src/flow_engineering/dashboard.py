@@ -611,6 +611,76 @@ def render_archived(archived: list[dict[str, Any]]) -> Table | None:
     return table
 
 
+# ---------- Rich rendering (Section E — R1 dirty file detail) ----------
+
+
+_R1_DETAIL_CAP = 20
+
+
+def _truncate_dirty_files(files: list[str], cap: int = _R1_DETAIL_CAP) -> list[str]:
+    """Cap a dirty-file list at ``cap`` entries, appending ASCII ``\"...\"`` when truncated.
+
+    Anchors REQ-WORKSPACE-DASHBOARD-R1-DETAIL AC11 + design §7.2. The
+    marker is ASCII 3-dot ``...`` (NEVER the Unicode U+2026 single-char
+    ellipsis — that's the cp1252 bug source). Returns a NEW list (does
+    not mutate the input).
+
+    When ``len(files) <= cap``, the original list is returned as a copy
+    (callers can mutate the result without side effects). When the
+    cap is exceeded, the result has exactly ``cap`` entries: the first
+    ``cap - 1`` files verbatim, plus the ASCII ``...`` marker.
+    """
+    if len(files) <= cap:
+        return list(files)
+    truncated = list(files[: cap - 1])
+    truncated.append("...")
+    return truncated
+
+
+def render_r1_detail(needs_attention: list[dict[str, Any]]) -> Table | None:
+    """Render Section E: per-R1-project dirty file list, capped at 20 per project.
+
+    Returns ``None`` when no needs_attention entry has non-empty
+    ``dirty_files`` — caller (``render_dashboard``) omits Section E in
+    that case (mirrors how Section C is omitted when archived is empty).
+    Implements design §7.1 + REQ-WORKSPACE-DASHBOARD-R1-DETAIL ACs 9/10/11/12.
+
+    The table title includes a hint substring (``git status``) so the
+    rendered output stays self-explanatory even when the footer is
+    collapsed by narrow terminals.
+    """
+    r1_entries = [
+        entry
+        for entry in needs_attention
+        if isinstance(entry, dict) and entry.get("dirty_files")
+    ]
+    if not r1_entries:
+        return None
+
+    table = Table(
+        title="R1 dirty files (capped at 20 per project — run 'git status' for full list)",
+        show_lines=False,
+        header_style="bold",
+    )
+    _r1_column_specs = (
+        ("project", 12, 30, _OVERFLOW_FOLD),
+        ("dirty files", 20, 80, _OVERFLOW_FOLD),
+    )
+    for header, min_w, max_w, overflow in _r1_column_specs:
+        table.add_column(header, min_width=min_w, max_width=max_w, overflow=overflow)
+
+    for entry in r1_entries:
+        files = entry.get("dirty_files") or []
+        truncated = _truncate_dirty_files(files, cap=_R1_DETAIL_CAP)
+        table.add_row(
+            str(entry.get("name", "")),
+            "\n".join(truncated),
+            style="red",
+        )
+
+    return table
+
+
 # ---------- Rich rendering (Section D — Footer Text) ----------
 
 
@@ -684,6 +754,7 @@ __all__ = [
     "DashboardFlowNotFoundError",
     "DashboardParseError",
     "DashboardSubprocessError",
+    "_truncate_dirty_files",
     "color_code",
     "fetch_archived_projects",
     "fetch_project_list",
@@ -694,5 +765,6 @@ __all__ = [
     "render_footer",
     "render_header",
     "render_needs_table",
+    "render_r1_detail",
     "sort_projects",
 ]
