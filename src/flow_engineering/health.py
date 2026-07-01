@@ -3,7 +3,7 @@
 Library-first module per Constitution Article I. Public surface is
 exported via ``__all__``.
 
-This PR (sub-batches B-verdict-only + B-R9 + C-summary) ships:
+This PR (sub-batches B-verdict-only + B-R9 + C-summary + C-filter) ships:
   - verdict math primitives (``_categorize_verdict`` + threshold
     constants)
   - R9 detector (``_detect_committed_tooling_dirs``) with hard-coded
@@ -11,7 +11,7 @@ This PR (sub-batches B-verdict-only + B-R9 + C-summary) ships:
     subprocess seam
   - per-project record builder (``summarize_project_health``) +
     internal ``_summarize_per_project`` helper
-  - stack-suppression constants (``_R7_SUPPRESSED_STACKS`` +
+  - stack-suppression constants (``_R7_SUPPRESSED_STACKS` +
     ``_R8_SUPPRESSED_STACKS``)
   - per-rule recommendation copy registry
     (``_R6_RECOMMENDATION`` / ``_R7_RECOMMENDATIONS`` /
@@ -22,11 +22,16 @@ This PR (sub-batches B-verdict-only + B-R9 + C-summary) ships:
     record's ``recommendations`` field, so the registry ships with
     C-summary). The ``TestRecommendationLock`` grep audit on
     these constants lands in PR2c.
+  - output-only filter (``filter_health_by_rules``) which intersects
+    each per-project record's ``triggers[]`` + ``recommendations[]``
+    with a caller-supplied rule set and recomputes the verdict from
+    the filtered triggers. Unknown rule tokens are silently ignored
+    (lenient) so the filter does not break on stale state when new
+    rules land via follow-up changes.
 
-The output-only filter (``filter_health_by_rules``), the
-recommendation-lock grep audit, the workspace-wide fetch + Rich
-render, and the CLI wiring land in later sub-batches
-(PR2c + PR3 + PR4).
+The recommendation-lock grep audit (``TestRecommendationLock``),
+the workspace-wide fetch + Rich render, and the CLI wiring land in
+later sub-batches (PR3 + PR4).
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ from __future__ import annotations
 import fnmatch
 import subprocess
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 __all__ = [
     "_VERDICT_HEALTHY_MAX_TRIGGERS",
@@ -423,4 +428,90 @@ def _recommendations_for(triggers: list[str], stack: str) -> list[str]:
         elif trigger == "R9":
             out.append(_R9_RECOMMENDATION)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Output-only filter (REQ-WORKSPACE-HEALTH-ENVELOPE).
+# ---------------------------------------------------------------------------
+#
+# Matches the dashboard's ``filter_by_rules`` shape but operates on
+# the health envelope (per-project ``triggers[]`` +
+# ``recommendations[]``). Unknown rule tokens are silently ignored
+# (lenient filter — the underlying detection ALWAYS runs; only the
+# output is filtered).
+
+
+def filter_health_by_rules(
+    projects: list[dict[str, object]],
+    rules: list[str],
+) -> list[dict[str, object]]:
+    """Return a NEW projects list with ``triggers[]`` + ``recommendations[]``
+    filtered to the named rules.
+
+    For each project:
+      - ``triggers[]`` is intersected with the rule set
+      - ``recommendations[]`` is filtered in lock-step to match
+      - ``suppressed[]`` is left untouched (it's the operator-facing
+        "why no verdict hit this rule" signal per spec)
+      - ``verdict`` is recomputed from the filtered triggers per
+        REQ-WORKSPACE-HEALTH-VERDICT-MATH so a project whose
+        filtered triggers drop to zero reports ``HEALTHY``
+
+    Unknown rule tokens in ``rules`` are silently ignored (they
+    contribute nothing to the filter set but do NOT raise). This is
+    intentionally lenient (different from ``dashboard.filter_by_rules``
+    which raises ``ValueError`` on unknown) because the health
+    envelope is additive: future ``R10``-style rules land via
+    follow-up changes and the filter must not break on stale state.
+
+    If all tokens in ``rules`` are unknown (e.g. ``["R99"]``), the
+    effective filter set is empty and the function returns the
+    projects unchanged — this is the "unknown token keeps all"
+    defensive behavior (no data loss for typo'd filter flags).
+
+    Args:
+        projects: Per-project v1 records (from
+            ``summarize_project_health`` or the workspace-wide
+            envelope's ``projects`` field).
+        rules: Rule names to keep (``["R6", "R7", "R8", "R9"]`` or
+            any subset). Unknown tokens are ignored. Case-insensitive
+            (uppercased internally).
+
+    Returns:
+        A NEW list of per-project dicts with filtered triggers +
+        recommendations + recomputed verdict.
+    """
+    if not rules:
+        return list(projects)
+    valid_rules = {"R6", "R7", "R8", "R9"}
+    rule_set = {r.upper() for r in rules if r.upper() in valid_rules}
+    if not rule_set:
+        # All tokens unknown → defensive no-op (preserves the
+        # "unknown token keeps all" contract per the test)
+        return list(projects)
+    filtered: list[dict[str, object]] = []
+    for entry in projects:
+        raw_triggers = entry.get("triggers", [])
+        raw_recommendations = entry.get("recommendations", [])
+        triggers = cast(list[str], raw_triggers) if isinstance(raw_triggers, list) else []
+        recommendations = (
+            cast(list[str], raw_recommendations)
+            if isinstance(raw_recommendations, list)
+            else []
+        )
+        # Pair-trigger filter: each recommendation is 1:1 with a
+        # trigger from ``_recommendations_for`` — keep both lists
+        # aligned by walking them in lock-step.
+        kept_triggers: list[str] = []
+        kept_recommendations: list[str] = []
+        for trig, rec in zip(triggers, recommendations, strict=False):
+            if trig in rule_set:
+                kept_triggers.append(trig)
+                kept_recommendations.append(rec)
+        new_entry = dict(entry)
+        new_entry["triggers"] = kept_triggers
+        new_entry["recommendations"] = kept_recommendations
+        new_entry["verdict"] = _categorize_verdict(kept_triggers)
+        filtered.append(new_entry)
+    return filtered
 
