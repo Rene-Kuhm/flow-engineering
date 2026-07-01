@@ -21,6 +21,41 @@ def add_openspec(project: Path) -> Path:
     return project
 
 
+def add_readme(project: Path, ext: str = ".md", content: str = "# fixture\n") -> Path:
+    """Add a README at the project root. ``ext`` controls the suffix (.md | .rst)."""
+    (project / f"README{ext}").write_text(content, encoding="utf-8")
+    return project
+
+
+def add_pytest_ini(project: Path) -> Path:
+    """Add a minimal ``pytest.ini`` at the project root (R7 infra signal)."""
+    (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    return project
+
+
+def add_pyproject_pytest(project: Path) -> Path:
+    """Append a ``[tool.pytest]`` section to an existing ``pyproject.toml``.
+
+    The fixture is additive: it does NOT clobber an existing
+    ``pyproject.toml``. If the file is absent, it creates a minimal one
+    with the section. Used for R7 infra signal testing.
+    """
+    pyproject = project / "pyproject.toml"
+    existing = ""
+    if pyproject.is_file():
+        existing = pyproject.read_text(encoding="utf-8")
+    if "[tool.pytest]" in existing:
+        return project
+    pyproject.write_text(existing + "\n[tool.pytest]\ntestpaths = [\"tests\"]\n", encoding="utf-8")
+    return project
+
+
+def add_tests_dir(project: Path) -> Path:
+    """Create an empty ``tests/`` directory at the project root (R7 infra signal)."""
+    (project / "tests").mkdir(exist_ok=True)
+    return project
+
+
 def make_python_project(parent: Path, name: str = "py-proj", *, git: bool = True, tests: bool = True, openspec: bool = True) -> Path:
     project = make_project(parent, name)
     (project / "pyproject.toml").write_text('[project]\nname = "fixture"\n', encoding="utf-8")
