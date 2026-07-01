@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import warnings
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -250,14 +252,11 @@ def filter_by_rules(
 _VALID_SORT_FIELDS: frozenset[str] = frozenset({"name", "path", "needs-count"})
 
 
-def _needs_count(project: dict[str, Any]) -> int:
-    """Return the needs-attention count for a project (used by sort + render)."""
-    reasons = project.get("reasons", [])
-    return len(reasons) if isinstance(reasons, list) else 0
-
-
 def sort_projects(
-    projects: list[dict[str, Any]], field: str
+    projects: list[dict[str, Any]],
+    field: str,
+    *,
+    needs_by_name: Mapping[str, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Return ``projects`` sorted by ``field``.
 
@@ -266,7 +265,11 @@ def sort_projects(
 
       - ``name`` (default) — alphabetical ascending by ``name``.
       - ``path`` — alphabetical ascending by ``path``.
-      - ``needs-count`` — descending by ``len(reasons)`` (noisiest first).
+      - ``needs-count`` — descending by needs-count (noisiest first). The
+        count source is the optional ``needs_by_name`` keyword map (keyed by
+        project ``name``); when ``None``, the function falls back to reading
+        ``project["reasons"]`` and emits a ``DeprecationWarning`` so stale
+        callers can surface.
 
     Args:
         projects: Project list to sort. Returns a NEW list — the input is
@@ -274,6 +277,13 @@ def sort_projects(
         field: Sort key. Case-insensitive in practice (the Click option
             normalizes via ``case_sensitive=False`` in PR3); this function
             does the literal lookup as specified.
+        needs_by_name: Optional name-keyed map of reasons (typically built
+            from ``status_envelope["needs_attention"]`` by the caller).
+            Required for an accurate ``field="needs-count"`` sort. If
+            ``None`` and ``field == "needs-count"``, the function falls
+            back to ``project.get("reasons", [])`` and emits a
+            ``DeprecationWarning`` — this fallback will be removed in
+            v1.3.0 (see REQ-DASHBOARD-SORT-DATA-FLOW + design §8).
 
     Returns:
         A new sorted list. The input list is not mutated.
@@ -291,8 +301,25 @@ def sort_projects(
         return sorted(projects, key=lambda p: p.get("name", ""))
     if field == "path":
         return sorted(projects, key=lambda p: p.get("path", ""))
+
     # field == "needs-count"
-    return sorted(projects, key=_needs_count, reverse=True)
+    def needs_count(p: dict[str, Any]) -> int:
+        if needs_by_name is not None:
+            reasons = needs_by_name.get(p.get("name", ""), [])
+            return len(reasons) if isinstance(reasons, list) else 0
+        # Deprecated fallback path — remove in v1.3.0 once all callers
+        # have been migrated to pass ``needs_by_name`` explicitly.
+        warnings.warn(
+            "sort_projects: needs_by_name=None is deprecated; pass it "
+            "derived from DS2 needs_attention list. Remove the fallback "
+            "in the next follow-up.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        reasons = p.get("reasons", [])
+        return len(reasons) if isinstance(reasons, list) else 0
+
+    return sorted(projects, key=needs_count, reverse=True)
 
 
 # Color threshold constants — exported as named constants so the audit log

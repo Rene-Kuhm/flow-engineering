@@ -35,8 +35,18 @@ runner = CliRunner()
 
 
 def _make_project(name: str, *, path: str = "/p", reasons: list[str] | None = None) -> dict:
-    """Build a minimal project dict matching the DS1/DS2 contract shape."""
-    return {"name": name, "path": f"{path}/{name}", "reasons": reasons or []}
+    """Build a minimal project dict matching the REAL DS1 envelope shape.
+
+    NO ``reasons`` key — reasons live on ``needs_attention`` entries only.
+
+    The legacy ``reasons`` parameter is intentionally IGNORED: it is kept as
+    a no-op for backward-compat with test bodies written before the
+    sort-projects-align-with-real-ds-data-flow fix so they keep compiling,
+    but ``workspace_dashboard_cmd`` does NOT mirror ``reasons`` onto each
+    project dict — it derives the per-project count from
+    ``needs_by_name`` (built by the caller from ``needs_attention``).
+    """
+    return {"name": name, "path": f"{path}/{name}"}
 
 
 def _make_needs(name: str, reasons: list[str]) -> dict:
@@ -205,5 +215,82 @@ def test_workspace_dashboard_cmd_with_no_color_suppresses_ansi(
     assert result.exit_code == 0, result.output
     assert _ANSI_ESCAPE_RE.search(result.output) is None, (
         f"--no-color must suppress ANSI escapes; got: {result.output!r}"
+    )
+
+
+# =============================================================================
+# T12.5 — workspace_dashboard_cmd wires needs_by_name from needs_attention
+# =============================================================================
+
+
+def test_workspace_dashboard_cmd_passes_needs_by_name_to_sort_projects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Caller (workspace_dashboard_cmd) MUST build needs_by_name from
+    ``summary['needs_attention']`` (keyed by ``name``) and pass it as a
+    keyword to ``sort_projects`` — anchored on AC7.
+
+    Sort_projects is monkey-patched so the assertion can verify what
+    keyword payload was actually forwarded (instead of relying on rendered
+    output order, which depends on the global kind/emoji order in
+    render_needs_table).
+    """
+    captured: dict[str, object] = {}
+
+    def fake_sort(
+        projects: list, field: str, *, needs_by_name=None
+    ) -> list:
+        captured["field"] = field
+        captured["needs_by_name"] = needs_by_name
+        return list(projects)
+
+    projects = [
+        {
+            "name": "alpha", "path": "/path/alpha",
+            "has_git": True, "has_openspec": False, "has_tests": False,
+            "has_graphify": False, "last_status_check": "",
+        },
+        {
+            "name": "beta", "path": "/path/beta",
+            "has_git": True, "has_openspec": True, "has_tests": True,
+            "has_graphify": False, "last_status_check": "",
+        },
+    ]
+    needs_attention = [
+        {
+            "name": "alpha", "path": "/path/alpha",
+            "reasons": ["R1: uncommitted work", "R2: not a git repository"],
+        },
+        {"name": "beta", "path": "/path/beta", "reasons": []},
+    ]
+    summary = {
+        "totals": {
+            "projects": 2, "needs_attention": 1,
+            "dirty": 1, "no_git": 1, "no_tests": 0,
+        },
+        "needs_attention": needs_attention,
+        "archived_count": 0,
+    }
+
+    monkeypatch.setattr(dashboard_mod, "fetch_project_list", lambda: projects)
+    monkeypatch.setattr(dashboard_mod, "fetch_status_summary", lambda: summary)
+    monkeypatch.setattr(dashboard_mod, "fetch_archived_projects", lambda: [])
+    monkeypatch.setattr(dashboard_mod, "sort_projects", fake_sort)
+
+    result = runner.invoke(main, ["workspace", "dashboard", "--sort", "needs-count"])
+
+    assert result.exit_code == 0, result.output
+    assert captured.get("field") == "needs-count"
+    # Caller MUST build the map from entry['name'] (the canonical key).
+    # Empty-name entries are dropped defensively; entries with a name but
+    # an empty ``reasons`` list ARE included (so all listed projects have
+    # a 0 baseline — count_source lookup never misses).
+    expected = {
+        "alpha": ["R1: uncommitted work", "R2: not a git repository"],
+        "beta":  [],
+    }
+    assert captured.get("needs_by_name") == expected, (
+        f"Caller did not forward needs_by_name from needs_attention; "
+        f"captured={captured.get('needs_by_name')!r}, expected={expected!r}"
     )
 
