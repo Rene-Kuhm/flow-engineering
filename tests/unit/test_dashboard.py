@@ -458,18 +458,83 @@ class TestSortProjects:
     def test_sort_by_needs_count_descending(self) -> None:
         """``--sort needs-count`` orders by needs-count DESCENDING (most
         needs-attention first — the operator wants to see the noisiest projects
-        on top of the dashboard)."""
+        on top of the dashboard).
+
+        Anchor for AC4: this test uses the REAL DS1 envelope shape (NO
+        inline ``reasons`` on the project dicts) + explicit
+        ``needs_by_name`` — matching how the click handler forwards the
+        per-project reason counts derived from the DS2 ``needs_attention``
+        list. Without the ``needs_by_name`` kwarg this test would FAIL (all
+        counts default to 0 → no ordering), which is exactly the bug that
+        ``sort-projects-align-with-real-ds-data-flow`` closes.
+        """
         projects = [
-            {"name": "clean", "path": "/p/clean", "reasons": []},
-            {"name": "noisy", "path": "/p/noisy",
-             "reasons": ["R1", "R2", "R3", "R4"]},
-            {"name": "medium", "path": "/p/medium",
-             "reasons": ["R1", "R2"]},
+            {"name": "clean", "path": "/p/clean"},
+            {"name": "noisy", "path": "/p/noisy"},
+            {"name": "medium", "path": "/p/medium"},
         ]
+        needs_by_name = {
+            "clean":  [],
+            "noisy":  ["R1", "R2", "R3", "R4"],
+            "medium": ["R1", "R2"],
+        }
 
-        result = sort_projects(projects, "needs-count")
+        result = sort_projects(projects, "needs-count", needs_by_name=needs_by_name)
 
-        assert [p["name"] for p in result] == ["noisy", "medium", "clean"]
+        assert [p["name"] for p in result] == ["noisy", "medium", "clean"]  # noqa: E501
+
+    def test_sort_by_needs_count_uses_needs_by_name(self) -> None:
+        """sort_projects with explicit needs_by_name reads from real DS2 shape
+        (no inline reasons) and orders DESCENDING by len(needs_by_name[name]).
+
+        Anchors the sort-projects-align-with-real-ds-data-flow fix: the
+        function MUST accept a keyword-only ``needs_by_name`` map so callers
+        (e.g. ``workspace_dashboard_cmd``) can pass reasons derived from the
+        DS2 ``needs_attention`` list rather than relying on a non-existent
+        inline ``reasons`` field on each project dict.
+        """
+        projects = [
+            {"name": "alpha", "path": "/path/alpha"},
+            {"name": "beta",  "path": "/path/beta"},
+            {"name": "gamma", "path": "/path/gamma"},
+        ]
+        needs_by_name = {
+            "alpha": ["R1", "R2", "R3"],
+            "beta":  ["R1"],
+            "gamma": [],
+        }
+        result = sort_projects(projects, "needs-count", needs_by_name=needs_by_name)
+        # Sort descending by needs_count: alpha (3) > beta (1) > gamma (0)
+        assert [p["name"] for p in result] == ["alpha", "beta", "gamma"]
+
+    def test_sort_by_needs_count_without_needs_by_name_emits_deprecation_warning(self) -> None:
+        """Backward-compat: needs_by_name=None falls back to project['reasons']
+        with a DeprecationWarning. Anchors AC5 — the surface that needs fixing.
+        """
+        projects = [
+            {"name": "alpha", "path": "/path/alpha", "reasons": ["R1", "R2"]},
+            {"name": "beta",  "path": "/path/beta",  "reasons": []},
+        ]
+        with pytest.warns(DeprecationWarning, match="needs_by_name=None is deprecated"):
+            result = sort_projects(projects, "needs-count")
+        # Sort descending by len(reasons): alpha (2) > beta (0)
+        assert [p["name"] for p in result] == ["alpha", "beta"]
+
+    def test_sort_with_empty_needs_by_name_returns_zero_count_for_all(self) -> None:
+        """Empty needs_by_name dict (not None) returns all projects with
+        count 0; sort is stable and preserves input order.
+
+        Documents the edge case where the caller passes ``needs_by_name={}``
+        explicitly — distinct from the ``needs_by_name=None`` deprecation path.
+        """
+        projects = [
+            {"name": "alpha", "path": "/path/alpha"},
+            {"name": "beta",  "path": "/path/beta"},
+            {"name": "gamma", "path": "/path/gamma"},
+        ]
+        result = sort_projects(projects, "needs-count", needs_by_name={})
+        # All have count 0; sort is stable; original order preserved.
+        assert [p["name"] for p in result] == ["alpha", "beta", "gamma"]  # noqa: E501
 
     def test_sort_by_invalid_field_raises_ValueError(self) -> None:  # noqa: N802
         """Unknown sort field raises ``ValueError``."""
