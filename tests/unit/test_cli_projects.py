@@ -582,3 +582,129 @@ def test_flow_projects_ls_json_envelope_includes_dirty_files(
     # alpha: clean project, empty list default.
     assert by_name["alpha"]["dirty_files"] == []
 
+
+# ============================================================================
+# T-A.1 / T-A.2 RED -- Sub-batch A: detector extension (R6 + R7)
+#
+# REQ-WORKSPACE-HEALTH-R6-README: triggered when neither README.md nor
+# README.rst exists at the project root. Detection is a pure filesystem
+# check via Path.is_file().
+#
+# REQ-WORKSPACE-HEALTH-R7-TESTS-INFRA: triggered when a project has neither
+# tests/ dir, pytest.ini file, nor [tool.pytest] section in pyproject.toml.
+# Malformed pyproject.toml MUST NOT raise -- it returns False.
+# ============================================================================
+
+
+class TestDetectProjectMarkersHasReadme:
+    """REQ-WORKSPACE-HEALTH-R6-README: pure fs check, no subprocess.
+
+    ``_detect_project_markers`` MUST include ``has_readme`` boolean (14 -> 16
+    keys, additive). True when README.md OR README.rst exists at the project
+    root; False otherwise. A 0-byte README is treated as present (file
+    existence is the only criterion in MVP).
+    """
+
+    def test_readme_md_present_returns_true(self, tmp_path: Path) -> None:
+        """README.md at root -> has_readme=True."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "with_md"
+        project.mkdir()
+        (project / "README.md").write_text("# title\n", encoding="utf-8")
+        assert _detect_project_markers(project)["has_readme"] is True
+
+    def test_readme_rst_present_returns_true(self, tmp_path: Path) -> None:
+        """README.rst at root (no README.md) -> has_readme=True."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "with_rst"
+        project.mkdir()
+        (project / "README.rst").write_text("title\n=====\n", encoding="utf-8")
+        assert _detect_project_markers(project)["has_readme"] is True
+
+    def test_both_readme_absent_returns_false(self, tmp_path: Path) -> None:
+        """Neither README.md nor README.rst at root -> has_readme=False."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "no_readme"
+        project.mkdir()
+        assert _detect_project_markers(project)["has_readme"] is False
+
+    def test_zero_byte_readme_treated_as_present(self, tmp_path: Path) -> None:
+        """0-byte README.md -> has_readme=True (file existence only, MVP)."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "empty_readme"
+        project.mkdir()
+        (project / "README.md").write_text("", encoding="utf-8")
+        assert _detect_project_markers(project)["has_readme"] is True
+
+
+class TestDetectProjectMarkersHasPytestConfig:
+    """REQ-WORKSPACE-HEALTH-R7-TESTS-INFRA: 3 fs signals OR'd.
+
+    ``_detect_project_markers`` MUST include ``has_pytest_config`` boolean
+    (16 keys total). True when ANY of: tests/ dir, pytest.ini file, or
+    [tool.pytest] section in pyproject.toml. Malformed pyproject.toml MUST
+    NOT crash -- swallowed and treated as False (Pattern #551).
+    """
+
+    def test_tests_dir_present_returns_true(self, tmp_path: Path) -> None:
+        """tests/ dir at root -> has_pytest_config=True."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "with_tests"
+        project.mkdir()
+        (project / "tests").mkdir()
+        assert _detect_project_markers(project)["has_pytest_config"] is True
+
+    def test_pytest_ini_present_returns_true(self, tmp_path: Path) -> None:
+        """pytest.ini at root (no tests/) -> has_pytest_config=True."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "with_pytest_ini"
+        project.mkdir()
+        (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+        assert _detect_project_markers(project)["has_pytest_config"] is True
+
+    def test_pyproject_pytest_section_returns_true(self, tmp_path: Path) -> None:
+        """pyproject.toml with [tool.pytest] section -> has_pytest_config=True."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "with_pyproject_pytest"
+        project.mkdir()
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "x"\n\n[tool.pytest]\ntestpaths = ["tests"]\n',
+            encoding="utf-8",
+        )
+        assert _detect_project_markers(project)["has_pytest_config"] is True
+
+    def test_no_signal_returns_false(self, tmp_path: Path) -> None:
+        """None of the three signals -> has_pytest_config=False."""
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "no_pytest_signal"
+        project.mkdir()
+        # Only pyproject.toml WITHOUT [tool.pytest] section.
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "x"\n', encoding="utf-8"
+        )
+        assert _detect_project_markers(project)["has_pytest_config"] is False
+
+    def test_malformed_pyproject_does_not_crash(self, tmp_path: Path) -> None:
+        """Malformed pyproject.toml -> has_pytest_config=False, NO exception.
+
+        Pattern #551: defensive try/except for tomllib.parse failures.
+        """
+        from flow_engineering.cli import _detect_project_markers
+
+        project = tmp_path / "bad_pyproject"
+        project.mkdir()
+        # Unclosed bracket -> tomllib raises.
+        (project / "pyproject.toml").write_text(
+            '[project\nname = "x"\n', encoding="utf-8"
+        )
+        markers = _detect_project_markers(project)
+        assert markers["has_pytest_config"] is False
+
