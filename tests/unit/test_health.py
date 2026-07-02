@@ -598,3 +598,33 @@ class TestFetchWorkspaceHealthIteration:
 
         assert envelope["projects"] == []
         assert envelope["totals"] == {"healthy": 0, "attention": 0, "critical": 0}
+
+
+# ============================================================================
+# T-PR3 WU3.3 -- pure _compute_totals helper.
+# ============================================================================
+
+
+class TestComputeTotals:
+    """WU3.3: pure verdict-distribution tally, no I/O."""
+
+    def test_empty(self) -> None:
+        from flow_engineering.health import _compute_totals
+
+        assert _compute_totals([]) == {"healthy": 0, "attention": 0, "critical": 0}
+
+    def test_mixed(self) -> None:
+        from flow_engineering.health import _compute_totals
+
+        records = [{"verdict": "HEALTHY"}, {"verdict": "NEEDS-ATTENTION"}, {"verdict": "NEEDS-ATTENTION"}, {"verdict": "CRITICAL"}, {"verdict": "HEALTHY"}]
+        assert _compute_totals(records) == {"healthy": 2, "attention": 2, "critical": 1}
+
+    def test_does_not_mutate_input(self) -> None:
+        from copy import deepcopy
+
+        from flow_engineering.health import _compute_totals
+
+        records = [{"verdict": "HEALTHY"}, {"verdict": "CRITICAL"}]
+        original = deepcopy(records)
+        _compute_totals(records)
+        assert records == original

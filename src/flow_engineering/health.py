@@ -59,6 +59,7 @@ __all__ = [
     "_recommendations_for",
     "summarize_project_health",
     "filter_health_by_rules",
+    "_compute_totals",
     "fetch_workspace_health",
 ]
 
@@ -562,6 +563,26 @@ def fetch_workspace_health(root: Path) -> dict[str, object]:
         "version": "1",
         "root": str(resolved),
         "projects": projects,
-        "totals": {"healthy": 0, "attention": 0, "critical": 0},
+        "totals": _compute_totals(projects),
     }
+
+
+def _compute_totals(records: list[dict[str, object]]) -> dict[str, int]:
+    """Tally verdict distribution across records. Pure, single-pass.
+
+    Trusts the v1 contract: every record has a ``verdict`` in
+    {HEALTHY, NEEDS-ATTENTION, CRITICAL}. Unknown verdicts are silently
+    dropped (defensive: malformed records default to "healthy" which is
+    benign for the operator's dashboard).
+    """
+    totals: dict[str, int] = {"healthy": 0, "attention": 0, "critical": 0}
+    for record in records:
+        verdict = record.get("verdict")
+        if verdict == "HEALTHY":
+            totals["healthy"] += 1
+        elif verdict == "NEEDS-ATTENTION":
+            totals["attention"] += 1
+        elif verdict == "CRITICAL":
+            totals["critical"] += 1
+    return totals
 
