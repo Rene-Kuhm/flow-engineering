@@ -71,3 +71,10 @@ def test_health_py_has_no_rich_import_srp_lock() -> None:
     import flow_engineering.health as health_mod
 
     assert "from rich" not in inspect.getsource(health_mod)
+
+
+def test_render_json_byte_identical_no_temporal() -> None:
+    from flow_engineering.health_render import render_workspace_health_json
+    out1 = render_workspace_health_json(_sample_envelope())
+    out2 = render_workspace_health_json(_sample_envelope())
+    assert out1 == out2 and "generated_at" not in out1

@@ -7,6 +7,7 @@ top). WU3.5 ships the text renderer; WU3.6 adds the JSON renderer.
 
 from __future__ import annotations
 
+import json
 from io import StringIO
 from typing import Literal
 
@@ -82,3 +83,6 @@ def render_workspace_health_text(envelope: dict[str, object], *, console: Consol
     if file_obj is not None and hasattr(file_obj, "getvalue"):
         return str(file_obj.getvalue())
     return ""
+
+def render_workspace_health_json(envelope: dict[str, object]) -> str:
+    return json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2)
