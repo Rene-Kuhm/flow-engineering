@@ -507,3 +507,31 @@ class TestRecommendationLock:
                     assert "flow workspace" in rec, (
                         f"missing flow workspace verb in {stack} {triggers}: {rec!r}"
                     )
+
+
+# ============================================================================
+# T-PR3 WU3.1 -- workspace-wide health v1 envelope shape.
+# ============================================================================
+
+
+class TestFetchWorkspaceHealthEnvelopeShape:
+    """WU3.1: locked v1 envelope keys in fixed order, no temporal fields."""
+
+    def test_keys_in_fixed_order(self, tmp_path: Path) -> None:
+        from flow_engineering.health import fetch_workspace_health
+
+        envelope = fetch_workspace_health(tmp_path)
+
+        assert list(envelope.keys()) == ["version", "root", "projects", "totals"]
+        assert envelope["version"] == "1"
+        assert "generated_at" not in envelope
+        assert "timestamp" not in envelope
+        assert "run_at" not in envelope
+
+    def test_missing_root_raises(self, tmp_path: Path) -> None:
+        import pytest
+
+        from flow_engineering.health import fetch_workspace_health
+
+        with pytest.raises(FileNotFoundError, match="projects root not found"):
+            fetch_workspace_health(tmp_path / "missing")

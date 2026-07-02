@@ -58,6 +58,7 @@ __all__ = [
     "_recommendations_for",
     "summarize_project_health",
     "filter_health_by_rules",
+    "fetch_workspace_health",
 ]
 
 
@@ -515,4 +516,25 @@ def filter_health_by_rules(
         new_entry["verdict"] = _categorize_verdict(kept_triggers)
         filtered.append(new_entry)
     return filtered
+
+
+def fetch_workspace_health(root: Path) -> dict[str, object]:
+    """Return the locked v1 envelope for a workspace root.
+
+    Top-level keys in fixed order: version, root, projects, totals.
+    No ``generated_at`` field (Constitution Article IV byte-determinism).
+    Raises FileNotFoundError when resolved root is not a directory.
+
+    WU3.1 ships the envelope skeleton only (projects=[], totals zeros).
+    WU3.2 + WU3.3 fill them in.
+    """
+    resolved = root.resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"projects root not found: {resolved}")
+    return {
+        "version": "1",
+        "root": str(resolved),
+        "projects": [],
+        "totals": {"healthy": 0, "attention": 0, "critical": 0},
+    }
 
