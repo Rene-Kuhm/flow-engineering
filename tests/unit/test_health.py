@@ -628,3 +628,39 @@ class TestComputeTotals:
         original = deepcopy(records)
         _compute_totals(records)
         assert records == original
+
+
+# ============================================================================
+# T-PR3 WU3.4 -- byte-determinism invariant (Constitution Article IV).
+# ============================================================================
+
+
+class TestFetchWorkspaceHealthByteDeterminism:
+    """WU3.4: two consecutive calls on unchanged root MUST be byte-identical.
+
+    Guards against ``datetime.now()``, ``time.time()``, ``os.urandom``,
+    file-mtime reads, or any other temporal / non-deterministic state.
+    """
+
+    def test_two_invocations_equal_with_time_sleep(self, tmp_path: Path) -> None:
+        import time
+
+        from flow_engineering.health import fetch_workspace_health
+
+        _healthy_python(tmp_path, "alpha")
+
+        first = fetch_workspace_health(tmp_path)
+        time.sleep(1)
+        second = fetch_workspace_health(tmp_path)
+
+        assert first == second
+        assert first["root"] == str(tmp_path.resolve())
+
+    def test_health_module_source_has_no_temporal_primitives(self) -> None:
+        import inspect
+
+        import flow_engineering.health as health_mod
+
+        source = inspect.getsource(health_mod)
+        for forbidden in ("datetime.now", "time.time", "os.urandom"):
+            assert forbidden not in source
