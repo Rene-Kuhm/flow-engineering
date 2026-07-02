@@ -535,3 +535,66 @@ class TestFetchWorkspaceHealthEnvelopeShape:
 
         with pytest.raises(FileNotFoundError, match="projects root not found"):
             fetch_workspace_health(tmp_path / "missing")
+
+
+# ============================================================================
+# T-PR3 WU3.2 -- iterate projects + per-project record building.
+# ============================================================================
+
+
+def _healthy_python(parent: Path, name: str) -> Path:
+    from tests.unit._workspace_fixtures import (
+        add_openspec,
+        add_pytest_ini,
+        add_readme,
+        make_python_project,
+    )
+
+    project = make_python_project(parent, name, git=False, tests=False, openspec=False)
+    add_readme(project)
+    add_pytest_ini(project)
+    add_openspec(project)
+    return project
+
+
+class TestFetchWorkspaceHealthIteration:
+    """WU3.2: enumerate projects under root + build per-project records."""
+
+    def test_iter_subdirs_excludes_dot_prefix(self, tmp_path: Path) -> None:
+        from flow_engineering.health import _iter_project_subdirs
+
+        _healthy_python(tmp_path, "alpha")
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / ".pytest_cache").mkdir()
+        _healthy_python(tmp_path, "bravo")
+
+        assert sorted(p.name for p in _iter_project_subdirs(tmp_path)) == ["alpha", "bravo"]
+
+    def test_records_in_name_order_with_v1_shape_and_distinct_verdicts(self, tmp_path: Path) -> None:
+        from tests.unit._workspace_fixtures import add_readme, make_node_project, make_python_project
+
+        from flow_engineering.health import fetch_workspace_health
+
+        _healthy_python(tmp_path, "alpha")
+        needs = make_node_project(tmp_path, "bravo", git=False, tests=False)
+        add_readme(needs)
+        make_python_project(tmp_path, "charlie", git=False, tests=False, openspec=False)
+
+        envelope = fetch_workspace_health(tmp_path)
+        projects = envelope["projects"]
+
+        assert [p["name"] for p in projects] == ["alpha", "bravo", "charlie"]
+        assert set(projects[0]) == {"name", "path", "stack", "verdict", "triggers", "recommendations", "suppressed"}
+        assert {p["name"]: p["verdict"] for p in projects} == {
+            "alpha": "HEALTHY",
+            "bravo": "NEEDS-ATTENTION",
+            "charlie": "CRITICAL",
+        }
+
+    def test_empty_root_returns_zero_projects(self, tmp_path: Path) -> None:
+        from flow_engineering.health import fetch_workspace_health
+
+        envelope = fetch_workspace_health(tmp_path)
+
+        assert envelope["projects"] == []
+        assert envelope["totals"] == {"healthy": 0, "attention": 0, "critical": 0}

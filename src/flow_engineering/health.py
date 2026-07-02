@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import fnmatch
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal, cast
 
@@ -518,6 +519,28 @@ def filter_health_by_rules(
     return filtered
 
 
+def _iter_project_subdirs(root: Path) -> Iterator[Path]:
+    """Yield sorted immediate subdirectories of ``root``, skipping dot-prefix entries.
+
+    Dot-prefix dirs (.venv, .pytest_cache, .opencode, etc.) are tooling,
+    never user projects. Mirrors cli.py:97 contract; factored here so
+    ``health`` does not pull cli.py as a hard top-level dependency.
+    """
+    return iter(sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")))
+
+
+def _build_per_project_record(project_dir: Path) -> dict[str, object]:
+    """Build a v1 per-project record: markers + R9 hits + summarize.
+
+    The markers import is LAZY (Pattern #548: keep green imports green).
+    """
+    from flow_engineering.cli import _detect_project_markers
+
+    markers = _detect_project_markers(project_dir)
+    hits = _detect_committed_tooling_dirs(project_dir)
+    return summarize_project_health(markers, tooling_hits=hits)
+
+
 def fetch_workspace_health(root: Path) -> dict[str, object]:
     """Return the locked v1 envelope for a workspace root.
 
@@ -525,16 +548,20 @@ def fetch_workspace_health(root: Path) -> dict[str, object]:
     No ``generated_at`` field (Constitution Article IV byte-determinism).
     Raises FileNotFoundError when resolved root is not a directory.
 
-    WU3.1 ships the envelope skeleton only (projects=[], totals zeros).
-    WU3.2 + WU3.3 fill them in.
+    Iterates every immediate subdirectory of ``root`` via
+    ``_iter_project_subdirs`` and builds a per-project record via
+    ``_build_per_project_record``. Records are sorted by name so the
+    envelope is deterministic across filesystems.
     """
     resolved = root.resolve()
     if not resolved.is_dir():
         raise FileNotFoundError(f"projects root not found: {resolved}")
+    projects = [_build_per_project_record(p) for p in _iter_project_subdirs(resolved)]
+    projects.sort(key=lambda r: str(r.get("name", "")))
     return {
         "version": "1",
         "root": str(resolved),
-        "projects": [],
+        "projects": projects,
         "totals": {"healthy": 0, "attention": 0, "critical": 0},
     }
 
