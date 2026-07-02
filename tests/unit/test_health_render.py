@@ -1,4 +1,7 @@
-"""Unit tests for workspace health rendering (text + JSON)."""
+"""Unit tests for workspace health rendering (text + JSON).
+
+Manual smoke (NOT pytest): (1) fetch_workspace_health(Path('C:/dev/proyects')) returns valid envelope; (2) repeat for byte-identical output; (3) grep -n 'generated_at|timestamp|run_at' src/flow_engineering/health*.py returns 0 hits.
+"""
 
 from __future__ import annotations
 
