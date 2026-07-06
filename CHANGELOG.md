@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.3.0-alpha] - 2026-07-06
 
+### BREAKING
+- **`flow archive` becomes a Click group** (REQ-V1.3.4): the v1.2
+  ``flow archive <change> --in <target>`` surface moves to
+  ``flow archive change <change> --in <target>``. Mirrors the v1.2.0
+  ``flow drift <change>`` → ``flow drift run <change>`` precedent
+  (REQ-V1.2.4). v1.2 cron jobs / shell aliases pointing at the old
+  form must update to the new form. The renamed surface preserves the
+  full flag set (`--in`, `--diff`, `--no-graphify`) and the same skill
+  version-gate exit code 4 on sdd-archive minimum-version violation.
+
 ### Added
 - `flow archive rotate [--older-than Nd] [--dry-run] [--format yaml|json]`
   read-only preview command (REQ-V1.3.4 / v1.3 sub-change d). Lists entries

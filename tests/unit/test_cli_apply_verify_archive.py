@@ -107,10 +107,16 @@ class TestSkillVersionGateCLI:
         assert "skill_version_violation" in stderr
         assert "sdd-verify" in stderr
 
-    def test_flow_archive_exits_4_on_skill_version_violation(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    def test_flow_archive_change_exits_4_on_skill_version_violation(
+        self, tmp_path: Path, monkeypatch: pytest.Monkeypatch,
     ) -> None:
-        """flow archive exits 4 when sdd-archive on disk is below pyproject minimum."""
+        """``flow archive change`` exits 4 when sdd-archive on disk is below pyproject minimum.
+
+        As of v1.3.0-alpha (sub-change d), the v1.2 surface ``flow archive <change>``
+        moved to ``flow archive change <change>`` (BREAKING — see CHANGELOG).
+        This test verifies that the skill-version-gate still fires under the
+        new namespace.
+        """
         _lay_skill(tmp_path, "sdd-archive", "2.0")
         _write_pyproject_min_versions(tmp_path, {"sdd-archive": "3.0"})
         _set_scaffold_change(tmp_path, "demo")
@@ -118,7 +124,7 @@ class TestSkillVersionGateCLI:
             osc_module.Path, "home", classmethod(lambda cls: tmp_path),
         )
 
-        result = runner.invoke(main, ["archive", "demo", "--in", str(tmp_path)])
+        result = runner.invoke(main, ["archive", "change", "demo", "--in", str(tmp_path)])
         assert result.exit_code == 4
         stderr = result.stderr or ""
         assert "skill_version_violation" in stderr
