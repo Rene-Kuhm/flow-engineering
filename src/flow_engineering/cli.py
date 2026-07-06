@@ -692,8 +692,7 @@ def _resolve_cross_project_root(root_path: Path | None) -> Path | None:
     """
     if root_path is not None:
         return root_path
-    resolved = _resolve_projects_root(None)
-    return resolved
+    return _resolve_projects_root(None)
 
 
 @main.command(name="where")
