@@ -317,7 +317,11 @@ def verify(change: str, target: Path, test_output: str) -> None:
         click.echo(f"Failure class: {result.failure_class.value}")
 
 
-@main.command()
+# NOTE: previously declared with `@main.command()`. Now registered as a
+# subcommand of the new `archive` group below. The function body is
+# preserved verbatim; the surface moves from `flow archive <change>`
+# to `flow archive change <change>` (BREAKING per CHANGELOG v1.3.0-alpha,
+# mirrors the v1.2 `flow drift <change>` → `flow drift run <change>` precedent).
 @click.argument("change")
 @click.option(
     "--in",
@@ -5165,6 +5169,36 @@ def archive_group() -> None:
 from flow_engineering.cli.rotation import rotate_cmd  # noqa: E402
 
 archive_group.add_command(rotate_cmd)
+
+
+# v1.2 surface ``flow archive <change> --in <target>`` rewritten as
+# ``flow archive change <change> --in <target>`` (v1.3.0-alpha BREAKING,
+# per spec REQ-V1.2.4 precedent for `flow drift run`).
+@archive_group.command(name="change")
+@click.argument("change")
+@click.option(
+    "--in",
+    "target",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    default=Path.cwd(),
+)
+@click.option("--diff", default="", help="Diff text for structural change detection.")
+@click.option("--no-graphify", is_flag=True, help="Skip the graphify rebuild (dry-run).")
+def archive_change_cmd(change: str, target: Path, diff: str, no_graphify: bool) -> None:
+    """Archive change (ARCHIVING -> DONE), trigger graph rebuild."""
+    _enforce_min_skill_versions_or_exit(target / "pyproject.toml")
+    result = archive_change(
+        change=change,
+        target=target,
+        diff_text=diff,
+        dry_run_graphify=no_graphify or True,  # v0.1.0: always dry-run by default
+    )
+    click.echo(result.message)
+    if result.graphify_decision:
+        click.echo(
+            f"graphify_decision: {'applied' if result.graphify_decision.applied else 'skipped'}",
+        )
+    sys.exit(result.exit_code)
 
 
 if __name__ == "__main__":
