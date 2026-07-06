@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0-alpha] - unreleased
+
+### Changed
+- `README.md` expanded from 1.1 KB to ~7 KB with badges, architecture
+  section, capabilities matrix, compatibility table, OpenCode plugin
+  mention, and contribution link. Removed stale "PR #1 bootstrap" status
+  line and stale cross-refs to `propose/design/spec/tasks.md` (canonical
+  path is `openspec/changes/{name}/`). (REQ-V1.3.3)
+
 ## [1.2.0] - 2026-06-28
 
 ### BREAKING
