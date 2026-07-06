@@ -5140,6 +5140,12 @@ def prompts_show(
 
 
 # ---------- REQ-V1.3.4: flow archive rotate (read-only archive preview) ----------
+# Note: this ``cli/__init__.py`` is the result of the v1.3 sub-change (d)
+# apply that relocated the original monolithic ``cli.py`` (5168 lines) here
+# verbatim. The package layout was created so that
+# ``flow_engineering.cli.rotation`` is importable; see commit 2120df5 for the
+# rename-detection commit. Subsequent sub-change (e) cli-split slices will
+# further modularise this file.
 
 
 @main.group(name="archive")
