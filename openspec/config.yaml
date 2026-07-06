@@ -1,0 +1,19 @@
+schema_version: 1
+project_root: .
+change_dir: openspec/changes
+archive_dir: openspec/changes/archive
+specs_dir: openspec/specs
+strict_tdd: true
+testing:
+  runner: "uv run pytest"
+  bdd_base_dir: tests/bdd
+openspec_layout:
+  change: "{change_dir}/{change-name}/"
+  archived: "{archive_dir}/{YYYY-MM-DD}-{change-name}/"
+rules:
+  chained_pr_over_400_loc: required
+  require_bdd_per_req: true
+  spec_drift_is_critical: true
+conventions:
+  commits: "conventional"
+  branches: "codex/{change-name}-pr{N}[a-d]-{label}"
