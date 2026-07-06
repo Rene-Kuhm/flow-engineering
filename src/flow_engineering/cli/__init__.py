@@ -5195,9 +5195,9 @@ def archive_change_cmd(change: str, target: Path, diff: str, no_graphify: bool) 
     click.echo(result.message)
     if result.graphify_decision:
         click.echo(
-            f"graphify_decision: {'applied' if result.graphify_decision.applied else 'skipped'}",
+            f"Graphify: mode={result.graphify_decision.mode} "
+            f"cost=${result.graphify_decision.estimated_cost_usd:.2f}"
         )
-    sys.exit(result.exit_code)
 
 
 if __name__ == "__main__":
