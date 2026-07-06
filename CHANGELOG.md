@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0-alpha] - 2026-07-06
+
+### Added
+- `flow archive rotate [--older-than Nd] [--dry-run] [--format yaml|json]`
+  read-only preview command (REQ-V1.3.4 / v1.3 sub-change d). Lists entries
+  in `openspec/changes/archive/` older than N days (default 90). Default
+  behavior is dry-run; never mutates disk. Emits YAML or JSON to stdout.
+  Includes a Windows mtime fallback (`git log -1 --format=%ct`) for
+  filesystem/git-checkout skew. Destructive rotation deferred to
+  `chore/archive-rotation-2026`.
+
 ## [1.2.0] - 2026-06-28
 
 ### BREAKING
