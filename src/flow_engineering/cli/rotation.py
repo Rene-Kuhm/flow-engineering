@@ -28,7 +28,22 @@ import click
 import yaml
 
 # Paths resolved at call time (not import time) so tests can chdir freely.
-_REPO_ROOT_PARENTS = 2  # archive_dir is <repo>/openspec/changes/archive; .parents[2] = <repo>
+# Constants. archive_dir is <repo>/openspec/changes/archive when invoked
+# from the repo root; the parent indices below are documented on purpose
+# because they participate in two different computations below.
+#
+#   archive_dir = Path("openspec/changes/archive")
+#       archive_dir.parents[0]  = Path("openspec/changes")
+#       archive_dir.parents[1]  = Path("openspec")    <-- output relative_to base
+#       archive_dir.parents[2]  = Path(".")           <-- repo root (git cwd)
+#
+# Keeping the two indices as named constants makes each usage explicit so a
+# future reader does not have to re-derive which `parents[N]` resolves to what.
+
+_REPO_PARENT_DEPTH = 2  # archive_dir.parents[2] = repo root (cwd for ``git log``)
+_OUTPUT_RELATIVE_PARENT = 1  # archive_dir.parents[1] = "openspec/" (relative-to base for output paths)
+
+_SECONDS_PER_DAY = 86400  # seconds in one day (epoch ⇄ days conversions)
 _GIT_FALLBACK_THRESHOLD_DAYS = 30
 
 
@@ -47,7 +62,7 @@ def _entry_mtime(entry: Path) -> float:
     proposal = entry / "proposal.md"
     if proposal.exists():
         try:
-            repo_root = entry.parents[_REPO_ROOT_PARENTS]
+            repo_root = entry.parents[_REPO_PARENT_DEPTH]
             result = subprocess.run(
                 ["git", "log", "-1", "--format=%ct", str(proposal)],
                 capture_output=True,
@@ -59,7 +74,7 @@ def _entry_mtime(entry: Path) -> float:
             if git_ts and git_ts.isdigit():
                 git_mtime = float(git_ts)
                 # If fs_mtime is way more recent than git (git checkout skew), prefer git.
-                if fs_mtime > git_mtime + (_GIT_FALLBACK_THRESHOLD_DAYS * 86400):
+                if fs_mtime > git_mtime + (_GIT_FALLBACK_THRESHOLD_DAYS * _SECONDS_PER_DAY):
                     return git_mtime
         except (subprocess.SubprocessError, OSError):
             pass
@@ -70,14 +85,19 @@ def _entry_mtime(entry: Path) -> float:
 def _candidate_entries(archive_dir: Path, older_than_days: int) -> list[dict[str, Any]]:
     """Return list of ``{path, mtime_days_ago, sha256}`` dicts for entries
     older than ``older_than_days``.
+
+    Output ``path`` is the entry's path **relative to the ``openspec/``
+    directory** (e.g. ``changes/archive/2026-06-25-decision-code-linking``).
+    This is by design: ``openspec/`` is the operator-facing root, and the
+    rendered output is meant to be copy-pasteable into the canonical SDD
+    location paths (the ``relative_to`` base is captured by the
+    ``_OUTPUT_RELATIVE_PARENT`` constant).
     """
     if not archive_dir.exists():
         return []
-    cutoff = (
-        datetime.now(tz=UTC).timestamp() - (older_than_days * 86400)
-    )
-    candidates: list[dict[str, Any]] = []
     now_ts = datetime.now(tz=UTC).timestamp()
+    cutoff = now_ts - older_than_days * _SECONDS_PER_DAY
+    candidates: list[dict[str, Any]] = []
     for entry in sorted(archive_dir.iterdir()):
         if not entry.is_dir():
             continue
@@ -88,14 +108,13 @@ def _candidate_entries(archive_dir: Path, older_than_days: int) -> list[dict[str
         sha = ""
         if proposal.exists():
             sha = hashlib.sha256(proposal.read_bytes()).hexdigest()[:12]
-        rel: Path = entry
         try:
-            rel = entry.relative_to(archive_dir.parents[_REPO_ROOT_PARENTS - 1])
+            rel = entry.relative_to(archive_dir.parents[_OUTPUT_RELATIVE_PARENT])
         except ValueError:
             rel = entry
         candidates.append({
             "path": str(rel),
-            "mtime_days_ago": int((now_ts - mtime) / 86400),
+            "mtime_days_ago": int((now_ts - mtime) / _SECONDS_PER_DAY),
             "sha256": sha,
         })
     return candidates
