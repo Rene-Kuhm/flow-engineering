@@ -69,7 +69,11 @@ warn_redundant_casts = true
 # mypy to ignore_missing_imports is the standard pattern for 3rd-party deps
 # without stubs and avoids forcing the test suite to install the extra just to
 # type-check the optional code paths.
-module = ["torch", "sentence_transformers", "sqlite_vec"]
+#
+# `yaml` (PyYAML) is also used at runtime without bundled type stubs; the
+# library is small, stable, and ubiquitous, so we don't gate it behind an
+# extra — we just opt out of strict import checking for it.
+module = ["torch", "sentence_transformers", "sqlite_vec", "yaml"]
 ignore_missing_imports = true
 
 [tool.flow_engineering.prompts]
