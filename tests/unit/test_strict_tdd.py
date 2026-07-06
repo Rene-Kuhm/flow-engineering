@@ -35,6 +35,28 @@ class TestLoadSddInit:
         result = load_sdd_init(tmp_path)
         assert result == {"strict_tdd": False}
 
+    def test_yaml_style_strict_tdd_true_marker(self, tmp_path: Path) -> None:
+        """REQ-V1.3.1: ``strict_tdd: true`` YAML-style marker is accepted."""
+        sdd_init = tmp_path / "sdd-init"
+        sdd_init.mkdir()
+        (sdd_init / "flow-engineering.md").write_text(
+            "---\nproject: flow-engineering\nstrict_tdd: true\n---\n\n"
+            "# flow-engineering sdd-init marker\n"
+        )
+        result = load_sdd_init(tmp_path)
+        assert result is not None
+        assert result["strict_tdd"] is True
+
+    def test_real_project_marker_restored_returns_strict_tdd_true(self) -> None:
+        """REQ-V1.3.1: calling ``load_sdd_init('.')`` on the project root
+        must return a non-None mapping with ``strict_tdd: True`` after
+        sub-change (a) restores ``sdd-init/flow-engineering.md``.
+        """
+        project_root = Path(__file__).resolve().parents[2]
+        result = load_sdd_init(project_root)
+        assert result is not None
+        assert result["strict_tdd"] is True
+
 
 class TestShouldEnforceStrictTdd:
     def test_true_when_sdd_init_says_so(self, tmp_path: Path) -> None:

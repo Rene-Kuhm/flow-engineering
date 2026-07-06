@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0-alpha] - 2026-07-06
+
+### Added
+- Restored `sdd-init/flow-engineering.md`, `openspec/config.yaml`,
+  `.atl/skill-registry.md` — re-activates Article III (Strict TDD)
+  enforcement on `main` (was dormant since 2026-07-01 because the
+  marker files existed locally but were never committed).
+
 ## [1.2.0] - 2026-06-28
 
 ### BREAKING
