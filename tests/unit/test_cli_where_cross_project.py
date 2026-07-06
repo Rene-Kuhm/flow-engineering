@@ -293,3 +293,4 @@ def test_where_cmd_scope_discipline_excludes_node_modules(tmp_path: Path) -> Non
     assert result.exit_code == 0, result.output
     assert "node_modules" not in result.output
     assert "bar.js" not in result.output
+
