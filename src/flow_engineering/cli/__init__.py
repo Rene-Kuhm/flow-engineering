@@ -3153,7 +3153,11 @@ def workspace_dashboard_cmd(
 )
 def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
     """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
-    from flow_engineering import health, health_render  # noqa: F401
+    from io import StringIO
+
+    from rich.console import Console
+
+    from flow_engineering import health, health_render
 
     resolved = _resolve_projects_root(root)
     if not resolved.is_dir():
@@ -3166,7 +3170,15 @@ def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
         click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
         return
 
-    raise NotImplementedError("text render deferred to PR4b T-PR4b-1")
+    # REQ-WORKSPACE-HEALTH-TEXT-1/2/3/4 (PR4b): delegate to the PR3-locked
+    # renderer (``render_workspace_health_text``) and capture its output
+    # in a per-call StringIO Console (Constitution Article V: no globals).
+    # ``--no-color`` seam lands in T-PR4b-3.
+    buffer = StringIO()
+    rendered = health_render.render_workspace_health_text(
+        envelope, console=Console(file=buffer, width=120)
+    )
+    click.echo(rendered)
 
 
 # =============================================================================
