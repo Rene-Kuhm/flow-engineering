@@ -3137,6 +3137,43 @@ def workspace_dashboard_cmd(
 # the text render branch, --filter, and --no-color.
 
 
+_HEALTH_FILTER_CHOICES: tuple[str, ...] = ("R6", "R7", "R8", "R9")
+
+
+def _normalize_filter_rules(
+    ctx: click.Context, param: click.Parameter, value: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Normalize ``--filter`` tokens: split comma-separated AND validate against R6-R9.
+
+    REQ-WORKSPACE-HEALTH-FILTER-1/2 (PR4b): Click's built-in
+    ``multiple=True`` only accepts repeated flags (``--filter R6 --filter R7``);
+    it does NOT auto-split comma-separated values (``--filter R6,R7``). The
+    spec mandates both forms MUST be equivalent, so we split + validate in
+    this callback (replacing ``click.Choice`` so the manual check happens
+    AFTER splitting). Click's ``BadParameter`` machinery surfaces unknown
+    tokens at parse time (exit 2) before any ``fetch_workspace_health``
+    side effect (REQ-FILTER-1 parse-time rejection).
+    """
+    if not value:
+        return ()
+    flat: list[str] = []
+    for raw in value:
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            normalized = token.upper()
+            if normalized not in _HEALTH_FILTER_CHOICES:
+                allowed = ", ".join(_HEALTH_FILTER_CHOICES)
+                raise click.BadParameter(
+                    f"{token!r} is not one of {allowed}.",
+                    ctx=ctx,
+                    param=param,
+                )
+            flat.append(normalized)
+    return tuple(flat)
+
+
 @workspace_group.command(name="health")
 @click.option(
     "--root",
@@ -3155,10 +3192,12 @@ def workspace_dashboard_cmd(
     "--filter",
     "filter_rules",
     multiple=True,
-    type=click.Choice(["R6", "R7", "R8", "R9"], case_sensitive=False),
+    type=click.STRING,
+    callback=_normalize_filter_rules,
     help=(
-        "Filter by rule (repeatable): R6=missing-README, R7=missing-tests-infra, "
-        "R8=missing-openspec, R9=committed-tooling-dirs."
+        "Filter by rule (repeatable). Comma-separated or repeated flags: "
+        "R6=missing-README, R7=missing-tests-infra, R8=missing-openspec, "
+        "R9=committed-tooling-dirs."
     ),
 )
 @click.option(

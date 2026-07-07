@@ -19,7 +19,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from flow_engineering.cli import main, workspace_health_cmd
-from tests.unit._workspace_fixtures import make_project
+from tests.unit._workspace_fixtures import make_project, make_python_project
 
 runner = CliRunner()
 
@@ -260,3 +260,113 @@ def test_workspace_health_cmd_text_ascii_ellipsis(tmp_path: Path) -> None:
         f"path neither truncated with ASCII ellipsis nor kept within 120 cols. "
         f"stdout={result.stdout!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# T-PR4b-6: --filter behavior + --no-color seam + byte-determinism.
+# ---------------------------------------------------------------------------
+
+
+def _build_charlie_with_r6_r7_r8(parent: Path) -> Path:
+    """Build a 1-project workspace with charlie carrying triggers [R6,R7,R8].
+
+    ``make_python_project`` with ``tests=False`` (no Makefile → R7) and
+    ``openspec=False`` (no openspec dir → R8) gives 3 triggers (R6 missing
+    README + R7 missing tests infra + R8 missing openspec) → verdict CRITICAL.
+    ``git=False`` keeps the fixture minimal.
+    """
+    parent.mkdir()
+    make_python_project(parent, "charlie", git=False, tests=False, openspec=False)
+    return parent
+
+
+def test_workspace_health_cmd_filter_choice_enforced(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-FILTER-1-CLICK-CHOICE: unknown token → exit 2, no fetch side effects.
+
+    Locks: ``--filter R99`` raises ``click.BadParameter`` (Click's default
+    for unknown choice tokens), which writes ``"Invalid value"`` to stderr
+    and exits with code 2. Crucially, stdout stays empty — the parse-time
+    rejection prevents any ``fetch_workspace_health`` side effect.
+    """
+    p = _build_single_project_workspace(tmp_path)
+    result = runner.invoke(main, ["workspace", "health", "--filter", "R99", "--root", str(p)])
+
+    assert result.exit_code == 2, (result.output, result.stderr)
+    assert "Invalid value" in result.stderr, result.stderr
+    assert result.stdout == "", f"stdout should be empty (parse-time rejection); got {result.stdout!r}"
+
+
+def test_workspace_health_cmd_filter_multi_value(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-FILTER-2-MULTI-VALUE: comma-split ≡ repeated flags (sha256 equal).
+
+    Locks: ``--filter R6,R7 --json`` produces the same envelope as
+    ``--filter R6 --filter R7 --json``. Click's ``multiple=True`` accepts
+    both surface forms; the CLI must thread both through to
+    ``filter_health_by_rules`` without distinguishing them.
+    """
+    p = tmp_path / "projects"
+    _build_charlie_with_r6_r7_r8(p)
+
+    out1 = runner.invoke(main, ["workspace", "health", "--filter", "R6,R7", "--json", "--root", str(p)]).output.strip()
+    out2 = runner.invoke(
+        main, ["workspace", "health", "--filter", "R6", "--filter", "R7", "--json", "--root", str(p)]
+    ).output.strip()
+
+    assert hashlib.sha256(out1.encode("utf-8")).hexdigest() == hashlib.sha256(out2.encode("utf-8")).hexdigest(), (
+        f"--filter R6,R7 must equal --filter R6 --filter R7.\nout1={out1!r}\nout2={out2!r}"
+    )
+
+
+def test_workspace_health_cmd_filter_effect(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-FILTER-3-EFFECT: filtered triggers recompute verdict + recommendations.
+
+    Locks: ``--filter R6`` against charlie (triggers=[R6,R7,R8], verdict=CRITICAL)
+    leaves the project with triggers=[R6] (R7+R8 dropped), verdict
+    recomputed to NEEDS-ATTENTION (1 trigger), and recommendations
+    filtered in lock-step to length 1.
+    """
+    p = tmp_path / "projects"
+    _build_charlie_with_r6_r7_r8(p)
+
+    result = runner.invoke(main, ["workspace", "health", "--filter", "R6", "--json", "--root", str(p)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert len(payload["projects"]) == 1
+    project = payload["projects"][0]
+    assert project["triggers"] == ["R6"]
+    assert project["verdict"] == "NEEDS-ATTENTION"
+    assert len(project["recommendations"]) == 1
+
+
+def test_workspace_health_cmd_nocolor_console_seam(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-NOCOLOR-1-CONSOLE: --no-color strips ANSI from text output.
+
+    Locks: ``--no-color`` makes the renderer's Console with
+    ``no_color=True``, so the output contains NO ANSI escape sequences
+    (``\x1b[``). The text branch must still fire (stdout starts with the
+    panel title or the empty-workspace sentinel).
+    """
+    p = _build_single_project_workspace(tmp_path)
+    result = runner.invoke(main, ["workspace", "health", "--no-color", "--root", str(p)])
+
+    assert result.exit_code == 0, result.output
+    assert "\x1b[" not in result.stdout, f"ANSI escape found in --no-color output: {result.stdout!r}"
+    assert "Workspace health" in result.stdout or result.stdout.startswith("(no projects to report)")
+
+
+def test_workspace_health_cmd_nocolor_byte_deterministic(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-NOCOLOR-2-DETERMINISTIC: --no-color output is sha256 stable.
+
+    Locks: two consecutive ``--no-color --root <p>`` invocations against
+    the same workspace produce byte-identical stdout. Cross-checks the
+    byte-determinism invariant at the text branch (REQ-JSON-2 was the
+    JSON branch; this is its text-mode twin).
+    """
+    p = tmp_path / "projects"
+    _build_charlie_with_r6_r7_r8(p)
+
+    out1 = runner.invoke(main, ["workspace", "health", "--no-color", "--root", str(p)]).output
+    out2 = runner.invoke(main, ["workspace", "health", "--no-color", "--root", str(p)]).output
+
+    assert hashlib.sha256(out1.encode("utf-8")).hexdigest() == hashlib.sha256(out2.encode("utf-8")).hexdigest()
