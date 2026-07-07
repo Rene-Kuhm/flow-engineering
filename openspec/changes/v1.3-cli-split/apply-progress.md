@@ -314,3 +314,251 @@ https://github.com/Rene-Kuhm/flow-engineering/pull/33
 - `src/flow_engineering/cli/workspace.py` — NEW; 737 LOC (681 body + 56 imports/docstring).
 - `src/flow_engineering/cli/__init__.py` — net -681 LOC; added lazy import + 2 re-exports; moved `main` def above lazy import block.
 - `openspec/changes/v1.3-cli-split/apply-progress.md` — THIS FILE (appended Slice 2 section).
+---
+
+## Slice 3 - T-3 (cli/project.py)
+
+> **Apply batch**: 3 of 8 (Slice 3 / 8)
+> **Date**: 2026-07-07
+> **Branch base**: `codex/v1.3-cli-split-2-workspace @ aa5ff08` (Slice 2 merged via PR #33 → tracker; integration merge via PR #34 → tracker `23b569f`)
+> **Tracker**: `feature/v1.3-cli-split @ 23b569f`
+> **Slice branch**: `codex/v1.3-cli-split-3-project`
+> **PR**: (pending creation; see PR URL section after push)
+
+### Goal
+
+Mechanically relocate the `flow projects` Click group + its 5 private helpers (`_git`, `_detect_stack`, `_detect_test_commands`, `_has_pytest_config`, `_detect_project_markers`) and the 3 subcommand bodies (`projects_ls`, `projects_backfill`, `projects_alias`) from `cli/__init__.py` to a NEW `cli/project.py`, preserving the public API surface (`_detect_project_markers`, `_git`) and the byte-deterministic `flow workspace health --json` output (REQ-CLI-SPLIT-3).
+
+### Source range determination
+
+The orchestrator spec quoted `cli/__init__.py:3575–4101` (pre-Slice-1 numbering, when the file was 5337 LOC). After Slice 1's `-88` LOC shift and Slice 2's `-681` LOC shift the same content lives at `2815-3340` post-Slice-2. Two pragmatic adjustments (mirroring Slice 2's pattern):
+
+1. **Start at 2815** (the section header `# ---------- REQ-24: flow projects backfill ----------`): included so the new file owns its own section header. The leftover workspace section header at line 2825 (`# ---------- Phase 3: flow workspace status ----------`) is a Slice 2 leftover that was NOT touched per the hard constraints (Slice 4 doc-cleanup territory).
+2. **End at 3340** (the trailing `sys.exit(1)` line of `projects_alias`): the 2 trailing blank lines at 3354-3355 were dropped so the result has 2 blank lines between the leftover workspace header and the next section (`snapshot` at the new line 2828). Same end-trim precedent as Slice 2.
+
+Final extracted range: post-Slice-2 `cli/__init__.py:2815-3340` (526 lines body, 528 lines including the 2 trailing blanks). New `cli/project.py`: 579 lines total (526 body + 53 lines of imports + docstring + 2 lazy-import helpers added; net -49 vs. raw body because the docstring and imports add structure).
+
+### Files Changed
+
+| File | Action | LOC | Detail |
+|---|---|---|---|
+| `src/flow_engineering/cli/project.py` | NEW | +579 (526 body + 53 imports/docstring) | Verbatim body relocation from `cli/__init__.py` lines 2815-3340 (post-Slice-2; pre-Slice-1+2 equivalent 3575-4101 per tasks.md T-3). Minimal top-level imports (`json`, `os`, `subprocess`, `sys`, `Path`, `Any`, `click`, `observability`, `main`, `_iter_project_subdirs`, `apply_tag as _apply_tag`). Plus module docstring describing Slice 3 origin + the two lazy-import patterns. |
+| `src/flow_engineering/cli/__init__.py` | modified | -528 LOC (lines 2828-3355 removed) + 13 inserted | Removed the project cluster. Added: lazy `from . import project as _project` (Slice 1+2 precedent), re-exports `_detect_project_markers` and `_git`. The `main` Click group definition is already ABOVE the lazy-import block (Slice 2 placement), so `project.py` can `from flow_engineering.cli import main` at decorator-evaluation time without circular import. |
+
+Net: `cli/__init__.py` went from 4580 → 4065 LOC. New `cli/project.py` carries the 526-line body + 53 lines of scaffolding.
+
+### Pragmatic body adjustments (NOT byte-identical for these lines)
+
+Mechanical relocation across modules forces two cross-module reference fixes that don't change behavior but are required for the module split to work:
+
+1. **`_git` lazy import in `_detect_project_markers`**: the function body adds `from flow_engineering.cli import _git  # noqa: F401` at function entry (right after the docstring). Tests in `tests/unit/test_cli_workspace_status.py` and `tests/unit/test_cli_projects.py` patch `cli_mod._git` via `monkeypatch.setattr(cli_mod, "_git", fake_git)` and expect the patched value to flow through `_detect_project_markers` (called transitively by `workspace_status` and directly). After Slice 3, `_git` lives in `project.py` and is re-exported; same-module `_git(...)` calls inside `_detect_project_markers` would bypass the monkeypatch because the local module binding (`project._git`) is the original. Lazy import re-fetches `cli._git` on every call. **Same pattern as Slice 2's lazy import of `_detect_project_markers` inside `workspace.py`** (see Slice 2 apply-progress §"Pragmatic body adjustments" item 1). Without this fix, 4 tests fail (`test_detect_project_markers_captures_dirty_files`, `test_detect_project_markers_dirty_files_empty_on_clean_status`, `test_workspace_status_r1_dirty_project`, `test_workspace_status_text_output`) because the patched `fake_git` is never invoked.
+
+2. **`_parse_since` and `_default_save_backend` lazy imports in `projects_backfill`**: the function body adds `from flow_engineering.cli import _parse_since` and `from flow_engineering.cli import _default_save_backend` at function entry. These helpers are defined later in `cli/__init__.py` (lines 2014 and 839 respectively) and cannot be bound at `project.py` module-import time without a circular import. **Same pattern as Slice 2's lazy imports of `_detect_project_markers` inside `workspace.py`**. The existing `from flow_engineering import project_aliases as _aliases` lazy import (which was already in the original code) is preserved verbatim.
+
+### Verification Evidence
+
+#### Public API preserved (REQ-CLI-SPLIT-2 - names re-exported via `flow_engineering.cli`)
+
+```
+$ uv run python -c "from flow_engineering.cli import _detect_project_markers, _git, main; \
+    print('public_api_preserved: ok'); \
+    print('_detect_project_markers:', _detect_project_markers); \
+    print('_git:', _git); \
+    print('main:', main)"
+public_api_preserved: ok
+_detect_project_markers: <function _detect_project_markers at 0x000001E07C3EA160>
+_git: <function _git at 0x000001E07C3E9E40>
+main: <Group main>
+```
+
+All 3 names (the 2 re-exports + `main`) resolve correctly through the top-level re-export. Slice 3 only adds re-exports for `_detect_project_markers` and `_git` (per tasks.md T-3 explicit `re_exports` list); other private helpers (`_detect_stack`, `_detect_test_commands`, `_has_pytest_config`, `projects_ls`, `projects_backfill`, `projects_alias`) remain submodule-internal only, matching their pre-split scope.
+
+```bash
+$ git grep -n "from flow_engineering\.cli import" tests/ src/ | grep -E "_detect_project_markers|_git\b"
+src/flow_engineering/cli/workspace.py:186:    from flow_engineering.cli import _detect_project_markers  # noqa: F401
+src/flow_engineering/cli/workspace.py:589:    from flow_engineering.cli import _detect_project_markers  # noqa: F401
+src/flow_engineering/health.py:538:    from flow_engineering.cli import _detect_project_markers
+src/flow_engineering/workspace_hygiene.py:363:    from flow_engineering.cli import _git
+tests/unit/test_cli_projects.py:610:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:619:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:628:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:636:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:655:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:664:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:673:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:685:        from flow_engineering.cli import _detect_project_markers
+tests/unit/test_cli_projects.py:700:        from flow_engineering.cli import _detect_project_markers
+```
+
+All 13 cross-module import sites resolve cleanly. `workspace.py` already lazy-imports `_detect_project_markers` from `flow_engineering.cli` (Slice 2 fix) — Slice 3 preserves that contract. The 9 `test_cli_projects.py` sites import `_detect_project_markers` from `flow_engineering.cli` and pick up the new re-export transparently.
+
+#### pytest gate - targeted workspace slice (34 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_workspace_status.py tests/unit/test_cli_workspace_health.py -v --no-header
+collected 34 items
+tests/unit/test_cli_workspace_status.py::test_workspace_status_json_envelope_and_r4 PASSED [  2%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_r1_dirty_project PASSED [  5%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_r2_no_git_project PASSED [  8%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_r3_no_tests_project PASSED [ 11%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_r5_graphify_is_informational_only PASSED [ 14%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_text_output PASSED [ 17%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_subdir_scan_excludes_dot_prefix_dirs PASSED [ 20%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_empty_root_text_and_json PASSED [ 23%]
+tests/unit/test_cli_workspace_status.py::test_iter_project_subdirs_helper_excludes_dot_prefix PASSED [ 26%]
+tests/unit/test_cli_workspace_status.py::test_iter_project_subdirs_helper_empty_when_only_dot_dirs PASSED [ 29%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_json_byte_identical PASSED [ 32%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_projects_verbatim_from_detector PASSED [ 35%]
+tests/unit/test_cli_workspace_status.py::test_workspace_status_does_not_change_projects_ls_schema PASSED [ 38%]
+tests/unit/test_cli_workspace_status.py::test_detect_project_markers_captures_dirty_files PASSED [ 41%]
+tests/unit/test_cli_workspace_status.py::test_detect_project_markers_dirty_files_empty_on_clean_status PASSED [ 44%]
+tests/unit/test_cli_workspace_status.py::test_detect_project_markers_dirty_files_empty_on_subprocess_error PASSED [ 47%]
+tests/unit/test_cli_workspace_status.py::test_summarize_threads_dirty_files_when_r1 PASSED [ 50%]
+tests/unit/test_cli_workspace_status.py::test_summarize_omits_dirty_files_when_not_r1 PASSED [ 52%]
+tests/unit/test_cli_workspace_health.py::test_workspace_health_cmd_json_envelope_shape PASSED [ 55%]
+... [16 more] ...
+tests/unit/test_cli_workspace_health.py::test_workspace_health_cmd_nocolor_byte_deterministic PASSED [100%]
+
+34/34 PASSED
+```
+
+#### pytest gate - full CLI suite (`tests/unit/test_cli_*.py`)
+
+```
+$ uv run pytest tests/unit/test_cli_*.py -q
+........................................................................ [ 22%]
+..................................FF.F.F................................ [ 45%]
+........................................................................ [ 67%]
+........................................................................ [ 90%]
+................................                                         [100%]
+```
+
+The visible output shows the 4 pre-existing `test_cli_reindex.py` failures (FF.F.F pattern at 45% position); 316 tests passed and 4 failed in the visible window, matching Slice 2's baseline (`331 passed, 4 failed, 1 skipped` with slightly different file enumeration). The 4 failures are identical to Slice 1+2's baseline and confirmed against `origin/main @ 8577d9c`:
+
+- `test_reindex_250_obs_emits_three_progress_lines`
+- `test_second_reindex_emits_zero_done_line`
+- `test_partial_run_then_full_run_completes`
+- `test_reindex_emits_counter_events`
+
+These require a live Engram backend / network fixture unavailable in this Windows environment. NOT regressions introduced by Slice 3.
+
+#### Byte-determinism (REQ-CLI-SPLIT-3)
+
+```
+$ uv run flow workspace health --json > slice3-sha.txt
+$ Get-FileHash -Algorithm SHA256 slice3-sha.txt
+Hash: B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+```
+
+Cross-check against `origin/feature/v1.3-cli-split @ 23b569f` baseline:
+- `origin/feature/v1.3-cli-split @ 23b569f`: `B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D` (identical)
+- `codex/v1.3-cli-split-3-project`: `B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D` (identical)
+
+Byte-identical. REQ-CLI-SPLIT-3 satisfied. (This is expected because Slice 3 does not touch the `flow workspace` Click group or its helpers — the workspace command is untouched.)
+
+#### Click group integrity (no double-registration)
+
+```
+$ uv run flow --help | grep -E "^\s+(workspace|projects|snapshot|prompts|metrics|archive|where|apply)"
+  apply            Apply tasks for a change (TASKED -> APPLYING ->...
+  archive          Read-only archive introspection (REQ-V1.3.4).
+  metrics          Dump the JSONL counter sink as a summary (REQ-8 close).
+  projects         Manage project tags and aliases (REQ-24, REQ-27).
+  prompts          Inspect and validate prompt registry + SKILL catalog...
+  snapshot         Manage immutable snapshots of the Engram observation...
+  where            Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4...
+  workspace        Inspect workspace-level status synthesized from...
+```
+
+`projects` appears exactly ONCE in the top-level `flow --help`. All 8 groups (apply, archive, metrics, projects, prompts, snapshot, where, workspace) registered. The `projects` subcommand tree:
+
+```
+$ uv run flow projects --help
+Commands:
+  alias     Append a rename record to ``project-aliases.json`` (REQ-27).
+  backfill  Re-tag observations safely (REQ-24, design D3 safety gate +...
+  ls        List sibling projects with type markers (python/astro/next/rust/go/node).
+```
+
+3 subcommands registered under `projects_group` (alias, backfill, ls). No double-registration. Smoke test: `uv run flow projects ls --root "C:\dev\proyects\flow-engineering" --json` returns the v1 envelope.
+
+#### UTF-8 round-trip (Lesson 1 mandate)
+
+```
+$ uv run python -c "
+import pathlib
+for p in ['src/flow_engineering/cli/__init__.py', 'src/flow_engineering/cli/project.py']:
+    pathlib.Path(p).read_text(encoding='utf-8')
+    print(f'{p}: utf-8 OK')
+"
+src/flow_engineering/cli/__init__.py: utf-8 OK
+src/flow_engineering/cli/project.py: utf-8 OK
+```
+
+Both files round-trip cleanly through UTF-8. No cp1252 mojibake; no encoding corruption.
+
+### 400-LOC budget (REQ-CLI-SPLIT-5)
+
+| Metric | Value | Threshold | Status |
+|---|---|---|---|
+| Insertions | 592 | - | - |
+| Deletions | 528 | - | - |
+| Net changed | 1120 (sum) / +64 (net) | 400 | **over budget** — "Mechanical relocation, not new logic" justification required per REQ-CLI-SPLIT-5 |
+
+Justification (literal copy in PR body):
+- 528 deletions are pure mechanical extraction of lines 2815-3340 (no new logic).
+- 592 insertions are 526 lines of verbatim body + 53 lines of imports/docstring/lazy-import scaffolding + 13 lines added to `cli/__init__.py` (lazy import + 2 re-exports + comment block).
+- Net +64 LOC = scaffolding + docstrings, no algorithmic behavior added.
+- Slice 3 fits the same chained-PR-allowed pattern as Slices 1 + 2 (both also over-budget with the same justification).
+
+### Commits Made (this slice = 1 code commit)
+
+```
+aa2a955 refactor(cli): relocate projects group to cli/project.py (Slice 3/8)
+       2 files changed, 592 insertions(+), 528 deletions(-)
+       create mode 100644 src/flow_engineering/cli/project.py
+```
+
+The task spec prescribed 3 work-unit commits (C1 relocate + C2 re-export + C3 verify). C1 and C2 were merged into a single commit (`aa2a955`) per the work-unit-commits skill flexibility clause and the Slice 1+2 precedents:
+
+- C1 (relocate + 2 lazy imports + first re-export `_detect_project_markers`) and C2 (second re-export `_git`) cannot be separated without breaking the tree between them — after relocating `_detect_project_markers` and `_git` to `project.py`, any reference to those names in `cli/__init__.py` resolves to NameError until the re-export line lands. C1 alone would fail every test that imports `_detect_project_markers` or `_git` from `flow_engineering.cli` (13 cross-module import sites identified above).
+- C3 (verification evidence) is captured in this `apply-progress.md` section instead of a separate commit — the evidence IS the artifact, not a code change. Slice 2 used the same convention (`b031310` ran the byte-determinism gate; the apply-progress section is the persistent record).
+
+Per-slice rollback (`git revert aa2a955`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+
+### PR URL
+
+(pending; see "Next Steps" for creation command)
+
+### Risks Discovered
+
+- **r1 (carried)**: 4 pre-existing `test_cli_reindex.py` failures persist (env-only, not regressions). Confirmed identical pattern vs. `origin/main @ 8577d9c` and `origin/feature/v1.3-cli-split @ 23b569f`.
+- **r2 (NEW, minor)**: the `# ---------- Phase 3: flow workspace status ----------` header at `cli/__init__.py:2825` is a Slice 2 leftover that now sits between drift code (line ~2820) and the snapshot section header (line ~2828). Not part of this slice's per hard constraints (NO modifications to `cli/__init__.py` other than lazy import + re-exports + block deletion). Recommend a follow-up doc-cleanup commit in a future slice (T-3.5 or later) that removes leftover section headers from prior slices.
+- **r3 (carried, encoded)**: `utf-8` cp1252 mojibake trap (Lesson 1). All file writes in this slice used `pathlib.Path.write_text(..., encoding='utf-8')` or the `Edit` tool (which respects UTF-8). Verified via explicit round-trip check.
+
+### Deviations from Design / Spec
+
+- **Source range**: orchestrator spec said `cli/__init__.py:3575-4101` (pre-Slice-1+2 numbering). Post-Slice-2 equivalent is `2815-3340` (the cumulative `-169` LOC shift from Slices 1+2). End trimmed by 2 LOC to drop trailing blanks (same end-trim precedent as Slice 2). Final range: 2815-3340 (526 body lines, 528 with trailing blanks).
+- **Body modifications**: 3 function-level lazy imports added (`_git` in `_detect_project_markers`; `_parse_since` and `_default_save_backend` in `projects_backfill`). Justified by the cross-module reference problem created by the relocation itself. None changes behavior; all match existing lazy-import patterns in the same file (Slice 2 precedent for `_detect_project_markers` in `workspace.py`).
+- **Commit granularity**: spec prescribed 3 commits (C1+C2+C3); implementation is 1 commit (combined) plus this `apply-progress.md` update. C1 and C2 merged per Slice 1+2 precedent; C3 becomes this docs section instead of a code-empty commit.
+- **No UTF-8 corruption**: Slice 2 had a CRITICAL encoding corruption (sdd-verify issue A-1, fixed in `f88b3a0`) caused by writing Python files through a path that defaulted to cp1252 on Windows. Slice 3 uses explicit UTF-8 throughout (`pathlib.Path.write_text(content, encoding='utf-8')` and `Edit` tool); verified round-trip clean.
+
+### Next Steps (for orchestrator)
+
+1. Push `codex/v1.3-cli-split-3-project` to origin.
+2. Open PR against `feature/v1.3-cli-split` (TRACKER, NOT previous slice branch — Lesson 2).
+   ```
+   gh pr create --base feature/v1.3-cli-split \
+     --head codex/v1.3-cli-split-3-project \
+     --title "refactor(cli): relocate projects group to cli/project.py (Slice 3/8)" \
+     --body "Mechanical relocation, not new logic ..."
+   ```
+3. **MERGE MODE: `--merge` (NOT `--squash`)** so the 7 openspec artifacts (which are already on `feature/v1.3-cli-split @ 23b569f` via the integration PR #34) survive onto the tracker unchanged.
+4. Slice 4 (T-4 - `cli/drift.py`, ~600 LOC) branches from this slice's tracker commit after merge.
+5. Apply skill lesson update: codify the `_git` lazy-import pattern for future slices (when relocating code that has monkeypatch seams, the relocated function must lazy-import its collaborators from `flow_engineering.cli` rather than relying on same-module lookups).
+
+### Relevant Files
+
+- `src/flow_engineering/cli/project.py` - NEW; 579 LOC (526 body + 53 imports/docstring/lazy-import helpers).
+- `src/flow_engineering/cli/__init__.py` - net -528 LOC; added lazy import + 2 re-exports + comment block.
+- `openspec/changes/v1.3-cli-split/apply-progress.md` - THIS FILE (appended Slice 3 section).
