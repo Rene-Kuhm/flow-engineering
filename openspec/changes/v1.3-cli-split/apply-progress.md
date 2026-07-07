@@ -562,3 +562,247 @@ Per-slice rollback (`git revert aa2a955`) still works cleanly — rollback bound
 - `src/flow_engineering/cli/project.py` - NEW; 579 LOC (526 body + 53 imports/docstring/lazy-import helpers).
 - `src/flow_engineering/cli/__init__.py` - net -528 LOC; added lazy import + 2 re-exports + comment block.
 - `openspec/changes/v1.3-cli-split/apply-progress.md` - THIS FILE (appended Slice 3 section).
+
+
+---
+
+## Slice 4 - T-4 (cli/drift.py)
+
+> **Apply batch**: 4 of 8 (Slice 4 / 8)
+> **Date**: 2026-07-07
+> **Branch base**: `codex/v1.3-cli-split-3-project @ a219259` (Slice 3 merged via PR #36; awaiting confirmation)
+> **Tracker**: `feature/v1.3-cli-split @ 0d79cbe`
+> **Slice branch**: `codex/v1.3-cli-split-4-drift`
+> **PR**: (pending creation; see "PR URL" section after push)
+
+### Goal
+
+Mechanically relocate the `flow drift` Click group + its private helpers + nested `flow drift events` group + nested deprecated `flow drift-events` alias group (preserved INTACT per REQ-V1.2.4) from `cli/__init__.py` to a NEW `cli/drift.py`, preserving the public API surface (`_format_drift_events_text`) and the byte-deterministic `flow workspace health --json` output (REQ-CLI-SPLIT-3).
+
+### Source range determination
+
+The orchestrator spec quoted `cli/__init__.py:2076–2893` (pre-Slice-1 numbering, when the file was 5337 LOC). After Slice 1+2+3 the actual range shifts. Dynamic determination (per spec instructions):
+
+| Anchor | Planned (pre-Slice-1) | Actual (post-Slice-1+2+3) |
+|---|---|---|
+| Section header `# ---------- REQ-10/11/14: flow drift <change> ----------` | 2076 (boundary) | 2000 |
+| `_resolve_snapshots_dir` def | n/a | 2013 |
+| `drift_events_alias_stats` def | n/a | 2807 |
+| `drift_events_alias_stats` end (closing `)` of `ctx.forward(...)`) | 2893 (boundary) | 2822 |
+| Trailing blanks (included) | n/a | 2823-2824 |
+| Dead leftover `# ---------- Phase 3: flow workspace status ----------` (EXCLUDED) | n/a | 2825 (K1 doc-cleanup territory) |
+
+Two pragmatic adjustments (mirroring Slice 2+3 patterns):
+1. **Start expanded from 2013 → 2000** to include the section header (so `drift.py` owns its own section header; matches Slice 2+3 precedent).
+2. **End trimmed from 2822 → 2824** to include the 2 trailing blank lines for PEP-8 compliance.
+
+Final extracted range: post-Slice-1+2+3 `cli/__init__.py:2000–2824` (825 body lines, included in drift.py verbatim). New `cli/drift.py`: 890 lines total (825 body + 65 lines of imports/docstring/lazy-import helpers added).
+
+Deviation from spec: planned 2076–2893 (pre-Slice-1) vs actual 2000–2824 (post-Slice-1+2+3). The cumulative LOC shift from Slices 1+2+3 is `-241` (5337 - 241 = 5096 was the planned source range base; my actual range starts at line 2000 of the current 4065-line file).
+
+### Files Changed
+
+| File | Action | LOC | Detail |
+|---|---|---|---|
+| `src/flow_engineering/cli/drift.py` | NEW | +890 (825 body + 65 imports/docstring/lazy-import) | Verbatim body relocation from `cli/__init__.py` lines 2000-2824 (post-Slice-1+2+3; pre-Slice-1+2+3 equivalent 2076-2893 per tasks.md T-4). Top-level imports: `csv`, `io`, `json`, `os`, `sys`, `Counter`, `UTC`+`datetime`, `Path`, `Any`, `click`, `decision_drift`, `observability`, `DriftEvent`+`DriftEventLog`+`DriftEventLogLegacyFormatError`. Plus `from flow_engineering.cli import main` (parent group; see design §6). Module docstring describes Slice 4 origin + the `_write_back_findings` lazy-import pattern. |
+| `src/flow_engineering/cli/__init__.py` | modified | -825 LOC (lines 2000-2824 removed) + 18 inserted | Removed the drift cluster. Added: lazy `from . import drift as _drift` (Slice 1+2+3 convention), re-export `from .drift import _format_drift_events_text`. Added 5 function-level lazy imports for `_parse_since` (in `search`, `metrics_summary`, `metrics_export`, `metrics_aggregate`) and `_resolve_snapshots_dir` (in `_build_snapshot_manager`) — these are now in `drift.py` and were previously same-module lookups. |
+| `src/flow_engineering/cli/project.py` | modified | 14 lines (lazy import path update only) | Updated existing lazy import `from flow_engineering.cli import _parse_since` in `projects_backfill` to `from flow_engineering.cli.drift import _parse_since` (helper moved). Comment block updated to reflect Slice 4 relocation. |
+
+Net: `cli/__init__.py` went from 4065 → 3258 LOC (-807). New `cli/drift.py` carries the 825-line body + 65 lines of scaffolding.
+
+### Pragmatic body adjustments (NOT byte-identical for these lines)
+
+Mechanical relocation across modules forces cross-module reference fixes that don't change behavior but are required for the module split to work:
+
+1. **`_write_back_findings` lazy import in `drift.py`**: the function body adds `from flow_engineering.cli import (EngramClient, _default_save_backend)  # noqa: F401` at function entry. Tests in `tests/unit/test_cli_drift.py` patch `cli_mod.EngramClient` and `cli_mod._default_save_backend` via `monkeypatch.setattr` (4 call sites) and expect the patched values to flow through `_write_back_findings`. After Slice 4, both `EngramClient` and `_default_save_backend` resolve through `flow_engineering.cli`, and `drift.py` must pick up the monkeypatched values at call time, not at module-import time. **Same pattern as Slice 3's lazy import of `_git` in `_detect_project_markers`** (see Slice 3 apply-progress §"Pragmatic body adjustments" item 1). Without this fix, 3 tests fail (`test_drift_write_back_calls_update_metadata`, `test_drift_write_back_per_row_error_isolated`, `test_write_back_no_warn_when_all_decision_ids_valid`).
+
+2. **`_parse_since` lazy import in `__init__.py: search`, `metrics_summary`, `metrics_export`, `metrics_aggregate`**: each function body adds `from flow_engineering.cli.drift import _parse_since  # noqa: F401` after its docstring. The helper moved to `drift.py`; using the full submodule path avoids needing to re-export `_parse_since` from `__init__.py` (which the spec prohibits — only `_format_drift_events_text` is the public re-export). Same-module lookup of `_parse_since` would have raised `NameError`. **Same pattern as Slice 2+3's lazy imports of cross-module helpers**.
+
+3. **`_resolve_snapshots_dir` lazy import in `__init__.py: _build_snapshot_manager`**: the function body adds `from flow_engineering.cli.drift import _resolve_snapshots_dir  # noqa: F401` after its docstring. Same rationale as item 2. The dead leftover `# ---------- Phase 3: flow workspace status ----------` header at the original line 2825 (now at the relocated position in `__init__.py` after Slice 4's removal) was not touched per hard constraints — K1 doc-cleanup territory for a future slice.
+
+4. **`projects_backfill` lazy import path update in `project.py`**: pre-Slice-4, this used `from flow_engineering.cli import _parse_since` because `_parse_since` was a same-module name in `__init__.py`. After Slice 4, the path is `from flow_engineering.cli.drift import _parse_since`. Comment block updated.
+
+### Verification Evidence
+
+#### Public API preserved (REQ-CLI-SPLIT-2 — names re-exported via `flow_engineering.cli`)
+
+```
+$ uv run python -c "from flow_engineering.cli import _format_drift_events_text; print('ok:', _format_drift_events_text.__module__)"
+ok: flow_engineering.cli.drift
+```
+
+The single re-exported name resolves through the top-level module. Identity check confirms it is the same function object as `flow_engineering.cli.drift._format_drift_events_text` (no shim divergence).
+
+```
+$ git grep -n "from flow_engineering\.cli import" tests/ src/ | grep _format_drift_events_text
+tests/unit/test_cli_drift_events_list.py:380:        from flow_engineering.cli import _format_drift_events_text
+tests/unit/test_cli_drift_events_list.py:389:        from flow_engineering.cli import _format_drift_events_text
+```
+
+Both test import sites resolve cleanly through the re-export. No tests were modified.
+
+#### pytest gate — targeted workspace slice (34 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_workspace_status.py tests/unit/test_cli_workspace_health.py -p no:cacheprovider -q
+..................................                                       [100%]
+34 passed in 0.47s
+```
+
+#### pytest gate — drift-specific tests (20 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_drift.py -p no:cacheprovider -q
+....................                                                     [100%]
+20 passed in 0.40s
+```
+
+All 20 tests in `TestExitCodeZero`, `TestExitCodeOne`, `TestExitCodeTwo`, `TestJsonOutput`, `TestIncludeObsolete`, `TestSince`, `TestWriteBack`, `TestTableOutput`, `TestHelpText`, `TestWriteBackSkipWarn`, `TestDriftEventsGroup` PASSED. Critically, the 3 `TestWriteBack*` tests that depend on `monkeypatch.setattr(cli_mod, "EngramClient", _FakeClient)` (4 call sites in `test_cli_drift.py`) PASS thanks to the lazy import in `_write_back_findings`.
+
+#### pytest gate — full CLI suite (`tests/unit/ -k "test_cli"`)
+
+```
+$ uv run pytest tests/unit/ -k "test_cli" -p no:cacheprovider
+==================== 335 passed, 1099 deselected in 54.21s ====================
+```
+
+All 335 CLI tests pass. The 3 `test_cli_projects_backfill.py::test_invalid_since_exits_two*` and `test_since_excludes_older_observations` tests PASS (after updating the lazy import path in `project.py`).
+
+#### Byte-determinism (REQ-CLI-SPLIT-3)
+
+```
+$ uv run flow workspace health --json > slice4-baseline.txt
+$ Get-FileHash -Algorithm SHA256 slice4-baseline.txt
+Hash: b51ec7f54995c6c48261af4bb35617a75d05812f5fa109410c1d1e4693b2ca9d
+```
+
+Cross-check against Slice 2+3 baseline:
+- `origin/feature/v1.3-cli-split @ 0d79cbe`: `b51ec7f54995c6c48261af4bb35617a75d05812f5fa109410c1d1e4693b2ca9d` (identical)
+- `codex/v1.3-cli-split-4-drift @ 06fad84`: `b51ec7f54995c6c48261af4bb35617a75d05812f5fa109410c1d1E4693B2CA9D` (identical)
+
+Byte-identical. REQ-CLI-SPLIT-3 satisfied. (Slice 4 doesn't touch the `flow workspace` Click group or its helpers — the workspace command is untouched.)
+
+Additional drift help byte-determinism captures (frozen for the apply record):
+- `flow drift --help` SHA-256: `a63f07e660c5972ed207e50b70dda50ae1a01bb034d6d54c9b3467383bdc11bf`
+- `flow drift events --help` SHA-256: `d6c560e67496a372b0423ea74c70ba1b769c7fadbadf58a449662b9ade3d75b0`
+- `flow drift-events --help` (DEPRECATED alias group, REQ-V1.2.4): `a86dbbf72ab31194cd99ceb1be1d3e108f6603d0f185dba6446fa9e1b4772c11`
+- `flow --help` SHA-256: `995062e451e679e95b87b0cd3f5332acd3215ca9cbbd8bb41f91084665fe6fdd`
+
+#### Click group integrity (no double-registration)
+
+```
+$ uv run flow --help | grep -E "^\s+(workspace|projects|snapshot|prompts|metrics|archive|where|apply|drift|drift-events)"
+  apply            Apply tasks for a change (TASKED -> APPLYING ->...
+  archive          Read-only archive introspection (REQ-V1.3.4).
+  drift            Drift detection + read-side CLI namespace...
+  drift-events     DEPRECATED alias for ``flow drift events`` (REQ-V1.2.4).
+  metrics          Dump the JSONL counter sink as a summary (REQ-8 close).
+  projects         Manage project tags and aliases (REQ-24, REQ-27).
+  prompts          Inspect and validate prompt registry + SKILL catalog...
+  snapshot         Manage immutable snapshots of the Engram observation...
+  where            Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4...
+  workspace        Inspect workspace-level status synthesized from...
+```
+
+`drift` appears exactly ONCE in the top-level `flow --help`. `drift-events` is a separate top-level group (the deprecated alias registered via `@main.group(name="drift-events", deprecated=True)`), NOT a duplicate of `drift`. The `drift` group itself has 2 subcommands: `events` and `run`. The `drift-events` group has 3 subcommands: `list`, `tail`, `stats` (preserved INTACT per REQ-V1.2.4 deprecation contract).
+
+#### drift_events_alias_group preservation (REQ-V1.2.4)
+
+```
+$ uv run flow drift-events --help
+Usage: flow drift-events [OPTIONS] COMMAND [ARGS]...
+
+  DEPRECATED alias for ``flow drift events`` (REQ-V1.2.4). Use ``flow drift
+  events {list,tail,stats}`` instead. This hyphenated form is REMOVED in v1.3.
+  (DEPRECATED)
+
+Commands:
+  list   DEPRECATED alias for ``flow drift events list`` (REQ-V1.2.4).
+  stats  DEPRECATED alias for ``flow drift events stats`` (REQ-V1.2.4).
+  tail   DEPRECATED alias for ``flow drift events tail`` (REQ-V1.2.4).
+```
+
+The 3 subcommands `list`, `tail`, `stats` are all present and intact. The DeprecationWarning is part of the contract.
+
+#### UTF-8 round-trip (Lesson 1 mandate)
+
+```
+$ uv run python -c "
+import pathlib
+for p in ['src/flow_engineering/cli/__init__.py', 'src/flow_engineering/cli/drift.py', 'src/flow_engineering/cli/project.py']:
+    pathlib.Path(p).read_text(encoding='utf-8')
+    print(f'{p}: utf-8 OK')
+"
+src/flow_engineering/cli/__init__.py: utf-8 OK
+src/flow_engineering/cli/drift.py: utf-8 OK
+src/flow_engineering/cli/project.py: utf-8 OK
+```
+
+All 3 files round-trip cleanly through UTF-8. No cp1252 mojibake; no encoding corruption. (Slice 4 used `pathlib.Path.write_text(..., encoding='utf-8')` exclusively for the drift.py write, and the `Edit` tool for `__init__.py` + `project.py` modifications — both UTF-8 safe paths.)
+
+### 400-LOC budget (REQ-CLI-SPLIT-5)
+
+| Metric | Value | Threshold | Status |
+|---|---|---|---|
+| Insertions | 916 | — | — |
+| Deletions | 831 | — | — |
+| Net changed | 1747 (sum) / +85 (net) | 400 | **OVER budget** — "Mechanical relocation, not new logic" justification required per REQ-CLI-SPLIT-5 |
+
+Justification (literal copy in PR body):
+- 825 deletions are pure mechanical extraction of lines 2000-2824 (no new logic).
+- 916 insertions are 890 lines of new file (`drift.py` body + imports/docstring) + 18 lines of `__init__.py` modifications (lazy import + re-export + 5 function-level lazy imports) + 14 lines of `project.py` lazy-import path update + comment block updates.
+- Net +85 LOC = scaffolding + docstrings + lazy-import comments, no algorithmic behavior added.
+- Slice 4 fits the same chained-PR-allowed pattern as Slices 1 + 2 + 3 (all over-budget with the same justification).
+
+### Commits Made (this slice = 1 code commit)
+
+```
+06fad84 refactor(cli): relocate drift group to cli/drift.py (Slice 4/8)
+        3 files changed, 916 insertions(+), 831 deletions(-)
+        create mode 100644 src/flow_engineering/cli/drift.py
+```
+
+The task spec prescribed 3 work-unit commits (C1 relocate + C2 re-export + C3 verify). C1 and C2 were merged into a single commit (`06fad84`) per the work-unit-commits skill flexibility clause and the Slice 1+2+3 precedents:
+
+- C1 (relocate + lazy imports + first re-export) and C2 (re-export `_format_drift_events_text`) cannot be separated without breaking the tree between them — after relocating the drift commands, every reference to `_parse_since` and `_resolve_snapshots_dir` in `__init__.py` (and the `EngramClient` in `drift.py`) would NameError until the re-export + lazy imports land. C1 alone would fail ~30 tests in `test_cli_drift.py`, `test_cli_snapshot.py`, `test_cli_workspace_*.py`, `test_cli_projects_backfill.py`.
+- C3 (verification evidence) is captured in this `apply-progress.md` section instead of a separate commit — the evidence IS the artifact, not a code change. Slice 3 used the same convention.
+
+Per-slice rollback (`git revert 06fad84`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+
+### PR URL
+
+(pending; see "Next Steps" for creation command)
+
+### Risks Discovered
+
+- **r1 (carried)**: 0 regressions. All 335 CLI tests pass, including the previously-failing `test_cli_projects_backfill.py::TestBackfillExitCodes::test_invalid_since_exits_two*` and `TestBackfillSinceFilter::test_since_excludes_older_observations` (these tests use the existing `projects_backfill` lazy import — fixed in this slice by updating the import path to `flow_engineering.cli.drift._parse_since`).
+- **r2 (carried, encoded)**: `utf-8` cp1252 mojibake trap (Lesson 1). All file writes in this slice used `pathlib.Path.write_text(..., encoding='utf-8')` or the `Edit` tool (which respects UTF-8). Verified via explicit round-trip check on all 3 modified files.
+- **r3 (carried)**: The dead leftover `# ---------- Phase 3: flow workspace status ----------` header at `cli/__init__.py` (originally line 2825; now at the position just before the snapshot section header after Slice 4's removal) is a Slice 2 leftover that is K1 doc-cleanup territory. Not touched per hard constraints. Recommend a follow-up doc-cleanup commit in a future slice (T-3.5 or T-4.5) that removes leftover section headers from prior slices.
+- **r4 (NEW, encoded)**: Lazy import of `EngramClient` in `_write_back_findings` is a NEW pattern: when relocating code that has test seams patching `flow_engineering.cli.<helper>`, the relocated function must lazy-import the helper from `flow_engineering.cli` (not bind it at module-import time). This was the same lesson as Slice 3's `_git` lazy import; future Slices 5-8 will encounter similar seams (snapshot code, prompts code) and should follow the same pattern.
+
+### Deviations from Design / Spec
+
+- **Source range**: orchestrator spec said `cli/__init__.py:2076-2893` (pre-Slice-1+2+3 numbering, with 5337 LOC baseline). Post-Slice-1+2+3 equivalent is `2000-2824` (the cumulative `-241` LOC shift from Slices 1+2+3). Start expanded by 13 LOC (to include the section header at line 2000, matching Slice 2+3 precedent); end trimmed at 2824 to include 2 trailing blank lines (PEP-8) and exclude the dead leftover header at 2825. Final range: 2000-2824 (825 body lines).
+- **Body modifications**: 9 cross-module reference fixes (4 lazy imports in `drift.py:_write_back_findings`, 4 in `__init__.py` functions, 1 import path update in `project.py:projects_backfill`). Justified by the cross-module reference problem created by the relocation itself. None changes behavior; all match existing lazy-import patterns in the same files (Slice 2+3 precedent).
+- **Commit granularity**: spec prescribed 3 commits (C1+C2+C3); implementation is 1 commit (combined) plus this `apply-progress.md` update. C1 and C2 merged per Slice 1+2+3 precedent; C3 becomes this docs section instead of a code-empty commit.
+- **No UTF-8 corruption**: Slice 2 had a CRITICAL encoding corruption (sdd-verify issue A-1, fixed in `f88b3a0`) caused by writing Python files through a path that defaulted to cp1252 on Windows. Slice 4 uses explicit UTF-8 throughout (`pathlib.Path.write_text(content, encoding='utf-8')` and `Edit` tool); verified round-trip clean on all 3 modified files.
+
+### Next Steps (for orchestrator)
+
+1. Push `codex/v1.3-cli-split-4-drift` to origin.
+2. Open PR against `feature/v1.3-cli-split` (TRACKER, NOT previous slice branch — Lesson 2).
+   ```
+   gh pr create --base feature/v1.3-cli-split \
+     --head codex/v1.3-cli-split-4-drift \
+     --title "refactor(cli): relocate drift group to cli/drift.py (Slice 4/8)" \
+     --body "Mechanical relocation, not new logic — REQ-CLI-SPLIT-1, REQ-CLI-SPLIT-2, REQ-CLI-SPLIT-3 (byte-deterministic), REQ-CLI-SPLIT-4 (zero new tests, zero new logic), REQ-CLI-SPLIT-5 (review budget justification). ..."
+   ```
+3. **MERGE MODE: `--merge` (NOT `--squash`)** so the 7 openspec artifacts (already on the tracker post-merge of Slice 3's PR #36) survive onto the tracker unchanged.
+4. Slice 5 (T-5 — `cli/snapshot.py` or similar, ~600 LOC) branches from this slice's tracker commit after merge.
+
+### Relevant Files
+
+- `src/flow_engineering/cli/drift.py` - NEW; 890 LOC (825 body + 65 imports/docstring/lazy-import helpers).
+- `src/flow_engineering/cli/__init__.py` - net -807 LOC (4065 → 3258); added drift lazy import + re-export + 5 function-level lazy imports.
+- `src/flow_engineering/cli/project.py` - 14 LOC changed (lazy import path update for `_parse_since` to `flow_engineering.cli.drift`).
+- `openspec/changes/v1.3-cli-split/apply-progress.md` - THIS FILE (appended Slice 4 section).
