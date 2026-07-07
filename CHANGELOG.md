@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [1.3.0-alpha] - 2026-07-06
 
+
+### Changed
+- README.md rewrote from 1.1 KB to ~7 KB with badges, architecture
+  section, capabilities matrix, compatibility table, OpenCode plugin
+  mention, and contribution link. Removed stale PR-1-bootstrap status
+  line and stale cross-refs to propose/design/spec/tasks.md (canonical
+  path is openspec/changes/{name}/). (REQ-V1.3.3)
 ### BREAKING
 - **`flow archive` becomes a Click group** (REQ-V1.3.4): the v1.2
   ``flow archive <change> --in <target>`` surface moves to
