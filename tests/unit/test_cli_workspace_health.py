@@ -18,7 +18,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from flow_engineering.cli import main
+from flow_engineering.cli import main, workspace_health_cmd
 from tests.unit._workspace_fixtures import make_project
 
 runner = CliRunner()
@@ -50,7 +50,10 @@ def test_workspace_health_cmd_json_envelope_shape(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert set(payload.keys()) == {"version", "root", "projects", "totals"}
+    assert list(payload.keys()) == ["version", "root", "projects", "totals"]
     assert payload["version"] == "1"
+    # Spec REQ-WORKSPACE-HEALTH-CLI-ROOT: --root flag wins over FLOW_PROJECTS_ROOT env var
+    assert Path(payload["root"]).resolve() == p.resolve()
 
 
 def test_workspace_health_cmd_json_byte_deterministic(tmp_path: Path) -> None:
@@ -114,3 +117,33 @@ def test_workspace_health_cmd_missing_root(tmp_path: Path) -> None:
     assert result.exit_code == 2
     assert "projects root not found:" in result.stderr
     assert result.stdout == ""
+
+
+def test_workspace_health_cmd_empty_workspace_exits_zero(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-JSON-4-EXIT-OK: empty workspace exits 0 with version='1'."""
+    # tmp_path has NO projects subdirectory at all (truly empty root)
+    runner = CliRunner()
+    result = runner.invoke(
+        workspace_health_cmd, ["--root", str(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["version"] == "1"
+    assert payload["projects"] == []
+    assert payload["totals"] == {"healthy": 0, "attention": 0, "critical": 0}
+
+
+def test_workspace_health_cmd_dotprefix_only_exits_zero(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-JSON-4-EXIT-OK: workspace with only dot-prefix dirs exits 0."""
+    # Create ONLY dot-prefix directories (should be filtered out, leaving 0 projects)
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".cache").mkdir()
+    runner = CliRunner()
+    result = runner.invoke(
+        workspace_health_cmd, ["--root", str(tmp_path), "--json"]
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["projects"] == []
+    assert payload["totals"]["healthy"] == 0
