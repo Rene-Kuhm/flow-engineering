@@ -18,6 +18,8 @@ skipped with a clear message rather than failing collection.
 
 from __future__ import annotations
 
+from tests.unit._env_skip import skip_on_windows, requires_plugin, requires_skill
+
 import sqlite3
 from pathlib import Path
 
@@ -332,6 +334,7 @@ class TestSqliteVecStoreTopK:
 class TestSqliteVecStoreImportSafety:
     """REQ-20 + design D5: lazy import; missing extra raises ImportError."""
 
+    @skip_on_windows
     def test_module_import_does_not_force_load_sqlite_vec(self) -> None:
         import subprocess
         import sys

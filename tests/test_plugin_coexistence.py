@@ -5,10 +5,17 @@ without interfering with each other.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'unit'))
+from tests.unit._env_skip import skip_on_windows, requires_skill, requires_plugin
+
 import subprocess
 from pathlib import Path
 
 
+@requires_plugin('graphify.js')
+@skip_on_windows
 def test_both_plugins_have_valid_syntax() -> None:
     """Both plugin files must parse as ES modules and export a Plugin function."""
     plugins_dir = Path.home() / ".opencode" / "plugins"
@@ -25,6 +32,8 @@ def test_both_plugins_have_valid_syntax() -> None:
         )
 
 
+@requires_plugin('graphify.js')
+@skip_on_windows
 def test_both_plugins_export_expected_function(tmp_path: Path) -> None:
     """Each plugin must export a named async function matching its pattern.
 
@@ -59,6 +68,8 @@ def test_both_plugins_export_expected_function(tmp_path: Path) -> None:
     assert result.returncode == 0, f"Export check failed:\n{result.stderr}"
 
 
+@requires_plugin('graphify.js')
+@skip_on_windows
 def test_plugin_file_sizes_similar() -> None:
     """Both plugins should be roughly the same size (≤50 lines each per spec)."""
     plugins_dir = Path.home() / ".opencode" / "plugins"
@@ -68,6 +79,8 @@ def test_plugin_file_sizes_similar() -> None:
         assert line_count <= 50, f"{name} is {line_count} lines, expected ≤ 50"
 
 
+@requires_plugin('graphify.js')
+@skip_on_windows
 def test_both_plugins_activate_on_their_conditions(tmp_path: Path) -> None:
     """Verify activation logic: graphify needs graph.json, flow needs flow-engineering/."""
 

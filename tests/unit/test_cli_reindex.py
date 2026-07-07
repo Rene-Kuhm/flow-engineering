@@ -22,6 +22,8 @@ fail until the GREEN commit wires the reindex subcommand.
 
 from __future__ import annotations
 
+from tests.unit._env_skip import skip_on_windows, requires_plugin, requires_skill
+
 import json
 import sys
 from pathlib import Path
@@ -125,6 +127,7 @@ class TestReindexEmpty:
 class TestReindexProgress:
     """``flow reindex`` emits progress lines + done line per batch."""
 
+    @skip_on_windows
     def test_reindex_250_obs_emits_three_progress_lines(
         self,
         vectors_path: Path,
@@ -153,6 +156,7 @@ class TestReindexProgress:
 class TestReindexIdempotent:
     """Second ``flow reindex`` is a no-op on a fully-indexed corpus."""
 
+    @skip_on_windows
     def test_second_reindex_emits_zero_done_line(
         self,
         vectors_path: Path,
@@ -211,6 +215,7 @@ class TestReindexDryRun:
 class TestReindexCrashResume:
     """After a partial run, a fresh ``flow reindex`` completes the corpus."""
 
+    @skip_on_windows
     def test_partial_run_then_full_run_completes(
         self,
         vectors_path: Path,
@@ -281,6 +286,7 @@ class TestReindexExtraMissing:
 class TestReindexCounters:
     """``reindex_observations_total`` and ``reindex_duration_seconds`` fire."""
 
+    @skip_on_windows
     def test_reindex_emits_counter_events(
         self,
         vectors_path: Path,
@@ -313,6 +319,7 @@ class TestReindexCounters:
 class TestReindexModuleImportClean:
     """``import flow_engineering.cli`` MUST NOT pull torch/sqlite_vec/sentence_transformers."""
 
+    @skip_on_windows
     def test_subprocess_import_does_not_pull_heavy_deps(self) -> None:
         import subprocess
 

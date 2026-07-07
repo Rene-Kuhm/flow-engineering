@@ -15,6 +15,8 @@ PR#2 T2.1: SentenceTransformersProvider
 
 from __future__ import annotations
 
+from tests.unit._env_skip import skip_on_windows, requires_plugin, requires_skill
+
 import sys
 from unittest.mock import MagicMock
 
@@ -410,6 +412,7 @@ class TestSentenceTransformersProviderLazyModelLoad:
 class TestSentenceTransformersProviderModuleImportClean:
     """REQ-19 T2.1 — defining the class MUST NOT import torch at module level."""
 
+    @skip_on_windows
     def test_subprocess_module_import_does_not_pull_torch(self) -> None:
         # The subprocess guarantees a fresh sys.modules at import time.
         import subprocess

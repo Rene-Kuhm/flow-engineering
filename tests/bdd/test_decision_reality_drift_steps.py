@@ -26,6 +26,10 @@ Test isolation:
 """
 from __future__ import annotations
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tests' / 'unit'))
+from tests.unit._env_skip import skip_on_windows, requires_skill, requires_plugin
+
 import json
 from pathlib import Path
 from typing import Any
@@ -1495,6 +1499,7 @@ def test_req14_large_graph_handled(drift_cli_world):
     "../bdd/req16_skill_prose.feature",
     "sdd-verify Step 6a runs `flow drift` before declaring green",
 )
+@requires_skill('sdd-apply')
 def test_req16_sdd_verify_step_6a(drift_cli_world):
     pass
 
@@ -1503,6 +1508,7 @@ def test_req16_sdd_verify_step_6a(drift_cli_world):
     "../bdd/req16_skill_prose.feature",
     "all 6 SKILL.md files carry `## Drift detection hook` section",
 )
+@requires_skill('sdd-apply')
 def test_req16_skill_md_drift_hook(drift_cli_world):
     pass
 

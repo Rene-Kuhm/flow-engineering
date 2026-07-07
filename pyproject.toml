@@ -93,6 +93,11 @@ min_sdd_skill_versions = {sdd-explore = "3.0", sdd-propose = "3.0", sdd-spec = "
 testpaths = ["tests"]
 bdd_features_base_dir = "tests/bdd"
 pythonpath = ["src"]
+markers = [
+  "windows_skip: Test uses Windows-incompatible paths (subprocess.run with cwd=tmp_path etc.); skipped on win32 to avoid WinError 267",
+  "requires_skills(skill): Test depends on an OpenCode skill bundle at ~/.config/opencode/skills/<skill>/SKILL.md being installed; auto-skipped when missing",
+  "requires_plugin(name): Test depends on an OpenCode plugin at ~/.opencode/plugins/<name> being installed; auto-skipped when missing",
+]
 
 [tool.coverage.report]
 # REQ-V1.3.2 (PR #N): hard-fail pytest when line coverage drops below 80%.
