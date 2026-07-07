@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import fnmatch
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal, cast
 
@@ -58,6 +59,8 @@ __all__ = [
     "_recommendations_for",
     "summarize_project_health",
     "filter_health_by_rules",
+    "_compute_totals",
+    "fetch_workspace_health",
 ]
 
 
@@ -515,4 +518,71 @@ def filter_health_by_rules(
         new_entry["verdict"] = _categorize_verdict(kept_triggers)
         filtered.append(new_entry)
     return filtered
+
+
+def _iter_project_subdirs(root: Path) -> Iterator[Path]:
+    """Yield sorted immediate subdirectories of ``root``, skipping dot-prefix entries.
+
+    Dot-prefix dirs (.venv, .pytest_cache, .opencode, etc.) are tooling,
+    never user projects. Mirrors cli.py:97 contract; factored here so
+    ``health`` does not pull cli.py as a hard top-level dependency.
+    """
+    return iter(sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")))
+
+
+def _build_per_project_record(project_dir: Path) -> dict[str, object]:
+    """Build a v1 per-project record: markers + R9 hits + summarize.
+
+    The markers import is LAZY (Pattern #548: keep green imports green).
+    """
+    from flow_engineering.cli import _detect_project_markers
+
+    markers = _detect_project_markers(project_dir)
+    hits = _detect_committed_tooling_dirs(project_dir)
+    return summarize_project_health(markers, tooling_hits=hits)
+
+
+def fetch_workspace_health(root: Path) -> dict[str, object]:
+    """Return the locked v1 envelope for a workspace root.
+
+    Top-level keys in fixed order: version, root, projects, totals.
+    No ``generated_at`` field (Constitution Article IV byte-determinism).
+    Raises FileNotFoundError when resolved root is not a directory.
+
+    Iterates every immediate subdirectory of ``root`` via
+    ``_iter_project_subdirs`` and builds a per-project record via
+    ``_build_per_project_record``. Records are sorted by name so the
+    envelope is deterministic across filesystems.
+    """
+    resolved = root.resolve()
+    if not resolved.is_dir():
+        raise FileNotFoundError(f"projects root not found: {resolved}")
+    projects = [_build_per_project_record(p) for p in _iter_project_subdirs(resolved)]
+    projects.sort(key=lambda r: str(r.get("name", "")))
+    return {
+        "version": "1",
+        "root": str(resolved),
+        "projects": projects,
+        "totals": _compute_totals(projects),
+    }
+
+
+def _compute_totals(records: list[dict[str, object]]) -> dict[str, int]:
+    """Tally verdict distribution across records. Pure, single-pass.
+
+    Trusts the v1 contract: every record has a ``verdict`` in
+    {HEALTHY, NEEDS-ATTENTION, CRITICAL}. Unknown verdicts are silently
+    dropped (defensive: malformed records default to "healthy" which is
+    benign for the operator's dashboard).
+    """
+    totals: dict[str, int] = {"healthy": 0, "attention": 0, "critical": 0}
+    for record in records:
+        verdict = record.get("verdict")
+        if verdict == "HEALTHY":
+            totals["healthy"] += 1
+        elif verdict == "NEEDS-ATTENTION":
+            totals["attention"] += 1
+        elif verdict == "CRITICAL":
+            totals["critical"] += 1
+    return totals
 
