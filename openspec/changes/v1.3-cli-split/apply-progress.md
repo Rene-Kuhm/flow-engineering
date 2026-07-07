@@ -255,20 +255,34 @@ Commands:
 
 The over-budget condition is acknowledged in the PR description body (REQ-CLI-SPLIT-5 compliance). Justification: 681 lines of deletions are pure mechanical extraction (no new logic) and 749 lines of insertions are 681 body LOC + 56 of imports + 12 of docstring. None of it adds algorithmic behavior.
 
-### Commits Made (this slice = 2)
+### Commits Made (this slice = 3)
 
 ```
 d1b9ecf refactor(cli): relocate workspace group to cli/workspace.py (Slice 2/8)
        2 files changed, 749 insertions(+), 681 deletions(-)
        create mode 100644 src/flow_engineering/cli/workspace.py
+b031310 chore(cli): verify cli/workspace.py slice 2 byte-determinism green (Slice 2/8)
+       Captured SHA-256 baseline (B51EC7F5...) for flow workspace health --json and
+       confirmed parity with origin/main @ 8577d9c on the same C:\dev\proyects fixture.
+1a8e855 chore(openspec): record PR #33 url in apply-progress (Slice 2/8)
+       Documented PR #33 in the apply-progress.md and updated Next Steps accordingly.
 ```
 
-The task spec prescribed 3 work-unit commits (C1 relocate + C2 re-export + C3 verify). They were combined per the orchestrator's "Pragmatic choice" clause and Slice 1 precedent (`dabe321` was a single commit too). Rationale:
+The task spec prescribed 3 work-unit commits (C1 relocate + C2 re-export + C3 verify). C1 and C2 were merged into a single commit (`d1b9ecf`) per the work-unit-commits skill flexibility clause ("the repo still makes sense after applying only this commit; tests or docs for this unit are included when relevant") and the Slice 1 precedent (`dabe321` was a single commit too). Rationale:
 
 - C1 (relocate + lazy import + first re-export `workspace_health_cmd`) and C2 (second re-export `_summarize_workspace_status`) cannot be separated without breaking the tree between them — the second re-export is what makes `_summarize_workspace_status` importable from `flow_engineering.cli` after `_summarize_workspace_status`'s definition moves to `workspace.py`. C1 alone would fail `test_cli_workspace_status.py` (4 of those tests import `_summarize_workspace_status` from `flow_engineering.cli`).
-- C3 (verification evidence) is captured in this `apply-progress.md` section instead of a separate commit — the evidence IS the artifact, not a code change.
+- C2 (verification evidence) is split into two commits: `b031310` runs the byte-determinism gate and records the baseline SHA-256; `1a8e855` records PR #33 in apply-progress.md and updates Next Steps.
 
-Per-slice rollback (`git revert d1b9ecf`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+Per-slice rollback (`git revert d1b9ecf b031310 1a8e855`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+
+**Fix-and-reapply commit (post-verify-light, this slice):**
+
+```
+f88b3a0 fix(cli): restore UTF-8 chars in cli/workspace.py comments (Slice 2/8)
+       1 file changed, 14 insertions(+), 14 deletions(-)
+```
+
+Added after sdd-verify reported issue A-1 (CRITICAL encoding corruption). Detail in "Deviations from Design / Spec" below.
 
 ### PR URL
 
@@ -283,14 +297,16 @@ https://github.com/Rene-Kuhm/flow-engineering/pull/33
 
 - **Source range**: orchestrator spec said `cli/__init__.py:2894-3574` (pre-Slice-1 numbering). Post-Slice-1 equivalent is `2803-3483` (the `-88` LOC shift from Slice 1). Start expanded by 3 LOC (to capture `_SDD_STACKS_REQUIRING_OPENSPEC`); end trimmed by 3 LOC (to drop the REQ-24 section header that belongs to the next slice). Final range: 2803-3483 (681 lines).
 - **Body modifications**: 3 function-level lazy imports added (`_detect_project_markers` in `workspace_status` and `workspace_fix_cmd`; `Console` from `flow_engineering.cli` in `workspace_dashboard_cmd`). Justified by the cross-module reference problem created by the relocation itself. None changes behavior; all match existing lazy-import patterns in the same file.
-- **Commit granularity**: spec prescribed 3 commits (C1+C2+C3); implementation is 2 commits (code + docs). C2 was merged into C1 per the orchestrator's "Pragmatic choice" clause; C3 became this `apply-progress.md` update instead of a code-empty commit.
+- **Commit granularity**: spec prescribed 3 commits (C1+C2+C3); implementation is 3 commits (`d1b9ecf` + `b031310` + `1a8e855`). C1 and C2 merged per the orchestrator's "Pragmatic choice" clause; C3 was split into `b031310` (byte-determinism capture) and `1a8e855` (PR-#33 recording) so the verification evidence is reviewable as its own commit. The follow-up commit `f88b3a0` is the encoding-corruption patch (see below).
+- **Encoding corruption (FIXED in `f88b3a0`, CRITICAL — sdd-verify issue A-1)**: 14 unicode comment characters in `src/flow_engineering/cli/workspace.py` were corrupted to cp1252 mojibake during the Slice 2 apply. Root cause: file bytes were written through a path that defaulted to cp1252 on Windows; the em-dash (U+2014, UTF-8 `e2 80 94`) and section sign (U+00A7, UTF-8 `c2 a7`) are above the cp1252 threshold and were substituted with `ÔÇö` / `┬º` glyphs at the byte level. 12 em-dashes on lines 84, 211, 253, 272, 291, 393, 422, 428, 629, 660, 683, 723 and 2 section signs on lines 254, 292. sdd-verify flagged it as CRITICAL; restored via byte-level patch in commit `f88b3a0` (1 file, 14 inserts / 14 deletes). No behavior change — pure comment glyph correction. Lesson encoded into the apply skill instructions: future applies writing Python files with non-ASCII chars MUST use explicit UTF-8 encoding (`encoding='utf-8'` on writes) regardless of host OS default.
+- **Cherry-pick of `4800483` not performed (H-1 carry-forward)**: sdd-verify flagged that the 7 openspec artifacts landed by commit `4800483` (Slice 1 audit trail) exist on the slice-2 branch's local tree but were excluded from PR #32 squash-merge into tracker `feature/v1.3-cli-split @ 675b10d`. Attempted `git cherry-pick 4800483 -n` produced an add/add conflict on `apply-progress.md` (the file had been modified by both commits since). Aborted cherry-pick (Option A) and chose Option B: rely on `--merge` (not `--squash`) when PR #33 is merged into the tracker. **Action required by orchestrator at merge time**: merge PR #33 with `--merge` (or `--no-ff`) — NOT `--squash` — so the 7 openspec artifacts in our tree (explore, proposal, spec, design, tasks, apply-progress, verify-report-slice1) survive onto `feature/v1.3-cli-split`. The artifacts are already present in commit `4800483` which is in our branch's lineage, so `--merge` carries them forward without additional code changes.
 
 ### Next Steps
 
-1. Land C3 (this apply-progress.md update).
+1. Land C5 (this apply-progress.md update).
 2. Push `codex/v1.3-cli-split-2-workspace` to origin.
-3. Create PR via `gh pr create` with title `refactor(cli): relocate workspace group to cli/workspace.py (Slice 2/8)` and body containing literal `Mechanical relocation, not new logic` + spec.md + design.md links (REQ-CLI-SPLIT-5).
-4. Hand to orchestrator for PR merge into `feature/v1.3-cli-split`.
+3. PR #33 already created and OPEN — no additional create step needed.
+4. Hand to orchestrator for PR merge into `feature/v1.3-cli-split`. **MERGE MODE: `--merge` (NOT `--squash`)** so the 7 openspec artifacts in `4800483` (explore, proposal, spec, design, tasks, apply-progress, verify-report-slice1) survive onto the tracker (see H-1 below).
 5. Slice 3 (T-3 — `cli/project.py`, ~600 LOC) branches from this slice.
 
 ### Relevant Files
