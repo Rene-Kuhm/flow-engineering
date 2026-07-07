@@ -3138,9 +3138,35 @@ def workspace_dashboard_cmd(
 
 
 @workspace_group.command(name="health")
-def workspace_health_cmd() -> None:
+@click.option(
+    "--root",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Projects root. Defaults to FLOW_PROJECTS_ROOT, then platform default.",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit byte-deterministic v1 JSON envelope.",
+)
+def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
     """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
-    raise NotImplementedError("PR4a T-PR4a-1 stub — wired in T-PR4a-2")
+    from flow_engineering import health, health_render  # noqa: F401
+
+    resolved = _resolve_projects_root(root)
+    if not resolved.is_dir():
+        click.echo(f"projects root not found: {resolved}", err=True)
+        raise SystemExit(2)
+
+    envelope = health.fetch_workspace_health(resolved)
+
+    if json_flag:
+        click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
+        return
+
+    raise NotImplementedError("text render deferred to PR4b T-PR4b-1")
 
 
 # =============================================================================
