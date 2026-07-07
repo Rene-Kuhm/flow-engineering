@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 
 ### Changed
+- .github/workflows/test.yml now passes --cov-fail-under=80 to
+  uv run pytest. pyproject.toml adds [tool.coverage.report]
+  with fail_under = 80, show_missing = true. CI will fail PRs
+  that drop coverage below 80%. Threshold can be raised to 90% in
+  chore/coverage-floor-90 once the baseline is confirmed. (REQ-V1.3.2)
+
+### Changed
 - README.md rewrote from 1.1 KB to ~7 KB with badges, architecture
   section, capabilities matrix, compatibility table, OpenCode plugin
   mention, and contribution link. Removed stale PR-1-bootstrap status
