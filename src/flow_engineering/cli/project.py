@@ -435,14 +435,16 @@ def projects_backfill(
     for entries that were actually applied is ``"tagged"`` (instead of
     ``"rename"``) so downstream tooling can distinguish preview vs applied.
     """
-    # Lazy imports: ``_parse_since`` and ``_default_save_backend`` are
-    # defined later in ``cli/__init__.py`` (lines 2014 and 839
-    # respectively) and cannot be bound at project.py module-import
-    # time without a circular import. Same pattern as workspace.py
-    # (Slice 2) for ``_detect_project_markers``.
+    # Lazy imports: ``_parse_since`` was relocated to ``cli.drift`` in
+    # v1.3-cli-split Slice 4 (was previously in ``cli/__init__.py`` line
+    # 2014) and ``_default_save_backend`` remains in ``cli/__init__.py``
+    # (line 839). Both cannot be bound at project.py module-import time
+    # without a circular import. Same pattern as workspace.py (Slice 2)
+    # for ``_detect_project_markers`` and drift.py (Slice 4) for
+    # ``_default_save_backend`` + ``EngramClient``.
     if since is not None:
         try:
-            from flow_engineering.cli import _parse_since  # noqa: F401
+            from flow_engineering.cli.drift import _parse_since  # noqa: F401
 
             _parse_since(since)
         except ValueError as exc:
