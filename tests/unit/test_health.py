@@ -507,3 +507,160 @@ class TestRecommendationLock:
                     assert "flow workspace" in rec, (
                         f"missing flow workspace verb in {stack} {triggers}: {rec!r}"
                     )
+
+
+# ============================================================================
+# T-PR3 WU3.1 -- workspace-wide health v1 envelope shape.
+# ============================================================================
+
+
+class TestFetchWorkspaceHealthEnvelopeShape:
+    """WU3.1: locked v1 envelope keys in fixed order, no temporal fields."""
+
+    def test_keys_in_fixed_order(self, tmp_path: Path) -> None:
+        from flow_engineering.health import fetch_workspace_health
+
+        envelope = fetch_workspace_health(tmp_path)
+
+        assert list(envelope.keys()) == ["version", "root", "projects", "totals"]
+        assert envelope["version"] == "1"
+        assert "generated_at" not in envelope
+        assert "timestamp" not in envelope
+        assert "run_at" not in envelope
+
+    def test_missing_root_raises(self, tmp_path: Path) -> None:
+        import pytest
+
+        from flow_engineering.health import fetch_workspace_health
+
+        with pytest.raises(FileNotFoundError, match="projects root not found"):
+            fetch_workspace_health(tmp_path / "missing")
+
+
+# ============================================================================
+# T-PR3 WU3.2 -- iterate projects + per-project record building.
+# ============================================================================
+
+
+def _healthy_python(parent: Path, name: str) -> Path:
+    from tests.unit._workspace_fixtures import (
+        add_openspec,
+        add_pytest_ini,
+        add_readme,
+        make_python_project,
+    )
+
+    project = make_python_project(parent, name, git=False, tests=False, openspec=False)
+    add_readme(project)
+    add_pytest_ini(project)
+    add_openspec(project)
+    return project
+
+
+class TestFetchWorkspaceHealthIteration:
+    """WU3.2: enumerate projects under root + build per-project records."""
+
+    def test_iter_subdirs_excludes_dot_prefix(self, tmp_path: Path) -> None:
+        from flow_engineering.health import _iter_project_subdirs
+
+        _healthy_python(tmp_path, "alpha")
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / ".pytest_cache").mkdir()
+        _healthy_python(tmp_path, "bravo")
+
+        assert sorted(p.name for p in _iter_project_subdirs(tmp_path)) == ["alpha", "bravo"]
+
+    def test_records_in_name_order_with_v1_shape_and_distinct_verdicts(self, tmp_path: Path) -> None:
+        from tests.unit._workspace_fixtures import add_readme, make_node_project, make_python_project
+
+        from flow_engineering.health import fetch_workspace_health
+
+        _healthy_python(tmp_path, "alpha")
+        needs = make_node_project(tmp_path, "bravo", git=False, tests=False)
+        add_readme(needs)
+        make_python_project(tmp_path, "charlie", git=False, tests=False, openspec=False)
+
+        envelope = fetch_workspace_health(tmp_path)
+        projects = envelope["projects"]
+
+        assert [p["name"] for p in projects] == ["alpha", "bravo", "charlie"]
+        assert set(projects[0]) == {"name", "path", "stack", "verdict", "triggers", "recommendations", "suppressed"}
+        assert {p["name"]: p["verdict"] for p in projects} == {
+            "alpha": "HEALTHY",
+            "bravo": "NEEDS-ATTENTION",
+            "charlie": "CRITICAL",
+        }
+
+    def test_empty_root_returns_zero_projects(self, tmp_path: Path) -> None:
+        from flow_engineering.health import fetch_workspace_health
+
+        envelope = fetch_workspace_health(tmp_path)
+
+        assert envelope["projects"] == []
+        assert envelope["totals"] == {"healthy": 0, "attention": 0, "critical": 0}
+
+
+# ============================================================================
+# T-PR3 WU3.3 -- pure _compute_totals helper.
+# ============================================================================
+
+
+class TestComputeTotals:
+    """WU3.3: pure verdict-distribution tally, no I/O."""
+
+    def test_empty(self) -> None:
+        from flow_engineering.health import _compute_totals
+
+        assert _compute_totals([]) == {"healthy": 0, "attention": 0, "critical": 0}
+
+    def test_mixed(self) -> None:
+        from flow_engineering.health import _compute_totals
+
+        records = [{"verdict": "HEALTHY"}, {"verdict": "NEEDS-ATTENTION"}, {"verdict": "NEEDS-ATTENTION"}, {"verdict": "CRITICAL"}, {"verdict": "HEALTHY"}]
+        assert _compute_totals(records) == {"healthy": 2, "attention": 2, "critical": 1}
+
+    def test_does_not_mutate_input(self) -> None:
+        from copy import deepcopy
+
+        from flow_engineering.health import _compute_totals
+
+        records = [{"verdict": "HEALTHY"}, {"verdict": "CRITICAL"}]
+        original = deepcopy(records)
+        _compute_totals(records)
+        assert records == original
+
+
+# ============================================================================
+# T-PR3 WU3.4 -- byte-determinism invariant (Constitution Article IV).
+# ============================================================================
+
+
+class TestFetchWorkspaceHealthByteDeterminism:
+    """WU3.4: two consecutive calls on unchanged root MUST be byte-identical.
+
+    Guards against ``datetime.now()``, ``time.time()``, ``os.urandom``,
+    file-mtime reads, or any other temporal / non-deterministic state.
+    """
+
+    def test_two_invocations_equal_with_time_sleep(self, tmp_path: Path) -> None:
+        import time
+
+        from flow_engineering.health import fetch_workspace_health
+
+        _healthy_python(tmp_path, "alpha")
+
+        first = fetch_workspace_health(tmp_path)
+        time.sleep(1)
+        second = fetch_workspace_health(tmp_path)
+
+        assert first == second
+        assert first["root"] == str(tmp_path.resolve())
+
+    def test_health_module_source_has_no_temporal_primitives(self) -> None:
+        import inspect
+
+        import flow_engineering.health as health_mod
+
+        source = inspect.getsource(health_mod)
+        for forbidden in ("datetime.now", "time.time", "os.urandom"):
+            assert forbidden not in source
