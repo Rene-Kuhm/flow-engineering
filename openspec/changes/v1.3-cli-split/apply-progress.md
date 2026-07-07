@@ -137,7 +137,7 @@ The task spec prescribed 3 work-unit commits (C1 relocate + C2 re-export + C3 ve
 > **Branch base**: `codex/v1.3-cli-split-1-shared @ 4800483` (Slice 1 merged via PR #32 → tracker `675b10d`)
 > **Tracker**: `feature/v1.3-cli-split @ 675b10d`
 > **Slice branch**: `codex/v1.3-cli-split-2-workspace`
-> **PR**: (pending — see "PR URL" below once created)
+> **PR**: https://github.com/Rene-Kuhm/flow-engineering/pull/33
 
 ### Goal
 
@@ -272,7 +272,7 @@ Per-slice rollback (`git revert d1b9ecf`) still works cleanly — rollback bound
 
 ### PR URL
 
-(pending — `gh pr create` is run after the verification commit lands)
+https://github.com/Rene-Kuhm/flow-engineering/pull/33
 
 ### Risks Discovered
 
