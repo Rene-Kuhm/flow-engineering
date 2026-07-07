@@ -81,7 +81,7 @@ def _summarize_workspace_status(projects: list[dict[str, Any]]) -> dict[str, Any
                 "path": str(project.get("path", "")),
                 "reasons": reasons,
             }
-            # Additive field per REQ-WORKSPACE-DASHBOARD-R1-DETAIL ÔÇö only
+            # Additive field per REQ-WORKSPACE-DASHBOARD-R1-DETAIL — only
             # populated when R1 is in reasons; DS2 envelope consumers
             # ignore unknown keys. Defensive copy for list isolation.
             if r1_triggered:
@@ -208,7 +208,7 @@ def workspace_status(root: Path | None, json_flag: bool) -> None:
     click.echo(_render_workspace_status_text(root, projects, summary))
 
 
-# REQ-WORKSPACE-DASHBOARD-* ÔÇö `flow workspace dashboard` (Phase 5, PR3 wiring).
+# REQ-WORKSPACE-DASHBOARD-* — `flow workspace dashboard` (Phase 5, PR3 wiring).
 # Pattern #538 (one identity per command): NO ``--json`` flag here.
 # Machine-readable output stays at ``flow workspace status --json``.
 
@@ -250,8 +250,8 @@ def workspace_dashboard_cmd(
     if filter_rules:
         projects, needs_attention = filter_by_rules(projects, needs_attention, list(filter_rules))
 
-    # Build needs_by_name from DS2 needs_attention (keyed by 'name' ÔÇö see
-    # REQ-DASHBOARD-SORT-DATA-FLOW + design ┬º3). The 'name' key is the
+    # Build needs_by_name from DS2 needs_attention (keyed by 'name' — see
+    # REQ-DASHBOARD-SORT-DATA-FLOW + design §3). The 'name' key is the
     # canonical project identifier locked by the producer in
     # ``_summarize_workspace_status`` (cli.py:2913-2919). Empty-name
     # entries are dropped defensively.
@@ -269,7 +269,7 @@ def workspace_dashboard_cmd(
 
     projects = sort_projects(projects, sort, needs_by_name=needs_by_name)
 
-    # Encoding reconfigure ÔÇö Pattern #551. Falls back gracefully on legacy
+    # Encoding reconfigure — Pattern #551. Falls back gracefully on legacy
     # Windows terminals / non-TTY pipes where ``reconfigure`` raises OSError.
     # ``sys.stdout`` is typed as ``TextIO | Any`` and TextIO has no
     # ``reconfigure`` method (Python 3.7+ on TextIOWrapper only); use
@@ -288,8 +288,8 @@ def workspace_dashboard_cmd(
     console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
 
 
-# REQ-WORKSPACE-HEALTH-* (PR4a) ÔÇö `flow workspace health` (Phase 6, PR4 wiring).
-# v1.3-e migration: this block moves to cli/workspace.py per design ┬ºv1.3-e.
+# REQ-WORKSPACE-HEALTH-* (PR4a) — `flow workspace health` (Phase 6, PR4 wiring).
+# v1.3-e migration: this block moves to cli/workspace.py per design §v1.3-e.
 #
 # Pure CLI glue over the PR3-locked library surface in
 # ``flow_engineering.health`` (fetch_workspace_health, filter_health_by_rules,
@@ -390,7 +390,7 @@ def workspace_health_cmd(
     # REQ-WORKSPACE-HEALTH-FILTER-1/2/3 (PR4b): output-only rule filter
     # (never mutates detection). Recompute ``totals`` against the filtered
     # projects per PR3 ``_compute_totals`` invariant. Empty ``filter_rules``
-    # is a passthrough ÔÇö does not mutate the envelope.
+    # is a passthrough — does not mutate the envelope.
     if filter_rules:
         filtered_projects = health.filter_health_by_rules(
             cast(list[dict[str, object]], envelope["projects"]),
@@ -419,13 +419,13 @@ def workspace_health_cmd(
 
 
 # =============================================================================
-# REQ-HYGIENE-* ÔÇö `flow workspace {fix,archive,archived,restore}`
+# REQ-HYGIENE-* — `flow workspace {fix,archive,archived,restore}`
 # =============================================================================
 #
 # Phase 4 CLI surface. These 4 Click verbs are a THIN wiring layer over the
 # PR1-verified safety core in ``flow_engineering.workspace_hygiene`` (the
 # orchestrator + pollution-protocol triple) and ``flow_engineering.registry``
-# (the persistent v1 envelope). NO business logic lives here ÔÇö only Click
+# (the persistent v1 envelope). NO business logic lives here — only Click
 # argument parsing, error mapping, and output formatting.
 #
 # Hard constraints honored:
@@ -626,7 +626,7 @@ def workspace_fix_cmd(
         )
     except workspace_hygiene.MutationGateError as exc:
         _workspace_hygiene_exit(exc)
-        return  # pragma: no cover ÔÇö _workspace_hygiene_exit raises SystemExit
+        return  # pragma: no cover — _workspace_hygiene_exit raises SystemExit
     except workspace_hygiene.EmptyProjectError as exc:
         _workspace_hygiene_exit(exc)
         return  # pragma: no cover
@@ -657,7 +657,7 @@ def workspace_fix_cmd(
     # error=...)`` instead of raising. Surface the error to stderr + exit 2
     # so callers (CI, scripts) can detect failure via exit code. The
     # pollution-protocol restore branch (``_verify_post_mutation`` False)
-    # is one such path ÔÇö per REQ-HYGIENE-POLLUTION-PROTOCOL.
+    # is one such path — per REQ-HYGIENE-POLLUTION-PROTOCOL.
     if not result.success:
         if result.error:
             click.echo(result.error, err=True)
@@ -680,7 +680,7 @@ def workspace_fix_cmd(
 def workspace_archive_cmd(project: str, reason: str | None, yes: bool) -> None:
     """Move a registered project to the archived list (REQ-HYGIENE-ARCHIVE-SURFACE).
 
-    Registry-only operation ÔÇö no filesystem change. ``--yes`` is required.
+    Registry-only operation — no filesystem change. ``--yes`` is required.
     """
     _require_yes(yes, "archive")
     try:
@@ -720,7 +720,7 @@ def workspace_restore_cmd(project: str, yes: bool) -> None:
     """Reverse a prior archive (REQ-HYGIENE-RESTORE-SURFACE).
 
     Moves the project from ``archived[]`` back to ``projects[]``.
-    Registry-only ÔÇö no filesystem change. ``--yes`` is required.
+    Registry-only — no filesystem change. ``--yes`` is required.
     """
     _require_yes(yes, "restore")
     try:
