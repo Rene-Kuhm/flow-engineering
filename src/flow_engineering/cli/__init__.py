@@ -3127,6 +3127,48 @@ def workspace_dashboard_cmd(
     console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
 
 
+# REQ-WORKSPACE-HEALTH-* (PR4a) — `flow workspace health` (Phase 6, PR4 wiring).
+# v1.3-e migration: this block moves to cli/workspace.py per design §v1.3-e.
+#
+# Pure CLI glue over the PR3-locked library surface in
+# ``flow_engineering.health`` (fetch_workspace_health, filter_health_by_rules,
+# _compute_totals) and ``flow_engineering.health_render`` (text + JSON
+# renderers). PR4a wires the handler skeleton + --root + --json; PR4b adds
+# the text render branch, --filter, and --no-color.
+
+
+@workspace_group.command(name="health")
+@click.option(
+    "--root",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Projects root. Defaults to FLOW_PROJECTS_ROOT, then platform default.",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit byte-deterministic v1 JSON envelope.",
+)
+def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
+    """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
+    from flow_engineering import health, health_render  # noqa: F401
+
+    resolved = _resolve_projects_root(root)
+    if not resolved.is_dir():
+        click.echo(f"projects root not found: {resolved}", err=True)
+        raise SystemExit(2)
+
+    envelope = health.fetch_workspace_health(resolved)
+
+    if json_flag:
+        click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
+        return
+
+    raise NotImplementedError("text render deferred to PR4b T-PR4b-1")
+
+
 # =============================================================================
 # REQ-HYGIENE-* — `flow workspace {fix,archive,archived,restore}`
 # =============================================================================
