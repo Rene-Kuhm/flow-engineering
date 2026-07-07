@@ -3127,6 +3127,22 @@ def workspace_dashboard_cmd(
     console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
 
 
+# REQ-WORKSPACE-HEALTH-* (PR4a) — `flow workspace health` (Phase 6, PR4 wiring).
+# v1.3-e migration: this block moves to cli/workspace.py per design §v1.3-e.
+#
+# Pure CLI glue over the PR3-locked library surface in
+# ``flow_engineering.health`` (fetch_workspace_health, filter_health_by_rules,
+# _compute_totals) and ``flow_engineering.health_render`` (text + JSON
+# renderers). PR4a wires the handler skeleton + --root + --json; PR4b adds
+# the text render branch, --filter, and --no-color.
+
+
+@workspace_group.command(name="health")
+def workspace_health_cmd() -> None:
+    """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
+    raise NotImplementedError("PR4a T-PR4a-1 stub — wired in T-PR4a-2")
+
+
 # =============================================================================
 # REQ-HYGIENE-* — `flow workspace {fix,archive,archived,restore}`
 # =============================================================================
