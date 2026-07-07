@@ -806,3 +806,217 @@ Per-slice rollback (`git revert 06fad84`) still works cleanly — rollback bound
 - `src/flow_engineering/cli/__init__.py` - net -807 LOC (4065 → 3258); added drift lazy import + re-export + 5 function-level lazy imports.
 - `src/flow_engineering/cli/project.py` - 14 LOC changed (lazy import path update for `_parse_since` to `flow_engineering.cli.drift`).
 - `openspec/changes/v1.3-cli-split/apply-progress.md` - THIS FILE (appended Slice 4 section).
+
+
+---
+
+## Slice 5 - T-5 (cli/snapshot.py)
+
+> **Apply batch**: 5 of 8 (Slice 5 / 8)
+> **Date**: 2026-07-07
+> **Branch base**: `codex/v1.3-cli-split-4-drift @ e863a8c` (Slice 4 merged via PR #36)
+> **Tracker**: `feature/v1.3-cli-split @ aa639e1`
+> **Slice branch**: `codex/v1.3-cli-split-5-snapshot`
+> **PR**: (pending creation; see PR URL section after push)
+
+### Goal
+
+Mechanically relocate the `flow snapshot` Click group + its 3 private helpers (`_build_snapshot_manager`, `_serialize_snapshot_meta`, `_snapshot_diff_to_dict`) from `cli/__init__.py` to a NEW `cli/snapshot.py`. No re-exports (per tasks.md T-5 — snapshot commands reached via the `main` Click group). The shared `_default_save_backend` helper at `__init__.py:865` (used by snapshot AND drift; cross-cutting) STAYS in `__init__.py` and is lazy-imported by `snapshot.py` at function-call time (Slice 4 precedent for `_resolve_snapshots_dir`).
+
+### Source range determination
+
+The orchestrator spec quoted `cli/__init__.py:4103–4493` (pre-Slice-1 numbering, when the file was 5337 LOC). After Slice 1's `-88` LOC, Slice 2's `-681` LOC, Slice 3's `-528` LOC, and Slice 4's `-807` LOC shifts the same content lives at `2020-2396` post-Slice-1+2+3+4. Two pragmatic adjustments (mirroring Slice 2+3+4 patterns):
+
+1. **Start at 2020** (the section header `# ---------- REQ-28..34: flow snapshot subcommand group (T1.5) ----------`): included so the new file owns its own section header. The leftover workspace header at line 2017 (`# ---------- Phase 3: flow workspace status ----------`, K1 doc-cleanup territory) sits BEFORE the extraction range and is left untouched per Slice 4 precedent ("if it's BEFORE your extraction range, leave it for a future doc-cleanup").
+2. **End at 2396** (the 2nd trailing blank line of `snapshot_prune` body): included for PEP-8 compliance; the next section header (`# ---------- REQ-49 + REQ-50: flow prompts subcommand group (T2.1) ----------`) at line 2397 stays in `__init__.py` for Slice 6+ to relocate.
+
+Final extracted range: post-Slice-1+2+3+4 `cli/__init__.py:2020–2396` (377 body lines). New `cli/snapshot.py`: 420 lines total (377 body + 43 lines of imports/docstring/lazy-import helpers added).
+
+Deviation from spec: planned 4103-4493 (pre-Slice-1) vs actual 2020-2396 (post-Slice-1+2+3+4). The cumulative LOC shift from Slices 1+2+3+4 is `-2104` (5337 - 2104 = 3233 was the planned source range base; my actual range starts at line 2020 of the current 3258-line file).
+
+### Files Changed
+
+| File | Action | LOC | Detail |
+|---|---|---|---|
+| `src/flow_engineering/cli/snapshot.py` | NEW | +420 (377 body + 43 imports/docstring/lazy-import) | Verbatim body relocation from `cli/__init__.py` lines 2020-2396 (post-Slice-1+2+3+4; pre-Slice-1 equivalent 4103-4493 per tasks.md T-5). Top-level imports: `json`, `sys`, `Any`, `click`, `main` (parent group), `SnapshotManager`+`SnapshotMeta`+`SnapshotDiff`+`SnapshotEnvelopeError`+`RollbackRefusedError`+`RollbackConflictError`+`PruneNoFilterError`+`PruneSafetyGateError` (all from `flow_engineering.snapshot_manager`). Module docstring describes Slice 5 origin + the `_default_save_backend` lazy-import pattern. |
+| `src/flow_engineering/cli/__init__.py` | modified | -377 LOC (lines 2034-2410 removed) + 14 inserted | Removed the snapshot cluster. Added: lazy `from . import snapshot as _snapshot  # noqa: F401  (lazy; see design §6)` after Slice 4's drift import block (matches Slice 2/3/4 convention). NO re-exports per tasks.md T-5 (snapshot commands reached via `main.commands['snapshot']`). The `main` Click group definition is already ABOVE the lazy-import block (Slice 2 placement), so `snapshot.py` can `from flow_engineering.cli import main` at decorator-evaluation time without circular import. |
+
+Net: `cli/__init__.py` went from 3258 → 2895 LOC (-363). New `cli/snapshot.py` carries the 377-line body + 43 lines of scaffolding.
+
+### Pragmatic body adjustments (NOT byte-identical for these lines)
+
+Mechanical relocation across modules forces 1 cross-module reference fix that doesn't change behavior but is required for the module split to work:
+
+1. **`_default_save_backend` lazy import in `snapshot.py:_build_snapshot_manager`**: the function body adds `from flow_engineering.cli import _default_save_backend  # noqa: F401  (lazy; lives in cli.__init__ post-Slice-5)` immediately after the existing `_resolve_snapshots_dir` lazy import (which was added in Slice 4). The `_default_save_backend` helper STAYS in `__init__.py` (line 865) because it is also used by `projects_backfill` (via `cli.project._default_save_backend` lazy import) and by `drift._write_back_findings` (via `cli.drift._default_save_backend` lazy import). Same-module lookup would raise `NameError` after the snapshot block moves out of `__init__.py`. **Same pattern as Slice 4's lazy import of `_resolve_snapshots_dir` from `cli.drift` inside `__init__.py:_build_snapshot_manager`** (which itself preserved a verbatim lazy import inside the original code). Without this fix, all 6 snapshot subcommands would fail with `NameError: name '_default_save_backend' is not defined` at call time.
+
+No other lazy imports are needed because the snapshot block does NOT reference any other cross-module helpers — the only helpers called inside the snapshot commands (`_resolve_snapshots_dir`, `_default_save_backend`, `_serialize_snapshot_meta`, `_snapshot_diff_to_dict`, `_build_snapshot_manager`) all live in `snapshot.py` post-Slice-5 except `_resolve_snapshots_dir` (drift) and `_default_save_backend` (__init__), both of which are explicitly lazy-imported.
+
+### Verification Evidence
+
+#### Public API preserved (REQ-CLI-SPLIT-2 — names re-exported via `flow_engineering.cli`)
+
+Per tasks.md T-5: **NO re-exports** (snapshot commands reached via the `main` Click group).
+
+```
+$ uv run python -c "import flow_engineering.cli; from flow_engineering.cli import main; \
+    print(type(main).__name__); \
+    snap = main.commands['snapshot']; print(type(snap).__name__); \
+    print(sorted(snap.commands.keys()))"
+Group
+Group
+['create', 'diff', 'list', 'prune', 'rollback', 'show']
+```
+
+The `snapshot` group is reachable via `main.commands['snapshot']` and exposes exactly the 6 subcommands expected: `create`, `diff`, `list`, `prune`, `rollback`, `show`. The 3 private helpers (`_build_snapshot_manager`, `_serialize_snapshot_meta`, `_snapshot_diff_to_dict`) remain submodule-internal in `cli.snapshot` — they are NOT re-exported from `cli/__init__.py` per the explicit spec requirement.
+
+```
+$ git grep -n "from flow_engineering\.cli import" tests/ src/ | grep -E "snapshot|_build_snapshot_manager|_serialize_snapshot_meta|_snapshot_diff_to_dict"
+src/flow_engineering/cli/snapshot.py:30:from flow_engineering.cli import main  # noqa: F401  (parent group; see design §6)
+src/flow_engineering/cli/snapshot.py:54:    from flow_engineering.cli import _default_save_backend  # noqa: F401  (lazy; lives in cli.__init__ post-Slice-5)
+tests/unit/test_cli_snapshot.py:41:from flow_engineering.cli import main
+```
+
+3 sites: 2 in `snapshot.py` (parent-group import + lazy cross-cutting helper import) and 1 in `test_cli_snapshot.py` (imports `main` only — tests don't reference the snapshot helpers by name since they're reached via the Click group tree).
+
+#### pytest gate — targeted workspace slice (34 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_workspace_status.py tests/unit/test_cli_workspace_health.py -q -p no:cacheprovider
+..................................                                       [100%]
+34 passed in 0.33s
+```
+
+#### pytest gate — snapshot-specific tests (24 tests)
+
+```
+$ uv run pytest tests/unit/ -k "test_cli_snapshot" -q -p no:cacheprovider
+24 passed, 1410 deselected in 20.76s
+```
+
+All 24 snapshot tests PASS. Critically, the 4 `test_cli_snapshot.py::TestSnapshotCreate*` tests + `TestSnapshotList*` tests + `TestSnapshotShow*` tests + `TestSnapshotDiff*` tests + `TestSnapshotRollback*` tests + `TestSnapshotPrune*` tests all PASS — confirming the relocated code + `_default_save_backend` lazy import pattern works end-to-end.
+
+#### pytest gate — representative CLI suite (160 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_workspace_status.py tests/unit/test_cli_workspace_health.py \
+    tests/unit/test_cli_drift.py tests/unit/test_cli_snapshot.py tests/unit/test_cli_projects.py \
+    tests/unit/test_cli_projects_backfill.py tests/unit/test_cli_prompts.py \
+    tests/unit/test_cli_metrics_summary.py -q -p no:cacheprovider
+160 passed in 21.66s
+```
+
+#### pytest gate — full CLI suite (`tests/unit/ -k "test_cli"`)
+
+```
+$ uv run pytest tests/unit/ -k "test_cli" -q -p no:cacheprovider
+335 passed, 1099 deselected in 56.19s
+```
+
+The 335 PASS matches the Slice 4 baseline exactly (`335 passed, 1099 deselected`). **Zero regressions introduced.** The 4 pre-existing `test_cli_reindex.py` failures from Slice 1+2+3+4 baselines (env-only, NOT regressions) are not selected by the `-k "test_cli"` filter pattern because they're in a different test module path.
+
+#### Byte-determinism (REQ-CLI-SPLIT-3)
+
+```
+$ uv run flow workspace health --json > slice5-baseline.txt
+SHA-256 baseline (codex/v1.3-cli-split-4-drift @ e863a8c): B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+SHA-256 after   (codex/v1.3-cli-split-5-snapshot @ f897ab4): B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+Byte-identical (cross-checked via Compare-Object).
+```
+
+```
+$ uv run flow snapshot --help > slice5-snapshot-help-baseline.txt
+SHA-256 baseline: 39AFF4C4105257DC2D4CD150FD054E3C04B43E884B315080C89CB64982117FE1
+SHA-256 after:    39AFF4C4105257DC2D4CD150FD054E3C04B43E884B315080C89CB64982117FE1
+Byte-identical.
+```
+
+Byte-identical. REQ-CLI-SPLIT-3 satisfied. (Slice 5 does not touch the `flow workspace` Click group or its helpers — the workspace command is untouched. The snapshot help output is byte-identical because Click renders help from the registered command tree, and the tree is unchanged post-relocation.)
+
+#### Click group integrity (no double-registration)
+
+```
+$ uv run flow --help | grep -E 'snapshot'
+  snapshot         Manage immutable snapshots of the Engram observation...
+```
+
+`snapshot` appears exactly ONCE in the top-level `flow --help`. All 21 top-level groups detected: `apply, archive, doctor, drift, drift-events, inspect, memory-timeline, metrics, new, new-project, projects, prompts, reindex, save, search, snapshot, status, verify, watch, where, workspace`. The 9 "expected" groups per spec (`apply, archive, metrics, projects, prompts, snapshot, where, workspace, drift`) are all present. `drift-events` is a separate top-level group (the deprecated alias registered via `@main.group(name="drift-events", deprecated=True)`), NOT a duplicate of `drift` — preserved INTACT from Slice 4.
+
+The `snapshot` group itself has 6 subcommands: `create`, `list`, `show`, `diff`, `rollback`, `prune`. No double-registration.
+
+#### UTF-8 round-trip (Lesson 1 mandate)
+
+```
+$ uv run python -c "
+import pathlib
+for p in ['src/flow_engineering/cli/__init__.py', 'src/flow_engineering/cli/snapshot.py']:
+    pathlib.Path(p).read_text(encoding='utf-8')
+    print(f'{p}: utf-8 OK')
+"
+src/flow_engineering/cli/__init__.py: utf-8 OK
+src/flow_engineering/cli/snapshot.py: utf-8 OK
+```
+
+Both files round-trip cleanly through UTF-8. No cp1252 mojibake; no encoding corruption. (Slice 5 used `pathlib.Path.write_text(new_content, encoding='utf-8')` exclusively for the `snapshot.py` write, and the `Edit` tool for `__init__.py` modifications — both UTF-8 safe paths.)
+
+### 400-LOC budget (REQ-CLI-SPLIT-5)
+
+| Metric | Value | Threshold | Status |
+|---|---|---|---|
+| Insertions | 434 | — | — |
+| Deletions | 377 | — | — |
+| Net changed | 811 (sum) / +57 (net) | 400 | **OVER budget** — "Mechanical relocation, not new logic" justification required per REQ-CLI-SPLIT-5 |
+
+Justification (literal copy in PR body):
+- 377 deletions are pure mechanical extraction of lines 2020-2396 (no new logic).
+- 434 insertions are 420 lines of new file (`snapshot.py` body + imports/docstring) + 14 lines of `__init__.py` modifications (lazy import + 13 lines of explanatory comment block).
+- Net +57 LOC = scaffolding + docstrings + lazy-import comments, no algorithmic behavior added.
+- Slice 5 fits the same chained-PR-allowed pattern as Slices 1 + 2 + 3 + 4 (all over-budget with the same justification).
+
+### Commits Made (this slice = 2 code commits + this apply-progress.md update)
+
+```
+f897ab4 refactor(cli): relocate snapshot group to cli/snapshot.py (Slice 5/8)
+        2 files changed, 434 insertions(+), 377 deletions(-)
+        create mode 100644 src/flow_engineering/cli/snapshot.py
+bc1cbcc chore(cli): verify cli/snapshot.py slice 5 byte-determinism green (Slice 5/8)
+        Empty commit; body documents the byte-determinism + pytest + Click group + UTF-8 gates.
+```
+
+The task spec prescribed 2 work-unit commits (C1 relocate + C2 verify). Implementation matches: C1 (relocate + lazy import + block deletion) in `f897ab4`, C2 (verification evidence as empty commit with body) in `bc1cbcc`. Per-slice rollback (`git revert f897ab4 bc1cbcc`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+
+### PR URL
+
+(pending; see "Next Steps" for creation command)
+
+### Risks Discovered
+
+- **r1 (carried)**: 0 regressions. All 335 CLI tests pass. The 4 pre-existing `test_cli_reindex.py` failures (env-only, NOT regressions) are unchanged from Slice 1+2+3+4 baselines.
+- **r2 (carried, encoded)**: `utf-8` cp1252 mojibake trap (Lesson 1). All file writes in this slice used `pathlib.Path.write_text(..., encoding='utf-8')` or the `Edit` tool (which respects UTF-8). Verified via explicit round-trip check on both modified files.
+- **r3 (carried)**: The dead leftover `# ---------- Phase 3: flow workspace status ----------` header at `cli/__init__.py:2031` (originally line 2825 in apply-progress; now at the position right before the prompts section header post-Slice-5 removal) is a Slice 2 leftover that is K1 doc-cleanup territory. Not touched per hard constraints ("if it's BEFORE your extraction range, leave it for a future doc-cleanup"). Recommend a follow-up doc-cleanup commit in a future slice that removes the accumulated section header leftovers from Slices 2-7.
+- **r4 (encoded)**: Lazy import of `_default_save_backend` from `flow_engineering.cli` in `_build_snapshot_manager` is the same pattern as Slice 4's lazy import of `_resolve_snapshots_dir`. The `_default_save_backend` helper stays cross-cutting in `__init__.py` (used by snapshot + drift + projects.backfill) and is lazy-imported by all 3 submodules. This is a NEW pattern: when a helper is cross-cutting, it stays in `__init__.py` and the relocated submodule does `from flow_engineering.cli import _helper  # noqa: F401` at function entry. Future Slices 6-8 (prompts, archive, prompts-show) should follow the same pattern if they need cross-cutting helpers.
+
+### Deviations from Design / Spec
+
+- **Source range**: orchestrator spec said `cli/__init__.py:4103-4493` (pre-Slice-1 numbering, with 5337 LOC baseline). Post-Slice-1+2+3+4 equivalent is `2020-2396` (the cumulative `-2104` LOC shift from Slices 1+2+3+4). Start at 2020 (snapshot section header; matches Slice 2/3/4 precedent); end at 2396 (2 trailing blank lines; same end-trim precedent). Final range: 2020-2396 (377 body lines).
+- **Body modifications**: 1 function-level lazy import added (`_default_save_backend` in `_build_snapshot_manager`). Justified by the cross-module reference problem created by the relocation itself. No behavior change; matches existing lazy-import patterns in the same file (Slice 4 precedent for `_resolve_snapshots_dir`).
+- **Commit granularity**: spec prescribed 2 commits (C1+C2); implementation is 2 commits (`f897ab4` + `bc1cbcc`) plus this `apply-progress.md` update. C1 + C2 match Slice 4's precedent (refactor + empty verify with body). Per-slice rollback boundary holds.
+- **No UTF-8 corruption**: Slice 2 had a CRITICAL encoding corruption (sdd-verify issue A-1, fixed in `f88b3a0`) caused by writing Python files through a path that defaulted to cp1252 on Windows. Slice 5 uses explicit UTF-8 throughout (`pathlib.Path.write_text(new_content, encoding='utf-8')` for the snapshot.py write, `Edit` tool for `__init__.py` modifications); verified round-trip clean on both modified files.
+
+### Next Steps (for orchestrator)
+
+1. Push `codex/v1.3-cli-split-5-snapshot` to origin.
+2. Open PR against `feature/v1.3-cli-split` (TRACKER, NOT previous slice branch — Lesson 2).
+   ```
+   gh pr create --base feature/v1.3-cli-split \
+     --head codex/v1.3-cli-split-5-snapshot \
+     --title "refactor(cli): relocate snapshot group to cli/snapshot.py (Slice 5/8)" \
+     --body "Mechanical relocation, not new logic ..."
+   ```
+3. **MERGE MODE: `--merge` (NOT `--squash`)** so the 7 openspec artifacts (already on `feature/v1.3-cli-split @ aa639e1` via prior Slice 1+2+3+4 merges) survive onto the tracker unchanged.
+4. Slice 6 (T-6 — `cli/prompts.py` or similar, ~600 LOC) branches from this slice's tracker commit after merge.
+
+### Relevant Files
+
+- `src/flow_engineering/cli/snapshot.py` - NEW; 420 LOC (377 body + 43 imports/docstring/lazy-import helpers).
+- `src/flow_engineering/cli/__init__.py` - net -363 LOC (3258 → 2895); added snapshot lazy import + 13 lines of explanatory comment block.
+- `openspec/changes/v1.3-cli-split/apply-progress.md` - THIS FILE (appended Slice 5 section).
