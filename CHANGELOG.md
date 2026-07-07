@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [1.3.0-alpha] - 2026-07-06
 
 
+### Added
+- Restored 3 sdd-init bootstrap files that re-activate Article III (Strict
+  TDD) enforcement on main: sdd-init/flow-engineering.md (with literal
+  strict_tdd: true matching strict_tdd.py:34-44 on-markers pattern),
+  openspec/config.yaml (OpenSpec project config: project_root, change_dir,
+  archive_dir, specs_dir, strict_tdd, testing, openspec_layout, rules,
+  conventions), and .atl/skill-registry.md (markdown table of 22
+  user-installed OpenCode skills). Plus 5 integration cases + 2 unit
+  cases enforcing the marker restore. (REQ-V1.3.1) Was lost during a
+  force-push sequence; this commit re-applies the original (a) sub-change
+  work verbatim.
 ### Changed
 - .github/workflows/test.yml now passes --cov-fail-under=80 to
   uv run pytest. pyproject.toml adds [tool.coverage.report]
