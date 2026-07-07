@@ -18,19 +18,37 @@ adheres to [Semantic Versioning](https://semver.org/).
   cases enforcing the marker restore. (REQ-V1.3.1) Was lost during a
   force-push sequence; this commit re-applies the original (a) sub-change
   work verbatim.
-### Changed
-- .github/workflows/test.yml now passes --cov-fail-under=80 to
-  uv run pytest. pyproject.toml adds [tool.coverage.report]
-  with fail_under = 80, show_missing = true. CI will fail PRs
-  that drop coverage below 80%. Threshold can be raised to 90% in
-  chore/coverage-floor-90 once the baseline is confirmed. (REQ-V1.3.2)
+### Added
+- Restored 3 sdd-init bootstrap files that re-activate Article III (Strict
+  TDD) enforcement on main: sdd-init/flow-engineering.md (with literal
+  strict_tdd: true matching strict_tdd.py:34-44 on-markers pattern),
+  openspec/config.yaml (OpenSpec project config: project_root, change_dir,
+  archive_dir, specs_dir, strict_tdd, testing, openspec_layout, rules,
+  conventions), and .atl/skill-registry.md (markdown table of 22
+  user-installed OpenCode skills). Plus 5 integration cases + 2 unit
+  cases enforcing the marker restore. (REQ-V1.3.1) Was lost during a
+  force-push sequence; this commit re-applies the original (a) sub-change
+  work verbatim.
+- `flow archive rotate [--older-than Nd] [--dry-run] [--format yaml|json]`
+  read-only preview command (REQ-V1.3.4 / v1.3 sub-change d). Lists
+  entries in `openspec/changes/archive/` older than N days (default 90).
+  Default behavior is dry-run; never mutates disk. Emits YAML or JSON
+  to stdout. Includes a Windows mtime fallback
+  (`git log -1 --format=%ct`) for filesystem/git-checkout skew.
+  Destructive rotation deferred to `chore/archive-rotation-2026`.
 
 ### Changed
-- README.md rewrote from 1.1 KB to ~7 KB with badges, architecture
+- `.github/workflows/test.yml` now passes `--cov-fail-under=80` to
+  `uv run pytest`. `pyproject.toml` adds `[tool.coverage.report]` with
+  `fail_under = 80`, `show_missing = true`. CI will fail PRs that drop
+  coverage below 80%. Threshold can be raised to 90% in
+  `chore/coverage-floor-90` once the baseline is confirmed. (REQ-V1.3.2)
+- `README.md` rewrote from 1.1 KB to ~7 KB with badges, architecture
   section, capabilities matrix, compatibility table, OpenCode plugin
-  mention, and contribution link. Removed stale PR-1-bootstrap status
-  line and stale cross-refs to propose/design/spec/tasks.md (canonical
-  path is openspec/changes/{name}/). (REQ-V1.3.3)
+  mention, and contribution link. Removed stale `PR-1-bootstrap` status
+  line and stale cross-refs to `propose/design/spec/tasks.md`
+  (canonical path is `openspec/changes/{name}/`). (REQ-V1.3.3)
+
 ### BREAKING
 - **`flow archive` becomes a Click group** (REQ-V1.3.4): the v1.2
   ``flow archive <change> --in <target>`` surface moves to
@@ -40,15 +58,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   form must update to the new form. The renamed surface preserves the
   full flag set (`--in`, `--diff`, `--no-graphify`) and the same skill
   version-gate exit code 4 on sdd-archive minimum-version violation.
-
-### Added
-- `flow archive rotate [--older-than Nd] [--dry-run] [--format yaml|json]`
-  read-only preview command (REQ-V1.3.4 / v1.3 sub-change d). Lists entries
-  in `openspec/changes/archive/` older than N days (default 90). Default
-  behavior is dry-run; never mutates disk. Emits YAML or JSON to stdout.
-  Includes a Windows mtime fallback (`git log -1 --format=%ct`) for
-  filesystem/git-checkout skew. Destructive rotation deferred to
-  `chore/archive-rotation-2026`.
 
 ## [1.2.0] - 2026-06-28
 
