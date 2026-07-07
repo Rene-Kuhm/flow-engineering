@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import click
 from rich.console import Console
@@ -3151,7 +3151,21 @@ def workspace_dashboard_cmd(
     default=False,
     help="Emit byte-deterministic v1 JSON envelope.",
 )
-def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
+@click.option(
+    "--filter",
+    "filter_rules",
+    multiple=True,
+    type=click.Choice(["R6", "R7", "R8", "R9"], case_sensitive=False),
+    help=(
+        "Filter by rule (repeatable): R6=missing-README, R7=missing-tests-infra, "
+        "R8=missing-openspec, R9=committed-tooling-dirs."
+    ),
+)
+def workspace_health_cmd(
+    root: Path | None,
+    json_flag: bool,
+    filter_rules: tuple[str, ...],
+) -> None:
     """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
     from io import StringIO
 
@@ -3165,6 +3179,21 @@ def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
         raise SystemExit(2)
 
     envelope = health.fetch_workspace_health(resolved)
+
+    # REQ-WORKSPACE-HEALTH-FILTER-1/2/3 (PR4b): output-only rule filter
+    # (never mutates detection). Recompute ``totals`` against the filtered
+    # projects per PR3 ``_compute_totals`` invariant. Empty ``filter_rules``
+    # is a passthrough — does not mutate the envelope.
+    if filter_rules:
+        filtered_projects = health.filter_health_by_rules(
+            cast(list[dict[str, object]], envelope["projects"]),
+            list(filter_rules),
+        )
+        envelope = {
+            **envelope,
+            "projects": filtered_projects,
+            "totals": health._compute_totals(filtered_projects),
+        }
 
     if json_flag:
         click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
