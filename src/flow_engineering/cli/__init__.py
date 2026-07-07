@@ -15,7 +15,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import click
 from rich.console import Console
@@ -3137,6 +3137,43 @@ def workspace_dashboard_cmd(
 # the text render branch, --filter, and --no-color.
 
 
+_HEALTH_FILTER_CHOICES: tuple[str, ...] = ("R6", "R7", "R8", "R9")
+
+
+def _normalize_filter_rules(
+    ctx: click.Context, param: click.Parameter, value: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Normalize ``--filter`` tokens: split comma-separated AND validate against R6-R9.
+
+    REQ-WORKSPACE-HEALTH-FILTER-1/2 (PR4b): Click's built-in
+    ``multiple=True`` only accepts repeated flags (``--filter R6 --filter R7``);
+    it does NOT auto-split comma-separated values (``--filter R6,R7``). The
+    spec mandates both forms MUST be equivalent, so we split + validate in
+    this callback (replacing ``click.Choice`` so the manual check happens
+    AFTER splitting). Click's ``BadParameter`` machinery surfaces unknown
+    tokens at parse time (exit 2) before any ``fetch_workspace_health``
+    side effect (REQ-FILTER-1 parse-time rejection).
+    """
+    if not value:
+        return ()
+    flat: list[str] = []
+    for raw in value:
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            normalized = token.upper()
+            if normalized not in _HEALTH_FILTER_CHOICES:
+                allowed = ", ".join(_HEALTH_FILTER_CHOICES)
+                raise click.BadParameter(
+                    f"{token!r} is not one of {allowed}.",
+                    ctx=ctx,
+                    param=param,
+                )
+            flat.append(normalized)
+    return tuple(flat)
+
+
 @workspace_group.command(name="health")
 @click.option(
     "--root",
@@ -3151,9 +3188,36 @@ def workspace_dashboard_cmd(
     default=False,
     help="Emit byte-deterministic v1 JSON envelope.",
 )
-def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
+@click.option(
+    "--filter",
+    "filter_rules",
+    multiple=True,
+    type=click.STRING,
+    callback=_normalize_filter_rules,
+    help=(
+        "Filter by rule (repeatable). Comma-separated or repeated flags: "
+        "R6=missing-README, R7=missing-tests-infra, R8=missing-openspec, "
+        "R9=committed-tooling-dirs."
+    ),
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    default=False,
+    help="Disable ANSI color codes for deterministic output.",
+)
+def workspace_health_cmd(
+    root: Path | None,
+    json_flag: bool,
+    filter_rules: tuple[str, ...],
+    no_color: bool,
+) -> None:
     """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
-    from flow_engineering import health, health_render  # noqa: F401
+    from io import StringIO
+
+    from rich.console import Console
+
+    from flow_engineering import health, health_render
 
     resolved = _resolve_projects_root(root)
     if not resolved.is_dir():
@@ -3162,11 +3226,35 @@ def workspace_health_cmd(root: Path | None, json_flag: bool) -> None:
 
     envelope = health.fetch_workspace_health(resolved)
 
+    # REQ-WORKSPACE-HEALTH-FILTER-1/2/3 (PR4b): output-only rule filter
+    # (never mutates detection). Recompute ``totals`` against the filtered
+    # projects per PR3 ``_compute_totals`` invariant. Empty ``filter_rules``
+    # is a passthrough — does not mutate the envelope.
+    if filter_rules:
+        filtered_projects = health.filter_health_by_rules(
+            cast(list[dict[str, object]], envelope["projects"]),
+            list(filter_rules),
+        )
+        envelope = {
+            **envelope,
+            "projects": filtered_projects,
+            "totals": health._compute_totals(filtered_projects),
+        }
+
     if json_flag:
         click.echo(json.dumps(envelope, ensure_ascii=False, indent=2))
         return
 
-    raise NotImplementedError("text render deferred to PR4b T-PR4b-1")
+    # REQ-WORKSPACE-HEALTH-TEXT-1/2/3/4 (PR4b): delegate to the PR3-locked
+    # renderer (``render_workspace_health_text``) and capture its output
+    # in a per-call StringIO Console (Constitution Article V: no globals).
+    # REQ-WORKSPACE-HEALTH-NOCOLOR-1/2: ``--no-color`` flows through to the
+    # renderer's Console as the byte-determinism seam (no ANSI escapes).
+    buffer = StringIO()
+    rendered = health_render.render_workspace_health_text(
+        envelope, console=Console(no_color=no_color, file=buffer, width=120)
+    )
+    click.echo(rendered)
 
 
 # =============================================================================
