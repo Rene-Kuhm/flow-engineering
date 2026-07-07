@@ -147,3 +147,51 @@ def test_workspace_health_cmd_dotprefix_only_exits_zero(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["projects"] == []
     assert payload["totals"]["healthy"] == 0
+
+
+# ---------------------------------------------------------------------------
+# PR4b tests (T-PR4b-4 onward). These tests lock the text render branch
+# (T-PR4b-1), ``--filter`` (T-PR4b-2), and ``--no-color`` (T-PR4b-3) at the
+# CLI surface. The production handler is already in place (compact B); these
+# tests are the follow-up compact-A lock that proves the contract.
+# ---------------------------------------------------------------------------
+
+
+def test_workspace_health_cmd_text_panel_header(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-TEXT-1-PANEL-HEADER: default text mode renders the panel header.
+
+    Locks: stdout contains the Rich Panel title (``Workspace health``) for
+    a populated workspace, OR equals the ``(no projects to report)``
+    sentinel for an empty workspace. Both are valid text-branch surfaces.
+
+    NOTE: ``startswith`` was the original spec assertion, but Rich's Panel
+    rendering decorates the title with box-drawing characters that appear
+    BEFORE the title text in the output. ``in`` is the correct contract:
+    "the panel title appears in the rendered output" — same intent as the
+    spec, robust to Rich's internal layout choices.
+    """
+    p = _build_single_project_workspace(tmp_path)
+    result = runner.invoke(main, ["workspace", "health", "--root", str(p)])
+
+    assert result.exit_code == 0, result.output
+    assert "Workspace health" in result.stdout or result.stdout.startswith(
+        "(no projects to report)"
+    ), result.stdout
+
+
+def test_workspace_health_cmd_text_table_columns(tmp_path: Path) -> None:
+    """REQ-WORKSPACE-HEALTH-TEXT-2-NEEDS-TABLE: rendered table exposes the 4 columns.
+
+    Locks: stdout contains the project name ``alpha`` AND the literal column
+    header substrings ``verdict`` and ``triggers``. The default mode (no
+    ``--json``, no ``--no-color``) routes through the text branch and the
+    PR3-locked renderer in ``health_render._build_table``.
+    """
+    p = _build_single_project_workspace(tmp_path)
+    result = runner.invoke(main, ["workspace", "health", "--root", str(p)])
+
+    assert result.exit_code == 0, result.output
+    stdout_lower = result.stdout.lower()
+    assert "alpha" in result.stdout
+    assert "verdict" in stdout_lower
+    assert "triggers" in stdout_lower
