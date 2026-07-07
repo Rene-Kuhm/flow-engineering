@@ -3161,10 +3161,17 @@ def workspace_dashboard_cmd(
         "R8=missing-openspec, R9=committed-tooling-dirs."
     ),
 )
+@click.option(
+    "--no-color",
+    is_flag=True,
+    default=False,
+    help="Disable ANSI color codes for deterministic output.",
+)
 def workspace_health_cmd(
     root: Path | None,
     json_flag: bool,
     filter_rules: tuple[str, ...],
+    no_color: bool,
 ) -> None:
     """Workspace health summary (per-project R6-R9 triggers + recommendations)."""
     from io import StringIO
@@ -3202,10 +3209,11 @@ def workspace_health_cmd(
     # REQ-WORKSPACE-HEALTH-TEXT-1/2/3/4 (PR4b): delegate to the PR3-locked
     # renderer (``render_workspace_health_text``) and capture its output
     # in a per-call StringIO Console (Constitution Article V: no globals).
-    # ``--no-color`` seam lands in T-PR4b-3.
+    # REQ-WORKSPACE-HEALTH-NOCOLOR-1/2: ``--no-color`` flows through to the
+    # renderer's Console as the byte-determinism seam (no ANSI escapes).
     buffer = StringIO()
     rendered = health_render.render_workspace_health_text(
-        envelope, console=Console(file=buffer, width=120)
+        envelope, console=Console(no_color=no_color, file=buffer, width=120)
     )
     click.echo(rendered)
 
