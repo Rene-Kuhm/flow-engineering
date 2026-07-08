@@ -33,8 +33,8 @@ Total: 16 tasks, 18 work-unit commits, ~330 production LOC + ~200 test LOC = **~
 ## Status
 
 ```
-[ ] Batch 0 — T0.1 slice-branch scaffold (1 chore commit)         — pending
-[ ] Batch 1 — T1.1-T1.3 GraphLoader Protocol (4 commits)           — pending
+[ ] Batch 0 — T0.1 slice-branch scaffold (1 chore commit)         — skipped per user prompt
+[x] Batch 1 — T1.1-T1.3 GraphLoader Protocol (4 commits)           — DONE (d2d6810)
 [ ] Batch 2 — T2.1-T2.3 ObservationSource Protocol (4 commits)     — pending
 [ ] Batch 3 — T3.1-T3.2 typed exception hierarchy (2 commits)      — pending
 [ ] Batch 4 — T4.1-T4.2 SnapshotGraphMissing relocation (2 commits) — pending
@@ -45,7 +45,60 @@ Total: 16 tasks, 18 work-unit commits, ~330 production LOC + ~200 test LOC = **~
 
 ## Completed Tasks
 
-_None yet — pre-apply scaffold._
+- [x] T1.1 (RED): wrote `tests/unit/test_decision_drift_graph_loader.py` with 4 Protocol-contract tests (4 ModuleNotFoundError failures confirmed).
+- [x] T1.2a (GREEN): added `src/flow_engineering/drift_graph_loader.py` with `GraphLoader` Protocol + `LiveDiskGraphLoader` + `GraphLoadError` + `GraphMissing`. 6 tests passing.
+- [x] T1.2b (GREEN): added `SnapshotGraphLoader` + co-located helpers (`_parse_envelope_graph`, `_index_graph_payload`, `_parse_line_for_loader`, `_resolve_snapshots_dir_for_loader`). 8 tests passing.
+- [x] T1.3 (REFACTOR): hoisted imports + replaced `__import__` hack. ruff + mypy --strict clean.
+
+## Files Changed (cumulative across all batches — will be filled as sdd-apply lands batches)
+
+| File | Action | LOC | Batch |
+|------|--------|-----|-------|
+| `src/flow_engineering/drift_graph_loader.py` | NEW | +380 | Batch 1 |
+| `tests/unit/test_decision_drift_graph_loader.py` | NEW | +358 | Batch 1 |
+
+## Verification Evidence
+
+```
+$ uv run pytest tests/unit/test_decision_drift_graph_loader.py
+... 8 passed in 0.08s
+
+$ uv run pytest tests/unit/test_decision_drift.py tests/unit/test_decision_drift_snap_id.py \
+    tests/unit/test_decision_drift_v080_migration.py tests/unit/test_decision_drift_v090_hardening.py \
+    tests/unit/test_cli_drift.py tests/unit/test_cli_drift_events_list.py \
+    tests/unit/test_cli_drift_events_tail.py tests/unit/test_cli_drift_events_stats.py \
+    tests/unit/test_cli_drift_events_alias.py tests/unit/test_decision_drift_graph_loader.py
+... 114 passed in 0.61s  (106 regression + 8 new)
+```
+
+## Commits Made
+
+```
+d2d6810 refactor(drift): hoist imports + replace __import__ hack (REFACTOR T1.3)
+26ae606 feat(drift): add SnapshotGraphLoader adapter + typed exceptions (GREEN T1.2b)
+393ad89 feat(drift): add GraphLoader Protocol + LiveDiskGraphLoader (GREEN T1.2a)
+4d48ee4 test(drift): write GraphLoader Protocol contract tests (RED T1.1)
+```
+
+## Risks Discovered
+
+- **r9 (LOC OVERFLOW)**: Batch 1 actual = **+738 LOC** (380 prod + 358 test) vs the design §13 forecast of 285 LOC for Phase 1 (165 prod + 120 test). Drift is 2.6× the forecast. Root cause: (a) the test fixture `_make_snapshot_with_graph_json` is 100 LOC (the BDD helper logic for snapshot envelopes is verbose); (b) docstrings on the 4 typed exceptions + Protocol + adapters are longer than the design's terse style. **Mitigation**: leaner Batch 2 onwards (shorter docstrings, smaller fixtures). The 400-LOC PR-diff budget is currently EXCEEDED at 738 LOC after Batch 1 alone — the 2-PR chained fallback per design.md §13 is now the recommended posture (PR1 = the new modules + tests from Batch 1+2+3; PR2 = `decision_drift.py` refactor from Batch 4+5+6). sdd-verify at T7.1 will re-verify the budget and may force the split.
+
+## Deviations from Design
+
+- **D7 (NEW)**: `LiveDiskGraphLoader` in the T1.2a GREEN commit raises `GraphMissing` (the only typed exception defined at T1.2a) for ALL 3 live-path failure modes (missing path, malformed JSON, OSError with EACCES/EPERM/EROFS). The T1.2b GREEN commit adds `GraphMalformed` + `PermissionDenied` and switches the raise sites to the correct typed exceptions. This is a TDD ordering quirk — the T1.2a tests only assert `GraphMissing` is raised (matching the single-exception state at that commit), and the corrupt-JSON + permission-denied tests are deferred to Batch 3 (where the full 4-exception hierarchy is exercised). **Acceptable**: the byte-identical `DriftReport` invariant at T6.2 is the regression gate; `_DummyBackend`-style swallow semantics are preserved end-to-end.
+- **D8 (NEW)**: PEP 562 vs `from ... import ... as ...` for `SnapshotGraphMissing` re-export. Design §6 shows both, but `from ... import ... as ...` shadows the PEP 562 `__getattr__`. Resolution (applied at T4.1 in Batch 4): use PEP 562 `__getattr__` ONLY in `decision_drift.py` so the `DeprecationWarning` fires on `from flow_engineering.decision_drift import SnapshotGraphMissing` (satisfies spec REQ-DRIFT-DETECTION-7 scenario "Backward-compat re-export from `decision_drift` emits DeprecationWarning" + the user's task test (b)).
+- **D9 (NEW)**: `drift_graph_loader.py` `_resolve_snapshots_dir_for_loader` is a NEW function (not the existing `decision_drift._resolve_snapshots_dir`). Design §3 says import from `snapshot_manager` where the function does NOT exist (it's in `decision_drift.py:378`). Resolution: lazy-import from `decision_drift` with an inline fallback to avoid the circular-import risk that would arise from a top-level `from flow_engineering.decision_drift import _resolve_snapshots_dir` if `decision_drift` ever lazy-imports back into `drift_graph_loader`.
+- **D10 (NEW)**: All 4 typed exceptions (`GraphMissing`, `GraphMalformed`, `PermissionDenied`, `SnapshotEnvelopeCorrupt`) live in `drift_graph_loader.py` rather than a separate `drift_exceptions.py`. Per user's task override (tasks.md "Size:exception justification" §4), `drift_exceptions.py` is created at T3.2 Batch 3. The T1.2b commit places the exception classes in `drift_graph_loader.py` for now; the T3.2 commit will move them.
+
+## Next Steps
+
+1. **sdd-apply lands Batch 2** — T2.1 RED → T2.2a GREEN → T2.2b GREEN → T2.3 GREEN. Leaner docstrings + smaller fixtures to keep Batch 2 LOC ≤ 150 prod.
+2. **sdd-apply lands Batch 3** — T3.1 RED → T3.2 GREEN. **Move** the 4 typed exceptions from `drift_graph_loader.py` to a new `drift_exceptions.py` per user's task override. The Batch 3 GREEN commit is a `refactor(drift): extract typed exceptions to drift_exceptions.py` commit, NOT a `feat` — the exceptions exist (Batch 1), they just get relocated.
+3. **sdd-apply lands Batch 4** — T4.1 GREEN (SnapshotGraphMissing PEP 562 + identity tests) → T4.2 REFACTOR.
+4. **sdd-apply lands Batch 5** — T5.1 GREEN (unable_reason) → T5.2 REFACTOR (_DummyBackend removal + negative-imports test).
+5. **sdd-apply lands Batch 6** — T6.1a GREEN → T6.1b REFACTOR → T6.2 GREEN (byte-identical invariant).
+6. **sdd-verify lands Batch 7** — T7.1 + T7.2 CI gates. **The 2-PR chained split per design.md §13 is the recommended posture** given Batch 1's 738-LOC actual (PR1 = Batches 1+2+3; PR2 = Batches 4+5+6).
 
 ## Files Changed (cumulative across all batches — will be filled as sdd-apply lands batches)
 
