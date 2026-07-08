@@ -116,6 +116,7 @@ See [Follow-up Audit](docs/follow-up-audit.md) for the current debt triage polic
 See [System Health](docs/system-health.md) for the lightweight runner/CI/follow-up dashboard.
 See [Memory Maintenance](docs/memory-maintenance.md) for keeping Engram/SDD context useful instead of noisy.
 See [Enterprise Readiness](docs/enterprise-readiness.md) for the operational, security, governance, and recovery checklist.
+See [Dependency Updates](docs/dependency-updates.md) for Dependabot scope and review rules.
 
 ## License
 
