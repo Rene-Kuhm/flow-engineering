@@ -39,6 +39,9 @@ from typing import TYPE_CHECKING
 
 from flow_engineering import graphify_query
 from flow_engineering.binding import CodeRef, ParseError, extract_code_refs
+from flow_engineering.snapshot_manager import (
+    SnapshotGraphMissingError,
+)
 
 if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
@@ -176,15 +179,13 @@ def _classify_with_id_map(
     return DriftClass.STILL_VALID
 
 
-class SnapshotGraphMissing(ValueError):  # noqa: N818
-    """Raised when ``scan_change(snap_id=...)`` finds no graph_json in the snapshot.
-
-    D2 graceful degradation: a snapshot created with
-    ``--no-include-graph`` has no ``graph_state.graph_json`` field, so a
-    drift-pinned scan cannot classify bindings against a frozen graph.
-    The CLI surfaces this as a structured error rather than silently
-    scanning against live disk (which would make ``--snapshot`` a no-op).
-    """
+# ``SnapshotGraphMissing`` is now a PEP 562 lazy re-export of the
+# canonical ``flow_engineering.snapshot_manager.SnapshotGraphMissingError``
+# (established since v1.1.6). The re-export lives at the BOTTOM of this
+# module as a ``__getattr__`` to honor the v1.1.6 DeprecationWarning
+# convention and to keep the canonical class object identical
+# (``SnapshotGraphMissing IS SnapshotGraphMissingError``).
+# See REQ-DRIFT-DETECTION-7 + the design §6 PEP 562 example.
 
 
 def _parse_line(location: object) -> int:
@@ -568,7 +569,7 @@ def scan_change(
                         snap_id=str(snap_id),
                         reason="graph_missing",
                     )
-                    raise SnapshotGraphMissing(
+                    raise SnapshotGraphMissingError(
                         f"snapshot {snap_id} has no graph_json (created with "
                         f"--no-include-graph); drift-pinned scan unavailable"
                     )
@@ -717,7 +718,7 @@ def scan_change(
             findings=findings,
             graph_unavailable=False,
         )
-    except SnapshotGraphMissing:
+    except SnapshotGraphMissingError:
         # Configuration error: caller asked for ``snap_id`` scan but the
         # snapshot's graph is missing. Re-raise so the CLI can render a
         # structured error; do NOT fail-open (the user explicitly asked
@@ -732,3 +733,38 @@ def scan_change(
             bindings_total=0,
             graph_unavailable=True,
         )
+
+
+# ---------- PEP 562 lazy re-export (REQ-DRIFT-DETECTION-7 + design §6) ----------
+
+
+def __getattr__(name: str) -> object:
+    """PEP 562 module-level ``__getattr__`` for backward-compat aliases.
+
+    REQ-DRIFT-DETECTION-7: ``SnapshotGraphMissing`` is canonical at
+    ``flow_engineering.snapshot_manager.SnapshotGraphMissingError`` since
+    v1.1.6. This 1-release alias at ``decision_drift`` preserves callers
+    that imported the legacy name (``cli/drift.py:351`` still catches
+    ``decision_drift.SnapshotGraphMissing``). The alias emits a
+    ``DeprecationWarning`` at import time, matching the v1.1.6 precedent
+    at ``snapshot_manager.py:113-124``.
+
+    The ``__getattr__`` returns the canonical class object, so
+    ``SnapshotGraphMissing IS SnapshotGraphMissingError`` and
+    ``inspect.signature(SnapshotGraphMissing)`` work correctly (PEP 562
+    is for module-attribute access, not class identity).
+    """
+    if name == "SnapshotGraphMissing":
+        import warnings as _warnings
+
+        from flow_engineering.snapshot_manager import SnapshotGraphMissingError
+
+        _warnings.warn(
+            "decision_drift.SnapshotGraphMissing is deprecated; "
+            "import flow_engineering.snapshot_manager.SnapshotGraphMissingError "
+            "instead. The alias will be removed in v1.4.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return SnapshotGraphMissingError
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
