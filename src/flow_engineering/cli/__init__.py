@@ -205,6 +205,26 @@ from .prompts import _GOLDEN_PROMPTS_DIR  # noqa: F401  (test seam - TestGoldenU
 from . import metrics as _metrics  # noqa: F401  (lazy; see design §6)
 
 
+# Lazy submodule import (v1.3-cli-split, Slice 8/8, FINAL). Keeps
+# ``cli.archive`` registered in ``sys.modules`` so its ``@main.group``
+# + ``@archive_group.command`` decorators fire deterministically when
+# this module is imported; the lazy-import pattern is the
+# v1.3-cli-split convention (see design §6). ``main`` is defined ABOVE
+# this lazy import so ``archive.py`` can ``from flow_engineering.cli
+# import main`` at decorator-evaluation time without hitting a NameError
+# on the partially-loaded __init__ namespace. Same precedent as Slices
+# 2-7.
+#
+# ONE re-export is required: ``rotate_cmd`` is the 8th of the 8 names
+# the public-API grep MUST preserve (REQ-CLI-SPLIT-2 + tasks.md T-8
+# explicit ``re_exports`` list). The old ``cli/rotation.py`` path is
+# reduced to a 3-line back-compat shim that re-exports the same name
+# from this module; both paths resolve to the same function object
+# (verified via ``is`` identity check in the Slice 8 PR verification).
+from . import archive as _archive  # noqa: F401  (lazy; see design §6)
+from .archive import rotate_cmd  # noqa: F401
+
+
 @main.command()
 @click.argument("change")
 @click.option(
@@ -1554,64 +1574,6 @@ Drift kinds that imply a real divergence (``checksum_mismatch`` and
 missing-file kinds keep their distinct labels so the CLI footer can
 report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
 """
-
-
-# ---------- REQ-V1.3.4: flow archive rotate (read-only archive preview) ----------
-# Note: this ``cli/__init__.py`` is the result of the v1.3 sub-change (d)
-# apply that relocated the original monolithic ``cli.py`` (5168 lines) here
-# verbatim. The package layout was created so that
-# ``flow_engineering.cli.rotation`` is importable; see commit 2120df5 for the
-# rename-detection commit. Subsequent sub-change (e) cli-split slices will
-# further modularise this file.
-
-
-@main.group(name="archive")
-def archive_group() -> None:
-    """Read-only archive introspection (REQ-V1.3.4).
-
-    Subcommands:
-    - ``rotate``: list entries in ``openspec/changes/archive/`` older than
-      ``--older-than`` days. Default behavior is dry-run; never mutates
-      disk. Destructive rotation is deferred to ``chore/archive-rotation-2026``.
-    """
-
-
-# Late import so sub-change (e) slice 11 can re-locate this without
-# disturbing the rest of the click tree. The module is library-first
-# (importable without CLI).
-from flow_engineering.cli.rotation import rotate_cmd  # noqa: E402
-
-archive_group.add_command(rotate_cmd)
-
-
-# v1.2 surface ``flow archive <change> --in <target>`` rewritten as
-# ``flow archive change <change> --in <target>`` (v1.3.0-alpha BREAKING,
-# per spec REQ-V1.2.4 precedent for `flow drift run`).
-@archive_group.command(name="change")
-@click.argument("change")
-@click.option(
-    "--in",
-    "target",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
-    default=Path.cwd(),
-)
-@click.option("--diff", default="", help="Diff text for structural change detection.")
-@click.option("--no-graphify", is_flag=True, help="Skip the graphify rebuild (dry-run).")
-def archive_change_cmd(change: str, target: Path, diff: str, no_graphify: bool) -> None:
-    """Archive change (ARCHIVING -> DONE), trigger graph rebuild."""
-    _enforce_min_skill_versions_or_exit(target / "pyproject.toml")
-    result = archive_change(
-        change=change,
-        target=target,
-        diff_text=diff,
-        dry_run_graphify=no_graphify or True,  # v0.1.0: always dry-run by default
-    )
-    click.echo(result.message)
-    if result.graphify_decision:
-        click.echo(
-            f"Graphify: mode={result.graphify_decision.mode} "
-            f"cost=${result.graphify_decision.estimated_cost_usd:.2f}"
-        )
 
 
 if __name__ == "__main__":
