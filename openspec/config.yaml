@@ -12,8 +12,13 @@ openspec_layout:
   archived: "{archive_dir}/{YYYY-MM-DD}-{change-name}/"
 rules:
   chained_pr_over_400_loc: required
+  review_budget_loc: 400
+  hard_stop_loc: 600
   require_bdd_per_req: true
   spec_drift_is_critical: true
+  lean_sdd_docs: true
+  archive_completed_changes: required
+  drift_detection_slice_policy: "one behavior-preserving architectural seam per slice; no mixed refactor+feature slices"
 conventions:
   commits: "conventional"
   branches: "codex/{change-name}-pr{N}[a-d]-{label}"
