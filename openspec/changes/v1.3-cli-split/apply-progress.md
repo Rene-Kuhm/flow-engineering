@@ -1548,3 +1548,317 @@ https://github.com/Rene-Kuhm/flow-engineering/pull/39
 - `src/flow_engineering/cli/__init__.py` — net -529 LOC (2150 → 1621); added metrics lazy import + 20-line explanatory comment block.
 - `openspec/changes/v1.3-cli-split/apply-progress.md` — THIS FILE (appended Slice 7 section).
 
+
+---
+
+## Slice 8 — T-8 (cli/archive.py rename + 3-line back-compat shim, FINAL)
+
+> **Apply batch**: 8 of 8 (Slice 8 / 8, **FINAL**)
+> **Date**: 2026-07-08
+> **Branch base**: `codex/v1.3-cli-split-7-metrics @ 1cf7363` (Slice 7 merged via PR #39 → tracker `30b5fc3`)
+> **Tracker**: `feature/v1.3-cli-split @ 30b5fc3`
+> **Slice branch**: `codex/v1.3-cli-split-8-archive`
+> **PR**: (pending creation; see PR URL section after push)
+
+### Goal
+
+**RENAME** `cli/rotation.py` → `cli/archive.py` and absorb the `archive_group` + `archive_change_cmd` block from `cli/__init__.py`. Reduce the old `cli/rotation.py` to a back-compat shim that re-exports `rotate_cmd`, `_candidate_entries`, `_entry_mtime` (and the stdlib/third-party names that the original module's namespace exposed — required by the `tests/unit/test_cli_rotation.py` test seam that patches `flow_engineering.cli.rotation.subprocess.run` via the string-form `monkeypatch.setattr` API). Re-export `rotate_cmd` from `cli/__init__.py`. Preserve the dead `archive()` function at `cli/__init__.py:357` VERBATIM (out-of-scope per tasks.md r4).
+
+### Source_files determination (dynamic)
+
+The orchestrator spec said `cli/rotation.py` (whole file) + `cli/__init__.py` archive_group block. Two pragmatic adjustments:
+
+1. **`rotation.py` exports determined by reading the file**: the original 161-LOC module exports 3 public names (`rotate_cmd`, `_candidate_entries`, `_entry_mtime` via `__all__`) + 9 module-level imports (`hashlib`, `json`, `subprocess`, `UTC`, `datetime`, `Path`, `Any`, `click`, `yaml`). The shim must re-export ALL of these, because `tests/unit/test_cli_rotation.py::test_falls_back_to_git_log_on_windows_checkout_skew` patches `flow_engineering.cli.rotation.subprocess.run` via the string-form `monkeypatch.setattr` API — string-form path resolution walks the module namespace, requiring `subprocess` to be an attribute of the shim. Without `subprocess` re-exported, the test fails with `ImportError: 'flow_engineering.cli.rotation' is not a package`. **Discovery during apply**: this requirement was NOT in the orchestrator prompt's shim example (which was the 1-liner `from flow_engineering.cli.archive import rotate_cmd, _candidate_entries, _entry_mtime`); expanding the shim to preserve all 9 module-level names was required to keep the test suite green.
+2. **`archive_group` block in `cli/__init__.py:1568-1614` (post-Slice-1..7)**: includes `@main.group(name="archive")` + `archive_group()` + `archive_group.add_command(rotate_cmd)` + `@archive_group.command(name="change")` + `archive_change_cmd()` (the body of which uses `_enforce_min_skill_versions_or_exit` from `cli._shared` + `archive_change` from `flow_engineering.orchestrator`).
+
+Final extracted range: `cli/rotation.py` whole file (161 LOC) + `cli/__init__.py` archive_group + archive_change_cmd block (post-Slice-1..7 lines 1568-1614, 47 LOC).
+
+### Files Changed
+
+| File | Action | LOC | Detail |
+|---|---|---|---|
+| `src/flow_engineering/cli/archive.py` | NEW | +255 (161 rotation body + 47 archive_group block + 47 imports/docstring/lazy-import scaffolding) | Verbatim body relocation of rotation.py + the archive_group+archive_change_cmd block from __init__.py. Top-level imports: `hashlib`, `json`, `subprocess`, `UTC`, `datetime`, `Path`, `Any`, `click`, `yaml`, `flow_engineering.cli.main` (parent group; see design §6), `flow_engineering.cli._shared._enforce_min_skill_versions_or_exit` (top-level import safe because `_shared` doesn't depend on `archive.py`; matches workspace.py / project.py precedent for `_resolve_projects_root` / `_iter_project_subdirs`), `flow_engineering.orchestrator.archive_change`. Module docstring describes Slice 8 origin + the 3-step rename history. |
+| `src/flow_engineering/cli/__init__.py` | modified | -47 LOC (archive_group block removed) + 20 inserted | Removed the archive_group + archive_change_cmd block (lines 1568-1614 post-Slice-1..7). Added: lazy `from . import archive as _archive` (Slice 1-7 precedent), re-export `from .archive import rotate_cmd`. 20-line explanatory comment block describes the Slice 8 layout + the back-compat shim contract. The dead `archive()` function at line 377 (post-Slice-8; was line 357 pre-Slice-8) is preserved VERBATIM (out-of-scope per tasks.md r4). |
+| `src/flow_engineering/cli/rotation.py` | REDUCED | -161 LOC (161 body removed) + 37 inserted | Reduced to a back-compat shim: 1 module docstring + 7 import statements (re-exports `rotate_cmd`, `_candidate_entries`, `_entry_mtime`, `hashlib`, `json`, `subprocess`, `UTC`, `datetime`, `Path`, `Any` from `flow_engineering.cli.archive`; re-imports `click` + `yaml` directly so they remain in the module namespace for symmetry with the original rotation.py). The shim is NOT literally 3 lines (the orchestrator's example was a 1-line `from ... import ...` re-export); expanding to 37 lines was required to preserve the `flow_engineering.cli.rotation.subprocess.run` test seam. |
+
+Net: `cli/__init__.py` went from 1621 → 1583 LOC (-38 net after the +20 lazy import + re-export block). New `cli/archive.py`: 0 → 255 LOC. `cli/rotation.py`: 161 → 37 LOC (the back-compat shim).
+
+### Submodule shadowing — pre-existing condition, not a regression
+
+The dead `archive()` function at `cli/__init__.py:377` (post-Slice-8) shadows the new `archive` submodule: `flow_engineering.cli.archive` (attribute access) resolves to the function, NOT the submodule. This is a pre-existing condition (the `archive()` function was already defined at `cli/__init__.py:357` pre-Slice-8). The spec deliberately uses `_archive` as the alias for the lazy import to avoid the shadowing:
+
+```python
+from . import archive as _archive  # noqa: F401  (lazy; see design §6)
+```
+
+All import paths that go through `sys.modules` resolution (e.g., `from flow_engineering.cli.archive import rotate_cmd`, `import flow_engineering.cli.archive as arch_mod` after `arch_mod = sys.modules['flow_engineering.cli.archive']`) reach the submodule correctly. The only path that fails is direct attribute access `flow_engineering.cli.archive`, which returns the dead function — same behavior as before Slice 8 (no regression introduced).
+
+### Verification Evidence
+
+#### Public API preserved (REQ-CLI-SPLIT-2 — 14 names re-exported via `flow_engineering.cli`)
+
+```
+$ uv run python -c "import flow_engineering.cli as cli; names = ['main', 'workspace_health_cmd', '_detect_project_markers', '_format_drift_events_text', '_iter_project_subdirs', '_summarize_workspace_status', '_git', 'rotate_cmd', '_resolve_projects_root', '_DEFAULT_PROJECTS_ROOT_WIN', '_DEFAULT_PROJECTS_ROOT_NIX', '_read_pyproject_min_skill_versions', '_enforce_min_skill_versions_or_exit', '_GOLDEN_PROMPTS_DIR']; [print(f'  OK: {n}: {type(getattr(cli, n)).__name__}') for n in names]"
+  OK: main: Group
+  OK: workspace_health_cmd: Command
+  OK: _detect_project_markers: function
+  OK: _format_drift_events_text: function
+  OK: _iter_project_subdirs: function
+  OK: _summarize_workspace_status: function
+  OK: _git: function
+  OK: rotate_cmd: Command
+  OK: _resolve_projects_root: function
+  OK: _DEFAULT_PROJECTS_ROOT_WIN: str
+  OK: _DEFAULT_PROJECTS_ROOT_NIX: str
+  OK: _read_pyproject_min_skill_versions: function
+  OK: _enforce_min_skill_versions_or_exit: function
+  OK: _GOLDEN_PROMPTS_DIR: WindowsPath
+```
+
+All 14 names resolve through the top-level re-export. The 8th of the 8 public-API names (`rotate_cmd`) is the slice's target; the other 7 are preserved from Slices 1-7.
+
+#### Back-compat shim verification (CRITICAL — 3 paths resolve to the same function)
+
+```
+$ uv run python -c "
+from flow_engineering.cli.rotation import rotate_cmd as r1
+from flow_engineering.cli.archive import rotate_cmd as r2
+from flow_engineering.cli import rotate_cmd as r3
+assert r1 is r2 is r3
+print('all 3 paths resolve to same function')
+"
+all 3 paths resolve to same function
+```
+
+The 3 import paths to `rotate_cmd`:
+1. `from flow_engineering.cli.rotation import rotate_cmd` (old path via back-compat shim)
+2. `from flow_engineering.cli.archive import rotate_cmd` (new canonical path)
+3. `from flow_engineering.cli import rotate_cmd` (top-level re-export)
+
+All resolve to the SAME function object (`is` identity check). Test seam for `subprocess.run` patching also preserved:
+
+```
+$ uv run python -c "
+import flow_engineering.cli.rotation as rot_mod
+import flow_engineering.cli.archive as arch_mod
+print('rotation.subprocess:', rot_mod.subprocess)
+print('rotation.subprocess.run:', rot_mod.subprocess.run)
+print('rotation._candidate_entries is archive._candidate_entries:', rot_mod._candidate_entries is arch_mod._candidate_entries)
+print('rotation._entry_mtime is archive._entry_mtime:', rot_mod._entry_mtime is arch_mod._entry_mtime)
+"
+rotation.subprocess: <module 'subprocess' ...>
+rotation.subprocess.run: <function subprocess.run ...>
+rotation._candidate_entries is archive._candidate_entries: True
+rotation._entry_mtime is archive._entry_mtime: True
+```
+
+The shim re-exports `subprocess`, `_candidate_entries`, `_entry_mtime` (and `hashlib`, `json`, `UTC`, `datetime`, `Path`, `Any`, `click`, `yaml`) — every name that the original `rotation.py` had in its module-level namespace.
+
+#### pytest gate — targeted workspace slice (34 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_workspace_status.py tests/unit/test_cli_workspace_health.py -q --no-header -p no:cacheprovider --basetemp='C:\Users\insyd\AppData\Local\Temp\opencode\pytest-tmp-slice8'
+..................................                                       [100%]
+34 passed in 0.35s
+```
+
+#### pytest gate — rotation-specific tests (7 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_rotation.py -q --no-header -p no:cacheprovider --basetemp='C:\Users\insyd\AppData\Local\Temp\opencode\pytest-tmp-rot'
+.......                                                                  [100%]
+7 passed in 1.43s
+```
+
+The critical test `test_falls_back_to_git_log_on_windows_checkout_skew` (which patches `flow_engineering.cli.rotation.subprocess.run` via string-form `monkeypatch.setattr`) PASSES — confirms the back-compat shim preserves the test seam.
+
+#### pytest gate — full CLI suite (`tests/unit/ -k "test_cli"`)
+
+```
+$ uv run pytest tests/unit/ -k "test_cli" -q --no-header -p no:cacheprovider --basetemp='C:\Users\insyd\AppData\Local\Temp\opencode\pytest-tmp-slice8-final'
+2 failed, 333 passed, 1099 deselected in 58.67s
+```
+
+333 PASS matches the Slice 7 baseline exactly. The 2 failures are the pre-existing time-sensitive test bugs:
+- `test_metrics_aggregate_with_window_filter` — pre-existing on Slice 6-7
+- `test_metrics_export_with_window_filter` — pre-existing on Slice 6-7
+
+Both fail identically on the unmodified `codex/v1.3-cli-split-6-prompts @ dc180ba` tracker (00:08 UTC: `now.replace(hour=0)` is INSIDE the 1h window). NOT regressions introduced by Slice 8. **Zero regressions introduced by Slice 8.**
+
+#### Byte-determinism (REQ-CLI-SPLIT-3)
+
+```
+$ uv run flow workspace health --json > slice8-after-workspace-health.txt
+SHA-256 baseline (codex/v1.3-cli-split-7-metrics @ 1cf7363): B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+SHA-256 after   (codex/v1.3-cli-split-8-archive @ 53f56f9): B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+Byte-identical.
+
+$ uv run flow archive --help > slice8-after-archive-help.txt
+SHA-256 baseline: A2EF3BFD1612E3FE13EA089A498FF99D322CA40ADB356EAB12E161E9F0ED3317
+SHA-256 after:    A2EF3BFD1612E3FE13EA089A498FF99D322CA40ADB356EAB12E161E9F0ED3317
+Byte-identical.
+
+$ uv run flow archive change --help > slice8-after-archive-change-help.txt
+SHA-256 baseline: 6068D03232BFF3B74FCB670E2D86C0C9941691C037CF5F178E0FA46DC99B724C
+SHA-256 after:    6068D03232BFF3B74FCB670E2D86C0C9941691C037CF5F178E0FA46DC99B724C
+Byte-identical.
+
+$ uv run flow --help > slice8-after-flow-help.txt
+SHA-256 baseline: 995062E451E679E95B87B0CD3F5332ACD3215CA9CBBD8BB41F91084665FE6FDD
+SHA-256 after:    995062E451E679E95B87B0CD3F5332ACD3215CA9CBBD8BB41F91084665FE6FDD
+Byte-identical.
+```
+
+All 4 SHA-256 hashes match the pre-Slice-8 baseline byte-for-byte. REQ-CLI-SPLIT-3 satisfied.
+
+#### Click group integrity (no double-registration)
+
+```
+$ uv run flow --help 2>&1 | Select-String -Pattern '^\s+(apply|archive|drift|drift-events|metrics|projects|prompts|snapshot|where|workspace)\s'
+  apply            Apply tasks for a change (TASKED -> APPLYING ->...
+  archive          Read-only archive introspection (REQ-V1.3.4).
+  drift            Drift detection + read-side CLI namespace...
+  drift-events     DEPRECATED alias for ``flow drift events`` (REQ-V1.2.4).
+  metrics          Dump the JSONL counter sink as a summary (REQ-8 close).
+  projects         Manage project tags and aliases (REQ-24, REQ-27).
+  prompts          Inspect and validate prompt registry + SKILL catalog...
+  snapshot         Manage immutable snapshots of the Engram observation...
+  where            Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4 ...
+  workspace        Inspect workspace-level status synthesized from...
+```
+
+`archive` appears exactly ONCE in the top-level `flow --help`. All 8 groups + 2 leaves (apply, where) registered.
+
+```
+$ uv run flow archive --help
+Usage: flow archive [OPTIONS] COMMAND [ARGS]...
+
+  Read-only archive introspection (REQ-V1.3.4).
+
+  Subcommands: - ``rotate``: list entries in ``openspec/changes/archive/``
+  older than   ``--older-than`` days. Default behavior is dry-run; never
+  mutates   disk. Destructive rotation is deferred to ``chore/archive-
+  rotation-2026``.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  change  Archive change (ARCHIVING -> DONE), trigger graph rebuild.
+  rotate  List ``openspec/changes/archive/`` entries older than N days.
+```
+
+The `archive` group exposes exactly the 2 expected subcommands: `change` and `rotate`. The `rotate` subcommand's help text is identical to pre-Slice-8 (verbatim from the original `rotation.py` Click decorator).
+
+#### UTF-8 round-trip (Lesson 1 mandate)
+
+```
+$ uv run python -c "
+import pathlib
+for p in ['src/flow_engineering/cli/__init__.py', 'src/flow_engineering/cli/archive.py', 'src/flow_engineering/cli/rotation.py']:
+    pathlib.Path(p).read_text(encoding='utf-8')
+    print(f'{p}: utf-8 OK')
+"
+src/flow_engineering/cli/__init__.py: utf-8 OK
+src/flow_engineering/cli/archive.py: utf-8 OK
+src/flow_engineering/cli/rotation.py: utf-8 OK
+```
+
+All 3 modified files round-trip cleanly through UTF-8. No cp1252 mojibake; no encoding corruption.
+
+### Public-API grep output (filter to rotation/archive names)
+
+```
+$ git grep -nE "from flow_engineering\.cli\.rotation|from flow_engineering\.cli\.archive" tests/ src/
+src/flow_engineering/cli/rotation.py:8:of ``from flow_engineering.cli.rotation import X`` continues to work.
+src/flow_engineering/cli/rotation.py:23:from flow_engineering.cli.archive import (
+src/flow_engineering/cli/rotation.py:28:from flow_engineering.cli.archive import (
+src/flow_engineering/cli/rotation.py:33:from flow_engineering.cli.archive import UTC, datetime
+src/flow_engineering/cli/rotation.py:34:from flow_engineering.cli.archive import Path
+src/flow_engineering/cli/rotation.py:35:from flow_engineering.cli.archive import Any
+tests/unit/test_cli_rotation.py:26:from flow_engineering.cli.rotation import (
+```
+
+Only 1 test file (`tests/unit/test_cli_rotation.py`) imports from the `rotation` module, and it uses the names that the back-compat shim re-exports (`_candidate_entries`, `_entry_mtime`). The 7 references inside `cli/rotation.py` itself are the shim's re-export statements.
+
+### 400-LOC budget (REQ-CLI-SPLIT-5)
+
+| Metric | Value | Threshold | Status |
+|---|---|---|---|
+| Insertions | 309 (255 archive.py + 54 init.py + rotation.py shim) | — | — |
+| Deletions | 216 (162 rotation.py body + 54 init.py block) | — | — |
+| Net changed | 525 (sum) / +93 (net) | 400 | **OVER budget** — "Mechanical relocation, not new logic" justification required per REQ-CLI-SPLIT-5 |
+
+Justification (literal copy in PR body):
+- 216 deletions are pure mechanical extraction (161 LOC of `rotation.py` body + 55 LOC of `archive_group` + `archive_change_cmd` block from `__init__.py`; no new logic).
+- 309 insertions are 255 lines of new file (`archive.py` body + imports/docstring) + 20 lines of `__init__.py` modifications (lazy import + 1 re-export + 20-line explanatory comment block) + 34 lines of back-compat shim (the shim had to be expanded from the orchestrator's 1-line example to 37 lines to preserve the `flow_engineering.cli.rotation.subprocess.run` test seam in `tests/unit/test_cli_rotation.py`).
+- Net +93 LOC = scaffolding + docstring + back-compat shim + explanatory comments, no algorithmic behavior added.
+- Slice 8 fits the same chained-PR-allowed pattern as Slices 2-7 (all over-budget with the same justification; all are mechanical relocations, not new logic).
+
+Per tasks.md T-8 spec: `over_400_loc: false` was the planned answer; actual is `true` (309 insertions on C1 exceed the 400-line budget by... wait, 309 < 400, so under budget by 91. The 525-sum and the +93-net are misleading headers — the 400-line budget is measured against INSERTIONS (309), not net changed. **Actual status: UNDER budget on insertions, OVER on net changed.** The PR body contains the literal `Mechanical relocation, not new logic` phrase as required by REQ-CLI-SPLIT-5 either way for consistency with prior slices).
+
+### Commits Made (this slice = 2 code commits + this apply-progress.md update)
+
+```
+53f56f9 refactor(cli): rename rotation.py → archive.py and absorb archive group (Slice 8/8)
+        3 files changed, 309 insertions(+), 216 deletions(-)
+        create mode 100644 src/flow_engineering/cli/archive.py
+05327d7 chore(cli): verify cli/archive.py slice 8 byte-determinism green (Slice 8/8)
+        Empty commit; body documents the byte-determinism + pytest + Click group + UTF-8 + public-API + 3-paths-same-object gates.
+```
+
+The task spec prescribed 3 work-unit commits (C1 rename + C2 back-compat shim + C3 verify). Implementation matches the Slice 7 precedent (C1+C2 merged, C3 split into C2 empty commit + apply-progress.md update):
+- C1 (`53f56f9`): create `cli/archive.py` + reduce `cli/rotation.py` to shim + add lazy import + re-export to `cli/__init__.py` + remove extracted block. Cannot split into separate rename and shim commits — the shim is the 3rd and final piece of the C1 unit (rename + shim + lazy-import + re-export + extracted-block-deletion are one cohesive relocation).
+- C2 (`05327d7`): empty commit with body documenting the verification evidence (byte-determinism + pytest + Click group + UTF-8 + public-API + 3-paths-same-object).
+
+Per-slice rollback (`git revert 53f56f9 05327d7`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+
+### PR URL
+
+(pending; see "Next Steps" for creation command)
+
+### Risks Discovered
+
+- **r1 (carried)**: 2 pre-existing `test_cli_metrics_*_with_window_filter` failures persist (time-sensitive at 00:08 UTC, NOT regressions). Confirmed identical pattern vs. `origin/main @ 8577d9c` and `codex/v1.3-cli-split-6-prompts @ dc180ba`.
+- **r2 (NEW, minor)**: The back-compat shim in `cli/rotation.py` had to be expanded from the orchestrator's 1-line example to 37 lines (1 docstring + 7 import statements) to preserve the `flow_engineering.cli.rotation.subprocess.run` test seam in `tests/unit/test_cli_rotation.py::test_falls_back_to_git_log_on_windows_checkout_skew`. The expansion is documented in the shim's module docstring. Net result: the shim is NOT literally "3 lines" but IS minimal (37 lines, all are re-export statements or docstring; no algorithmic logic).
+- **r3 (carried)**: `utf-8` cp1252 mojibake trap (Lesson 1). All file writes in this slice used `pathlib.Path.write_text(..., encoding='utf-8')` and the `write` tool (UTF-8). Verified via explicit round-trip check on all 3 modified files.
+- **r4 (NEW, encoded)**: The dead `archive()` function at `cli/__init__.py:377` (post-Slice-8; was line 357 pre-Slice-8) shadows the new `archive` submodule. `flow_engineering.cli.archive` (attribute access) resolves to the function, NOT the submodule. This is a pre-existing condition (the function was defined at `cli/__init__.py:357` pre-Slice-8). The spec deliberately uses `_archive` as the lazy-import alias to avoid the shadowing. All import paths that go through `sys.modules` resolution (e.g., `from flow_engineering.cli.archive import rotate_cmd`) reach the submodule correctly. The only path that fails is direct attribute access `flow_engineering.cli.archive`, which returns the dead function — same behavior as before Slice 8 (no regression introduced). Documented in the "Submodule shadowing" section above.
+- **r5 (encoded)**: Back-compat shim verification. All 3 import paths to `rotate_cmd` resolve to the SAME function object via `is` identity check. The `flow_engineering.cli.rotation.subprocess.run` test seam is preserved (verified by `test_falls_back_to_git_log_on_windows_checkout_skew` passing).
+
+### Deviations from Design / Spec
+
+- **Source range**: orchestrator spec said `cli/rotation.py` (whole file) + `cli/__init__.py:5284-5335` (pre-Slice-1 numbering, when the file was 5337 LOC). Post-Slice-1..7 equivalent is `cli/__init__.py:1568-1614` (cumulative `-3724` LOC shift from Slices 1-7). The 47 LOC block matches exactly what the spec said (was 51 LOC pre-Slice-1 numbering; the -4 LOC shift comes from the Slice 7 lazy import block trimming 4 lines off the metrics section header).
+- **Body modifications**: ZERO function-level lazy imports added to `archive_change_cmd`. The cross-module reference to `_enforce_min_skill_versions_or_exit` (from `flow_engineering.cli._shared`) is resolved via a top-level import in `archive.py` (matches `workspace.py` and `project.py` precedent for `_resolve_projects_root` / `_iter_project_subdirs` from `_shared`). No circular import because `_shared` does not depend on `archive.py`.
+- **Back-compat shim size**: orchestrator spec said "3-line shim: `from flow_engineering.cli.archive import rotate_cmd, _candidate_entries, _entry_mtime`". Implementation is 37 lines (1 docstring + 7 import statements). **Rationale**: the spec's 1-line shim would break `tests/unit/test_cli_rotation.py::test_falls_back_to_git_log_on_windows_checkout_skew`, which patches `flow_engineering.cli.rotation.subprocess.run` via string-form `monkeypatch.setattr`. String-form path resolution walks the module namespace; without `subprocess` re-exported as an attribute of the shim, the patch fails with `ImportError: 'flow_engineering.cli.rotation' is not a package`. The shim was expanded to preserve all 9 module-level names that the original `rotation.py` had in its namespace (`hashlib`, `json`, `subprocess`, `UTC`, `datetime`, `Path`, `Any`, `click`, `yaml`). No algorithmic logic added; the expansion is pure re-export preservation.
+- **Commit granularity**: spec prescribed 3 commits (C1 rename + C2 shim + C3 verify); implementation is 2 commits (C1 + C2 merged because the shim is integral to the rename — splitting would leave the tree broken between C1 and C2 since the 3 import paths of `rotate_cmd` would resolve differently before and after the shim lands). C3 (verify) is split into C2 empty commit + apply-progress.md update per Slice 7 precedent.
+- **No UTF-8 corruption**: Slice 2 had a CRITICAL encoding corruption (sdd-verify issue A-1, fixed in `f88b3a0`) caused by writing Python files through a path that defaulted to cp1252 on Windows. Slice 8 uses explicit UTF-8 throughout (`pathlib.Path.write_text(content, encoding='utf-8')` and the `write` tool); verified round-trip clean on all 3 modified files.
+- **Submodule shadowing**: documented above (r4). Pre-existing condition, not a regression.
+
+### Next Steps (for orchestrator)
+
+1. Push `codex/v1.3-cli-split-8-archive` to origin.
+2. Open PR against `feature/v1.3-cli-split` (TRACKER, NOT previous slice branch — Lesson 2).
+   ```
+   gh pr create --base feature/v1.3-cli-split \
+     --head codex/v1.3-cli-split-8-archive \
+     --title "refactor(cli): rename rotation.py → archive.py and absorb archive group (Slice 8/8, FINAL)" \
+     --body "Mechanical relocation, not new logic ..."
+   ```
+3. **MERGE MODE: `--merge` (NOT `--squash`)** so the 7 openspec artifacts (which are already on `feature/v1.3-cli-split @ 30b5fc3` via prior Slice 1-7 merges) survive onto the tracker unchanged.
+4. **FINAL SLICE OF v1.3-cli-split — ready for sdd-archive after PR merge.**
+5. After merge, the orchestrator runs `sdd-archive` to:
+   - Sync the delta specs into the main spec
+   - Archive the `v1.3-cli-split` change folder
+   - Move the 4 final SHA-256 baselines into the verify-report archive
+6. Apply skill lesson update: codify the **back-compat shim expansion pattern** — when reducing a module to a shim that has a test seam via string-form `monkeypatch.setattr("module.submodule.run", ...)`, the shim must re-export the patched submodule names to preserve the test seam. Lesson NOT in current sdd-apply SKILL.md; add to the "Pragmatic body adjustments" section.
+
+### Relevant Files
+
+- `src/flow_engineering/cli/archive.py` — NEW; 255 LOC (161 rotation body + 47 archive_group block + 47 imports/docstring/lazy-import scaffolding).
+- `src/flow_engineering/cli/__init__.py` — net -38 LOC (1621 → 1583); added archive lazy import + 1 re-export + 20-line explanatory comment block; removed archive_group + archive_change_cmd block; preserved `archive()` dead function VERBATIM.
+- `src/flow_engineering/cli/rotation.py` — REDUCED to 37-line back-compat shim (re-exports 9 module-level names + 3 public names from `cli.archive`).
+- `openspec/changes/v1.3-cli-split/apply-progress.md` — THIS FILE (appended Slice 8 section).
+- `openspec/changes/v1.3-cli-split/tasks.md` — to be updated: T-8 marked `[x]` once PR merged (Slice 8 implementer scope: do NOT pre-mark — let the orchestrator verify and mark after merge per the Slice 1-7 precedent; the apply agent's scope is to deliver the change, not to mark tasks complete without verification).
+
+**v1.3-cli-split complete; ready for sdd-archive pending orchestrator merge of PR #N (this slice).**
+
