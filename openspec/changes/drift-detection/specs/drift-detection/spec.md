@@ -10,6 +10,8 @@
 
 ## Purpose
 
+**Spec alignment note (2026-07-08):** this delta spec now names the shipped flat modules, `src/flow_engineering/drift_graph_loader.py` and `src/flow_engineering/drift_observation_source.py`. Earlier planning artifacts that mention a `drift/` package are historical only; the flat layout is the accepted implementation shape for Slice 1.
+
 `scan_change` in `src/flow_engineering/decision_drift.py:485-734` is a 250-LOC orchestrator that couples 7 distinct responsibilities into a single function with 4 separate `except Exception: continue/pass` blocks that swallow every failure mode uniformly. The root capability spec (`openspec/specs/decision-drift/spec.md:47`) explicitly anticipates future deltas ("per-finding graph_unavailable refinement, cross-project drift federation, OTel push") that all require a seam between classification (pure) and orchestration (I/O). This delta defines the STRUCTURAL seam — 2 narrow `Protocol` types (`GraphLoader`, `ObservationSource`) plus a typed exception hierarchy — that lets future slices plug in without touching `classify_binding` or `DriftReport`. No public API change. No behavioral REQ change. No BDD scenario churn.
 
 The 8 ADDED Requirements below describe WHAT the seam must expose. They are pure structural contracts: the existing 9 test files (~6,400 LOC) become the regression gate that proves behavior is preserved, plus new unit tests cover the Protocol contract surface.
@@ -18,8 +20,8 @@ The 8 ADDED Requirements below describe WHAT the seam must expose. They are pure
 
 ### In Scope (Slice 1)
 
-1. `GraphLoader` Protocol + 2 concrete adapters (`LiveDiskGraphLoader`, `SnapshotGraphLoader`) in NEW `src/flow_engineering/drift/_graph_loader.py`.
-2. `ObservationSource` Protocol + concrete adapters in NEW `src/flow_engineering/drift/_observation_source.py`.
+1. `GraphLoader` Protocol + 2 concrete adapters (`LiveDiskGraphLoader`, `SnapshotGraphLoader`) in NEW `src/flow_engineering/drift_graph_loader.py`.
+2. `ObservationSource` Protocol + concrete adapters in NEW `src/flow_engineering/drift_observation_source.py`.
 3. `scan_change` refactor — body becomes a thin coordinator over the 2 Protocols. Public signature `(change_name, *, graph_json_path, backend, include_obsolete, since, snap_id)` UNCHANGED.
 4. Typed exception hierarchy (`GraphMissing`, `GraphMalformed`, `PermissionDenied`, `SnapshotEnvelopeCorrupt`) replacing bare `Exception` / `RuntimeError` swallows.
 5. `unable_reason` population in `DriftReport` from the new typed exceptions.
@@ -42,7 +44,7 @@ The 8 ADDED Requirements below describe WHAT the seam must expose. They are pure
 
 ### Requirement: REQ-DRIFT-DETECTION-1 — GraphLoader Protocol
 
-The system SHALL provide a `GraphLoader` `typing.Protocol` at `src/flow_engineering/drift/_graph_loader.py` with a single method:
+The system SHALL provide a `GraphLoader` `typing.Protocol` at `src/flow_engineering/drift_graph_loader.py` with a single method:
 
 - `def load(self) -> tuple[dict | None, dict | None, float | None]`
 
@@ -72,7 +74,7 @@ Returning the `(current_nodes, current_id_map, graph_mtime)` 3-tuple that `scan_
 
 ### Requirement: REQ-DRIFT-DETECTION-2 — ObservationSource Protocol
 
-The system SHALL provide an `ObservationSource` `typing.Protocol` at `src/flow_engineering/drift/_observation_source.py` with a single method:
+The system SHALL provide an `ObservationSource` `typing.Protocol` at `src/flow_engineering/drift_observation_source.py` with a single method:
 
 - `def iter_observations(self) -> Iterable[dict]`
 
@@ -147,7 +149,7 @@ The 4 distinct `except Exception: continue/pass` blocks at lines 602-603, 671-67
 
 ### Requirement: REQ-DRIFT-DETECTION-4 — Typed exception hierarchy
 
-The system SHALL provide a 4-class typed exception hierarchy at `src/flow_engineering/drift/_graph_loader.py`, each inheriting from `Exception` (NOT bare `RuntimeError` or `ValueError`), with a common base `GraphLoadError(Exception)`:
+The system SHALL provide a 4-class typed exception hierarchy at `src/flow_engineering/drift_graph_loader.py`, each inheriting from `Exception` (NOT bare `RuntimeError` or `ValueError`), with a common base `GraphLoadError(Exception)`:
 
 | Exception | Raised when | Replaces |
 |---|---|---|
@@ -183,7 +185,7 @@ All 4 SHALL carry a human-readable `message` attribute that references the path 
 
 ### Requirement: REQ-DRIFT-DETECTION-5 — `_DummyBackend` removal
 
-The system SHALL REMOVE the `_DummyBackend` class from `src/flow_engineering/decision_drift.py:362-376`. The class is a fixture-as-type — it exists only to satisfy `SnapshotManager(..., backend=...)`'s constructor signature, and neither `iter_observations` nor `mem_search` are reachable code paths (per `# pragma: no cover` markers). After Slice 1, all 3 call sites at `decision_drift.py:311, 410, 438` SHALL be refactored to either pass `None` (if `SnapshotManager` accepts it) or to use a no-op stub defined inside the new `drift/_graph_loader.py` module.
+The system SHALL REMOVE the `_DummyBackend` class from `src/flow_engineering/decision_drift.py:362-376`. The class is a fixture-as-type — it exists only to satisfy `SnapshotManager(..., backend=...)`'s constructor signature, and neither `iter_observations` nor `mem_search` are reachable code paths (per `# pragma: no cover` markers). After Slice 1, all 3 call sites at `decision_drift.py:311, 410, 438` SHALL be refactored to either pass `None` (if `SnapshotManager` accepts it) or to use a no-op stub defined inside the new `drift_graph_loader.py` module.
 
 #### Scenario: `_DummyBackend` is no longer importable from `decision_drift`
 

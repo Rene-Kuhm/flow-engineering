@@ -17,13 +17,20 @@ The current self-hosted runner lives at:
 C:\actions-runner-flow-engineering
 ```
 
-Current non-admin fallback:
+Current production mode: Windows Service.
 
-```text
-C:\Users\insyd\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\flow-engineering-actions-runner.cmd
+```powershell
+Get-Service | Where-Object { $_.Name -like "actions.runner.*" } |
+  Select-Object Status,StartType,Name,DisplayName
 ```
 
-That startup script restarts the runner after user login. It is not a Windows Service. For a real service, open PowerShell as Administrator and run:
+Expected result:
+
+```text
+Running  Automatic  actions.runner.Rene-Kuhm-flow-engineering.TECNODESPEGUE-flow-engineering
+```
+
+If the service must be recreated, open PowerShell as Administrator and run:
 
 ```powershell
 $repo = "Rene-Kuhm/flow-engineering"
@@ -35,12 +42,29 @@ cd $runnerRoot
 .\config.cmd --unattended --url "https://github.com/$repo" --token $token --name "$env:COMPUTERNAME-flow-engineering" --work _work --labels "self-hosted,Windows,X64,flow-engineering" --replace --runasservice
 ```
 
-Verify:
+Verify runner health:
 
 ```powershell
+Get-Service | Where-Object { $_.Name -like "actions.runner.*" } |
+  Select-Object Status,StartType,Name
+
 gh run list --repo Rene-Kuhm/flow-engineering --limit 5
-Get-Service | Where-Object { $_.Name -like "actions.runner.*" }
 ```
+
+For local Windows test runs, avoid pytest's shared `pytest-current` temp link:
+
+```powershell
+$base = Join-Path $env:TEMP "flow-engineering-pytest-$PID"
+uv run pytest --basetemp="$base"
+```
+
+There should be no user Startup fallback after service installation:
+
+```powershell
+Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\flow-engineering-actions-runner.cmd"
+```
+
+Expected result: `False`.
 
 ## SDD anti-bureaucracy rules
 
