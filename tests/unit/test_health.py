@@ -571,9 +571,12 @@ class TestFetchWorkspaceHealthIteration:
         assert sorted(p.name for p in _iter_project_subdirs(tmp_path)) == ["alpha", "bravo"]
 
     def test_records_in_name_order_with_v1_shape_and_distinct_verdicts(self, tmp_path: Path) -> None:
-        from tests.unit._workspace_fixtures import add_readme, make_node_project, make_python_project
-
         from flow_engineering.health import fetch_workspace_health
+        from tests.unit._workspace_fixtures import (
+            add_readme,
+            make_node_project,
+            make_python_project,
+        )
 
         _healthy_python(tmp_path, "alpha")
         needs = make_node_project(tmp_path, "bravo", git=False, tests=False)

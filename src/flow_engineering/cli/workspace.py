@@ -35,7 +35,6 @@ from flow_engineering.registry import (
     save_registry_atomic,
 )
 
-
 _SDD_STACKS_REQUIRING_OPENSPEC = {"Python", "Go", "Rust"}
 
 
@@ -232,7 +231,6 @@ def workspace_dashboard_cmd(
     # up the patched class. Using ``rich.console.Console`` directly here
     # would freeze the reference at import time and bypass the patch.
     from flow_engineering.cli import Console  # noqa: F401  (monkeypatch seam)
-
     from flow_engineering.dashboard import (
         fetch_archived_projects,
         fetch_project_list,

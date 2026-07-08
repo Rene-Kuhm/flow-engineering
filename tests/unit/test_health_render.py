@@ -80,4 +80,5 @@ def test_render_json_byte_identical_no_temporal() -> None:
     from flow_engineering.health_render import render_workspace_health_json
     out1 = render_workspace_health_json(_sample_envelope())
     out2 = render_workspace_health_json(_sample_envelope())
-    assert out1 == out2 and "generated_at" not in out1
+    assert out1 == out2
+    assert "generated_at" not in out1

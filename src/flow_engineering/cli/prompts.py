@@ -41,7 +41,6 @@ import click
 from flow_engineering import observability  # for _emit_check_observability (REQ-22 prefix)
 from flow_engineering.cli import main  # noqa: F401  (parent group; see design section 6)
 
-
 # ---------- REQ-49 + REQ-50: flow prompts subcommand group (T2.1) ----------
 
 
@@ -236,7 +235,9 @@ def prompts_check(
     ``N skills verified · M drift detected``.
     """
     from flow_engineering import opencode_skill_catalog as osc
-    from flow_engineering.cli import _STATUS_LABELS  # noqa: F401  (lazy; lives in cli.__init__ post-Slice-6 - cross-cutting)
+    from flow_engineering.cli import (
+        _STATUS_LABELS,  # noqa: F401  (lazy; lives in cli.__init__ post-Slice-6 - cross-cutting)
+    )
 
     action = _resolve_check_action(
         init_flag=init_flag,
@@ -640,7 +641,9 @@ def prompts_show(
     - 5: unknown ``prompt_id`` (emits JSON error on stderr).
     """
     from flow_engineering import prompt_registry
-    from flow_engineering.cli import _GOLDEN_PROMPTS_DIR  # noqa: F401  (lazy; test seam - TestGoldenUpdate monkeypatches flow_engineering.cli._GOLDEN_PROMPTS_DIR via golden_snapshot_dir fixture, post-Slice-6)
+    from flow_engineering.cli import (
+        _GOLDEN_PROMPTS_DIR,  # noqa: F401  (lazy; test seam - TestGoldenUpdate monkeypatches flow_engineering.cli._GOLDEN_PROMPTS_DIR via golden_snapshot_dir fixture, post-Slice-6)
+    )
 
     try:
         entry = prompt_registry.get_prompt(prompt_id)

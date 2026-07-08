@@ -19,7 +19,6 @@ import click
 
 from flow_engineering import observability
 
-
 _DEFAULT_PROJECTS_ROOT_WIN = "C:\\dev\\proyects"
 _DEFAULT_PROJECTS_ROOT_NIX = "~/dev/proyects"
 

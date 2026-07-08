@@ -63,7 +63,6 @@ from flow_engineering.cli import main  # noqa: F401  (parent group; see design Â
 from flow_engineering.cli._shared import _enforce_min_skill_versions_or_exit
 from flow_engineering.orchestrator import archive_change
 
-
 # Paths resolved at call time (not import time) so tests can chdir freely.
 # Constants. archive_dir is <repo>/openspec/changes/archive when invoked
 # from the repo root; the parent indices below are documented on purpose
@@ -252,4 +251,17 @@ __all__ = [
     "_entry_mtime",
     "archive_group",
     "archive_change_cmd",
+    # Stdlib / typing names re-exported for the cli/rotation.py back-compat
+    # shim (v1.3-cli-split Slice 8). The shim does
+    # ``from flow_engineering.cli.archive import (subprocess, json, ...)`` and
+    # tests patch ``flow_engineering.cli.rotation.subprocess.run`` via the
+    # string-form monkeypatch API, so these bindings must be explicitly
+    # exported to satisfy mypy's no-implicit-reexport (strict mode).
+    "subprocess",
+    "json",
+    "hashlib",
+    "datetime",
+    "UTC",
+    "Path",
+    "Any",
 ]
