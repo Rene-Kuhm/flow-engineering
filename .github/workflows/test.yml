@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: self-hosted
+    defaults:
+      run:
+        shell: powershell -ExecutionPolicy Bypass -NoProfile -Command ". '{0}'"
     env:
       CHECKOUT_DIR: checkout-${{ github.run_id }}-${{ matrix.python-version }}
     strategy:
