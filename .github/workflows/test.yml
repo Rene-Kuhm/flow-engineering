@@ -8,11 +8,10 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12", "3.13"]
 
     steps:
@@ -36,10 +35,14 @@ jobs:
         run: uv run mypy src
 
       - name: Run tests
-        run: uv run pytest --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+        env:
+          PYTEST_BASETEMP: ${{ runner.temp }}\pytest-${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          Remove-Item -LiteralPath $env:PYTEST_BASETEMP -Recurse -Force -ErrorAction SilentlyContinue
+          uv run pytest --basetemp="$env:PYTEST_BASETEMP" --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
       - name: Upload coverage
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
         with:
           file: coverage.xml
