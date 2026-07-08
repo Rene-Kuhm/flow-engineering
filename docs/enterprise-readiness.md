@@ -51,7 +51,7 @@ Goal: secrets and supply chain mistakes should be hard to miss.
 
 - [ ] Enable or document secret scanning.
 - [ ] Define token rotation rules for GitHub, OpenAI, OpenCode, and runner credentials.
-- [ ] Add dependency update policy.
+- [x] Add dependency update policy. See `docs/dependency-updates.md`.
 - [ ] Add lightweight SAST/security scan for changed code.
 - [ ] Require extra review for changes touching secrets, runner setup, filesystem access, auth, or external command execution.
 
