@@ -596,3 +596,17 @@ class TestUnableReasonMapping:
         )
         assert report.graph_unavailable is True
         assert report.unable_reason == "snapshot_envelope_corrupt"
+
+
+# ---------- T5.2 — negative-imports test for _DummyBackend (1 test) ----------
+
+
+class TestDummyBackendRemoved:
+    """REQ-DRIFT-DETECTION-5: \`_DummyBackend\` is REMOVED from
+    \`decision_drift.py\` (the class was a fixture-as-type that existed
+    only to satisfy \`SnapshotManager(..., backend=...)\`'s constructor).
+    """
+
+    def test_dummy_backend_not_importable_from_decision_drift(self) -> None:
+        with pytest.raises(ImportError):
+            from flow_engineering.decision_drift import _DummyBackend  # noqa: F401
