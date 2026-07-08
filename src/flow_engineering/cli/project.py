@@ -265,6 +265,37 @@ def _detect_project_markers(project_dir: Path) -> dict[str, Any]:
     return out
 
 
+def _inaccessible_project_markers(project_dir: Path) -> dict[str, Any]:
+    """Return a minimal marker envelope when a project directory is unreadable."""
+    return {
+        "name": project_dir.name,
+        "path": str(project_dir),
+        "has_git": False,
+        "branch": None,
+        "dirty": None,
+        "dirty_files": [],
+        "remote": None,
+        "stack": "Unknown",
+        "type": "",
+        "test_commands": [],
+        "has_openspec": False,
+        "has_graphify": False,
+        "has_engram": False,
+        "has_flow": "",
+        "readme_first_line": "",
+        "has_readme": False,
+        "has_pytest_config": False,
+    }
+
+
+def _safe_detect_project_markers(project_dir: Path) -> dict[str, Any]:
+    """Detect project markers without letting one unreadable dir abort listing."""
+    try:
+        return _detect_project_markers(project_dir)
+    except OSError:
+        return _inaccessible_project_markers(project_dir)
+
+
 @projects_group.command(name="ls")
 @click.option(
     "--root",
@@ -331,11 +362,12 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
         click.echo(f"(no subdirectories under {root})")
         return
 
+    projects = sorted(
+        (_safe_detect_project_markers(p) for p in subdirs),
+        key=lambda d: d["name"],
+    )
+
     if json_flag:
-        projects = sorted(
-            (_detect_project_markers(p) for p in subdirs),
-            key=lambda d: d["name"],
-        )
         envelope = {
             "version": "1",
             "root": str(root),
@@ -345,18 +377,17 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
         return
 
     # Compute column widths
-    name_w = max(len("NAME"), max((len(p.name) for p in subdirs), default=4))
-    type_w = max(len("TYPE"), max((len(_detect_project_markers(p)["type"] or "?") for p in subdirs), default=4))
+    name_w = max(len("NAME"), max((len(m["name"]) for m in projects), default=4))
+    type_w = max(len("TYPE"), max((len(m["type"] or "?") for m in projects), default=4))
     has_flow_w = len("FLOW")
 
     click.echo(f"{'NAME'.ljust(name_w)}  {'TYPE'.ljust(type_w)}  {'FLOW'.ljust(has_flow_w)}  README")
     click.echo(f"{'-' * name_w}  {'-' * type_w}  {'-' * has_flow_w}  {'-' * 20}")
-    for p in subdirs:
-        m = _detect_project_markers(p)
+    for m in projects:
         ptype = m["type"] or "?"
         has_flow = m["has_flow"] or "-"
         readme = m["readme_first_line"] or ""
-        click.echo(f"{p.name.ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}")
+        click.echo(f"{m['name'].ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}")
 
 
 @projects_group.command(name="backfill")
