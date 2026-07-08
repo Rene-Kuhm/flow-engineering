@@ -308,7 +308,13 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
         else:
             root = Path("~/dev/proyects").expanduser()
 
-    if not root.is_dir():
+    try:
+        root_is_dir = root.is_dir()
+    except OSError:
+        click.echo(f"projects root not found or inaccessible: {root}", err=True)
+        raise SystemExit(1) from None
+
+    if not root_is_dir:
         click.echo(f"projects root not found: {root}", err=True)
         raise SystemExit(1)
 

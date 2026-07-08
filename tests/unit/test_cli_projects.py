@@ -215,6 +215,27 @@ def test_flow_projects_default_root_windows(
         assert "not found" in result.output.lower() or "does not exist" in result.output.lower()
 
 
+def test_flow_projects_default_root_permission_error_reports_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unreadable default roots should fail with an actionable message, not an empty crash."""
+    monkeypatch.delenv("FLOW_PROJECTS_ROOT", raising=False)
+
+    original_is_dir = Path.is_dir
+
+    def fake_is_dir(path: Path) -> bool:
+        if str(path) == "C:\\dev\\proyects":
+            raise PermissionError(13, "Access denied")
+        return original_is_dir(path)
+
+    monkeypatch.setattr(Path, "is_dir", fake_is_dir)
+
+    result = runner.invoke(main, ["projects", "ls"])
+
+    assert result.exit_code == 1
+    assert "not found or inaccessible" in result.output.lower()
+
+
 # ---------- Tests (workspace-intelligence: 9 new unit tests) ----------
 
 
