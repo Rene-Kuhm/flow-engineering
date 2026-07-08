@@ -16,10 +16,8 @@ Plus adapter-compat tests land at Batch 6 (T6.1a) when
 
 from __future__ import annotations
 
-from typing import Iterable, Protocol
-
-import pytest
-
+from collections.abc import Iterable
+from typing import Protocol
 
 # ---------- T2.1 — Protocol-contract tests (3 tests, RED → GREEN) ----------
 
@@ -61,3 +59,46 @@ class TestObservationSourceProtocol:
                 return iter([])
 
         assert isinstance(_Stub(), ObservationSource)
+
+
+# ---------- T2.2a — BackendObservationSource filter-logic (2 tests) ----------
+
+
+class TestBackendObservationSource:
+    """REQ-DRIFT-DETECTION-2 scenario 1: wraps an ``EngramBackend`` +
+    applies the ``topic_key`` prefix + ``since`` cutoff filter chain.
+    """
+
+    def test_filters_by_change_name_topic_key_prefix(self) -> None:
+        from flow_engineering.drift_observation_source import (
+            BackendObservationSource,
+        )
+        from flow_engineering.engram_io import InMemoryBackend
+
+        backend = InMemoryBackend()
+        backend.mem_save(title="t1", content="c1", topic_key="sdd/mychange/a")
+        backend.mem_save(title="t2", content="c2", topic_key="sdd/mychange/b")
+        backend.mem_save(title="t3", content="c3", topic_key="sdd/other/c")
+
+        source = BackendObservationSource(backend, change_name="mychange")
+        result = list(source.iter_observations())
+
+        # 2 of 3 observations match the ``sdd/mychange/`` prefix.
+        assert len(result) == 2
+        for obs in result:
+            assert obs["topic_key"].startswith("sdd/mychange/")
+
+    def test_since_cutoff_drops_older_observations(self) -> None:
+        from flow_engineering.drift_observation_source import (
+            BackendObservationSource,
+        )
+        from flow_engineering.engram_io import InMemoryBackend
+
+        backend = InMemoryBackend()
+        # InMemoryBackend sets created_at = next_id * 1000 (id=1 → 1000).
+        backend.mem_save(title="t1", content="c1", topic_key="sdd/c/x")
+
+        source = BackendObservationSource(backend, change_name="c", since=1001.0)
+        # since=1001.0 is strictly greater than the observation's
+        # created_at=1000.0 → observation is dropped.
+        assert list(source.iter_observations()) == []
