@@ -176,3 +176,183 @@ class TestLiveDiskGraphLoader:
             loader.load()
 
         assert str(absent) in str(exc_info.value)
+
+
+# ---------- T1.2b — SnapshotGraphLoader behavior (2 tests, RED → GREEN) ----------
+
+
+def _make_snapshot_with_graph_json(snapshots_dir, graph_nodes):
+    """Build a snapshot envelope that embeds a ``graph_json_content`` string.
+
+    Mirrors the BDD step fixture at
+    ``tests/unit/test_decision_drift_snap_id.py:_seed_obs_with_binding``
+    so the snapshot round-trips through ``SnapshotManager.show()``
+    without sha256 verification failures.
+
+    Returns the ``snap_id`` string. Caller is responsible for
+    ``FLOW_SNAPSHOTS_DIR`` setup via ``monkeypatch``.
+    """
+    import gzip
+    import hashlib
+    import json
+    import secrets
+    from datetime import UTC, datetime
+
+    from flow_engineering.engram_io import InMemoryBackend
+
+    backend = InMemoryBackend()
+    backend.mem_save(
+        title="t12b-fixture",
+        content="seed observation",
+        topic_key="sdd/drift-detection/test",
+    )
+
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build a snap_id the same way SnapshotManager._build_snapshot_id does,
+    # so the file we write lands where show() looks for it.
+    iso = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
+    snap_id = f"snap_{iso}-{secrets.token_hex(3)}"
+
+    envelope: dict = {
+        "schema": 1,
+        "id": snap_id,
+        "created_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "trigger": "manual",
+        "description": "t12b-fixture",
+        "graph_state": {
+            "observations": [],
+            "project_tags": {},
+            "graph_json_content": json.dumps({"nodes": graph_nodes}),
+        },
+        "metadata": {
+            "obs_count": 0,
+            "project_count": 0,
+            "file_size_bytes": 0,
+            "sha256": "",
+            "include_graph": True,
+        },
+    }
+
+    meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+    envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+    envelope_for_hash["metadata"] = meta_for_hash
+    canonical = json.dumps(
+        envelope_for_hash, ensure_ascii=False,
+        sort_keys=True, separators=(",", ":"),
+    )
+    envelope["metadata"]["sha256"] = hashlib.sha256(
+        canonical.encode("utf-8"),
+    ).hexdigest()
+    canonical_bytes = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+    envelope["metadata"]["file_size_bytes"] = len(canonical_bytes)
+    meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+    envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+    envelope_for_hash["metadata"] = meta_for_hash
+    envelope["metadata"]["sha256"] = hashlib.sha256(
+        json.dumps(envelope_for_hash, ensure_ascii=False,
+                   sort_keys=True, separators=(",", ":")).encode("utf-8"),
+    ).hexdigest()
+    final_bytes = gzip.compress(
+        json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+    )
+    (snapshots_dir / f"{snap_id}.json.gz").write_bytes(final_bytes)
+    return snap_id
+
+
+class TestSnapshotGraphLoader:
+    """REQ-DRIFT-DETECTION-1 scenario 3: ``SnapshotGraphLoader`` reads the
+    frozen ``graph_state.graph_json_content`` from a snapshot envelope
+    via ``SnapshotManager.show()`` and returns the same 3-tuple shape
+    as the live-disk path.
+
+    Replaces the legacy ``_DummyBackend()`` stub at
+    ``decision_drift.py:311`` — the new design passes ``backend=None``
+    to ``SnapshotManager`` because ``show()`` does NOT touch the
+    backend.
+    """
+
+    def test_snapshot_loader_round_trips_frozen_graph_content(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        """Happy path: a snapshot envelope with ``graph_json_content``
+        returns ``(current_nodes, current_id_map, mtime)`` matching the
+        legacy ``_load_graph_from_snapshot`` shape.
+        """
+        from flow_engineering.drift_graph_loader import SnapshotGraphLoader
+
+        snapshots_dir = tmp_path / "snaps"
+        monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snapshots_dir))
+
+        snap_id = _make_snapshot_with_graph_json(
+            snapshots_dir,
+            [
+                {"id": "gamma", "label": "Gamma", "file": "src/gamma.py", "line": 7},
+                {"id": "delta", "label": "Delta", "file": "src/delta.py", "line": 14},
+            ],
+        )
+
+        loader = SnapshotGraphLoader(snap_id)
+        current_nodes, current_id_map, mtime = loader.load()
+
+        assert current_nodes is not None
+        assert current_id_map is not None
+        assert set(current_nodes) == {"gamma", "delta"}
+        assert current_id_map["gamma"] == ("src/gamma.py", 7, "Gamma")
+        assert current_id_map["delta"] == ("src/delta.py", 14, "Delta")
+        # mtime is the synthetic ``file_size_bytes`` value from the envelope
+        # (opaque audit-correlation marker; only non-emptiness is required).
+        assert mtime is not None
+        assert mtime >= 0
+
+    def test_snapshot_loader_raises_envelope_corrupt_on_bad_sha(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        """Corrupt envelope (sha256 mismatch) raises
+        ``SnapshotEnvelopeCorrupt`` — NOT the legacy fail-open
+        ``(None, None, None)`` swallow at
+        ``decision_drift._load_graph_from_snapshot:314-315``.
+        """
+        import gzip
+        import json
+
+        from flow_engineering.drift_graph_loader import (
+            SnapshotEnvelopeCorrupt,
+            SnapshotGraphLoader,
+        )
+
+        snapshots_dir = tmp_path / "snaps_corrupt"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snapshots_dir))
+
+        # Write a malformed envelope: schema=1 + wrong sha256 stamp so
+        # SnapshotManager.show() raises SnapshotEnvelopeError BEFORE the
+        # loader can return None.
+        envelope = {
+            "schema": 1,
+            "id": "snap_corrupt",
+            "created_at": "2026-07-08T00:00:00Z",
+            "trigger": "manual",
+            "description": "t12b-corrupt",
+            "graph_state": {"observations": [], "project_tags": {}},
+            "metadata": {
+                "obs_count": 0,
+                "project_count": 0,
+                "file_size_bytes": 0,
+                "sha256": "deadbeef" * 8,  # intentionally wrong
+                "include_graph": True,
+            },
+        }
+        (snapshots_dir / "snap_corrupt.json.gz").write_bytes(
+            gzip.compress(
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+                mtime=0,
+            )
+        )
+
+        loader = SnapshotGraphLoader("snap_corrupt")
+
+        with pytest.raises(SnapshotEnvelopeCorrupt) as exc_info:
+            loader.load()
+
+        assert "snap_corrupt" in str(exc_info.value)
