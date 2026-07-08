@@ -299,7 +299,9 @@ def _load_graph_from_snapshot(
     installs), neither field is present — we return
     ``(None, None, None)`` so the caller fail-opens with
     ``graph_unavailable=True`` and :func:`scan_change` raises
-    :class:`SnapshotGraphMissing`.
+    :class:`SnapshotGraphMissingError` (canonical home since v1.1.6;
+    the legacy ``SnapshotGraphMissing`` alias still works via the PEP
+    562 ``__getattr__`` at the bottom of this module).
     """
     from flow_engineering.snapshot_manager import (
         SnapshotEnvelopeError,
@@ -356,7 +358,7 @@ def _load_graph_from_snapshot(
         return _index_graph_payload(nodes, synthetic_mtime)
 
     # Neither field present — fail-open so ``scan_change`` can raise
-    # ``SnapshotGraphMissing`` with a structured error.
+    # ``SnapshotGraphMissingError`` (canonical) with a structured error.
     return (None, None, None)
 
 
@@ -553,9 +555,9 @@ def scan_change(
             if current_nodes is None:
                 # Either the envelope is corrupt or ``--no-include-graph``
                 # was used at create time. D2 graceful degradation: raise
-                # ``SnapshotGraphMissing`` so the CLI can render a
-                # structured error rather than silently scanning live.
-                # We only raise when the snapshot exists but its graph
+                # ``SnapshotGraphMissingError`` (canonical) so the CLI can
+                # render a structured error rather than silently scanning
+                # live. We only raise when the snapshot exists but its graph
                 # is missing; an unreadable envelope returns the same
                 # ``graph_unavailable=True`` report as the live path.
                 if _snapshot_exists(snap_id) and not _snapshot_has_graph(snap_id):
