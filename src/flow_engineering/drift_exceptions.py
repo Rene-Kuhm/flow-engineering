@@ -41,6 +41,10 @@ class GraphLoadError(Exception):
     ``unable_reason`` mapping.
     """
 
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
 
 class GraphMissing(GraphLoadError):  # noqa: N818
     """Raised when ``graph_json_path.exists() is False`` on the live path.
