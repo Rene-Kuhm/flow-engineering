@@ -58,7 +58,8 @@ def _build_table(projects: list[dict[str, object]]) -> Table:
 
 
 def _render_into_console(envelope: dict[str, object], projects: list[dict[str, object]], console: Console) -> None:
-    totals_dict = envelope.get("totals", {}) if isinstance(envelope.get("totals"), dict) else {}
+    raw_totals = envelope.get("totals", {})
+    totals_dict: dict[str, object] = raw_totals if isinstance(raw_totals, dict) else {}
     header = _format_header(str(envelope.get("root", "")), totals_dict)
     console.print(Panel(Group(header, _build_table(projects)), title="Workspace health"))
 
