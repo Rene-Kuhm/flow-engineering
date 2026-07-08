@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------- T1.1 — Protocol-contract tests (4 tests, RED → GREEN) ----------
 
 
@@ -55,9 +54,9 @@ class TestGraphLoaderProtocol:
         (not ``abc.ABC``). The check uses ``issubclass`` against the
         Protocol meta so the assertion is import-order independent.
         """
-        from flow_engineering.drift_graph_loader import GraphLoader
-
         from typing import Protocol as _Protocol
+
+        from flow_engineering.drift_graph_loader import GraphLoader
 
         assert issubclass(GraphLoader, _Protocol)
 
@@ -96,3 +95,84 @@ class TestGraphLoaderProtocol:
             "GraphLoader must be @runtime_checkable so isinstance() works "
             "without explicit Protocol registration"
         )
+
+
+# ---------- T1.2a — LiveDiskGraphLoader behavior (2 tests, RED → GREEN) ----------
+
+
+class TestLiveDiskGraphLoader:
+    """REQ-DRIFT-DETECTION-1 scenarios 1 + 2: the live-disk adapter reads
+    ``graph.json`` from disk and returns the same 3-tuple shape as the
+    legacy ``decision_drift.load_graph`` happy path. Raises the typed
+    ``GraphMissing`` exception when the path is absent (replaces the
+    bare ``return (None, None, None)`` fail-open at
+    ``decision_drift.py:238``).
+    """
+
+    def test_live_disk_loader_returns_index_tuple_on_valid_graph(
+        self, tmp_path,
+    ) -> None:
+        """Happy path: a 2-node ``graph.json`` fixture returns
+        ``(current_nodes, current_id_map, mtime)`` matching the legacy
+        ``TestLoadGraph::test_load_graph_returns_index_tuple`` shape
+        byte-for-byte (modulo ``mtime`` epoch value).
+        """
+        import json as _json
+
+        from flow_engineering.drift_graph_loader import LiveDiskGraphLoader
+
+        graph_path = tmp_path / "graph.json"
+        graph_path.write_text(
+            _json.dumps(
+                {
+                    "nodes": [
+                        {
+                            "id": "alpha",
+                            "label": "AlphaNode",
+                            "file": "src/alpha.py",
+                            "line": 10,
+                        },
+                        {
+                            "id": "beta",
+                            "label": "BetaNode",
+                            "file": "src/beta.py",
+                            "line": 20,
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        loader = LiveDiskGraphLoader(graph_path)
+        current_nodes, current_id_map, mtime = loader.load()
+
+        assert isinstance(current_nodes, dict)
+        assert isinstance(current_id_map, dict)
+        assert isinstance(mtime, float)
+        assert mtime > 0
+        assert set(current_nodes) == {"alpha", "beta"}
+        assert current_id_map["alpha"] == ("src/alpha.py", 10, "AlphaNode")
+        assert current_id_map["beta"] == ("src/beta.py", 20, "BetaNode")
+
+    def test_live_disk_loader_raises_graph_missing_on_absent_path(
+        self, tmp_path,
+    ) -> None:
+        """REQ-DRIFT-DETECTION-1 scenario 2: when ``graph_json_path``
+        points at a non-existent file, ``GraphMissing`` is raised (NOT
+        the legacy ``return (None, None, None)`` fail-open). The message
+        references the path so callers can render ``--graph-json=<path>``
+        hints.
+        """
+        from flow_engineering.drift_graph_loader import (
+            GraphMissing,
+            LiveDiskGraphLoader,
+        )
+
+        absent = tmp_path / "does_not_exist.json"
+        loader = LiveDiskGraphLoader(absent)
+
+        with pytest.raises(GraphMissing) as exc_info:
+            loader.load()
+
+        assert str(absent) in str(exc_info.value)
