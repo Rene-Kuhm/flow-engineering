@@ -36,6 +36,8 @@ import pytest
 from flow_engineering.decision_drift import DriftClass
 from flow_engineering.drift_graph_loader import (
     LiveDiskGraphLoader as _LiveDiskGraphLoader,
+)
+from flow_engineering.drift_graph_loader import (
     SnapshotGraphLoader as _SnapshotGraphLoader,
 )
 
@@ -603,9 +605,9 @@ class TestUnableReasonMapping:
 
 
 class TestDummyBackendRemoved:
-    """REQ-DRIFT-DETECTION-5: \`_DummyBackend\` is REMOVED from
-    \`decision_drift.py\` (the class was a fixture-as-type that existed
-    only to satisfy \`SnapshotManager(..., backend=...)\`'s constructor).
+    """REQ-DRIFT-DETECTION-5: `_DummyBackend` is REMOVED from
+    `decision_drift.py` (the class was a fixture-as-type that existed
+    only to satisfy `SnapshotManager(..., backend=...)`'s constructor).
     """
 
     def test_dummy_backend_not_importable_from_decision_drift(self) -> None:
@@ -685,7 +687,6 @@ class TestByteIdenticalDriftReport:
         from datetime import UTC, datetime
 
         from flow_engineering import decision_drift
-        from flow_engineering.engram_io import InMemoryBackend
 
         snapshots_dir = tmp_path / "snaps_t62"
         snapshots_dir.mkdir(parents=True, exist_ok=True)
