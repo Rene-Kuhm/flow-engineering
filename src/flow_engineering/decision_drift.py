@@ -737,6 +737,67 @@ def scan_change(
         )
 
 
+# ---------- Adapter-compat layer (REQ-DRIFT-DETECTION-8 + design §8) ----------
+
+
+DEFAULT_GRAPH_JSON: Path = Path.home() / ".flow-engineering" / "graph.json"
+"""Production default path for ``graph.json``. Mirrors the snapshot_manager
+constant at ``snapshot_manager.py:60`` (defaults stay in lockstep)."""
+
+
+def _build_loader(
+    *,
+    graph_json_path: Path | None,
+    snap_id: str | None,
+) -> object:  # GraphLoader
+    """Dispatch public kwargs to a ``GraphLoader`` collaborator.
+
+    REQ-DRIFT-DETECTION-8: the public kwargs are the single source of
+    truth. This helper maps them to the internal Protocol surface.
+
+    - ``snap_id`` non-None → ``SnapshotGraphLoader(snap_id)``
+    - ``graph_json_path`` non-None → ``LiveDiskGraphLoader(graph_json_path)``
+    - Both ``None`` → ``LiveDiskGraphLoader(DEFAULT_GRAPH_JSON)`` (raises
+      ``GraphMissing`` on ``.load()`` if the default is absent, which
+      maps to ``unable_reason='graph_file_missing'`` per REQ-DRIFT-DETECTION-6)
+    """
+    from flow_engineering.drift_graph_loader import (
+        LiveDiskGraphLoader,
+        SnapshotGraphLoader,
+    )
+
+    if snap_id is not None:
+        return SnapshotGraphLoader(snap_id)
+    if graph_json_path is None:
+        return LiveDiskGraphLoader(DEFAULT_GRAPH_JSON)
+    return LiveDiskGraphLoader(graph_json_path)
+
+
+def _build_source(
+    *,
+    backend: EngramBackend | None,
+    snap_id: str | None,
+    change_name: str,
+    since: float | None,
+) -> object:  # ObservationSource
+    """Dispatch public kwargs to an ``ObservationSource`` collaborator.
+
+    REQ-DRIFT-DETECTION-8: the public kwargs are the single source of
+    truth.
+
+    - ``snap_id`` non-None → ``FrozenBackendObservationSource(snap_id)``
+    - Otherwise → ``BackendObservationSource(backend, change_name, since)``
+    """
+    from flow_engineering.drift_observation_source import (
+        BackendObservationSource,
+        FrozenBackendObservationSource,
+    )
+
+    if snap_id is not None:
+        return FrozenBackendObservationSource(snap_id)
+    return BackendObservationSource(backend, change_name=change_name, since=since)
+
+
 # ---------- PEP 562 lazy re-export (REQ-DRIFT-DETECTION-7 + design §6) ----------
 
 
