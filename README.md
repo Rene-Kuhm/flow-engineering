@@ -115,6 +115,7 @@ See [Engineering Quality Gates](docs/engineering-quality-gates.md) for self-host
 See [Follow-up Audit](docs/follow-up-audit.md) for the current debt triage policy and next-slice guidance.
 See [System Health](docs/system-health.md) for the lightweight runner/CI/follow-up dashboard.
 See [Memory Maintenance](docs/memory-maintenance.md) for keeping Engram/SDD context useful instead of noisy.
+See [Enterprise Readiness](docs/enterprise-readiness.md) for the operational, security, governance, and recovery checklist.
 
 ## License
 
