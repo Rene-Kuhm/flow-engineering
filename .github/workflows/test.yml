@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: self-hosted
+    env:
+      CHECKOUT_DIR: checkout-${{ github.run_id }}-${{ matrix.python-version }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -18,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          path: ${{ env.CHECKOUT_DIR }}
           clean: false
 
       - name: Install uv
@@ -26,18 +29,23 @@ jobs:
           version: "latest"
 
       - name: Set up Python ${{ matrix.python-version }}
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: uv sync --all-extras --dev
 
       - name: Lint with ruff
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: uv run ruff check src tests
 
       - name: Type check with mypy
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: uv run mypy src
 
       - name: Run tests
+        working-directory: ${{ env.CHECKOUT_DIR }}
         env:
           PYTEST_BASETEMP: ${{ runner.temp }}\pytest-${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
@@ -48,5 +56,5 @@ jobs:
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
         with:
-          file: coverage.xml
+          file: ${{ env.CHECKOUT_DIR }}/coverage.xml
           fail_ci_if_error: false
