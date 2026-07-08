@@ -529,3 +529,70 @@ class TestBuildLoaderDispatch:
         )
         assert isinstance(loader, _LiveDiskGraphLoader)
         assert loader._path == _Path("foo.json")  # noqa: SLF001
+
+
+# ---------- T5.1 — unable_reason mapping tests (2 tests, RED → GREEN) ----------
+
+
+class TestUnableReasonMapping:
+    """REQ-DRIFT-DETECTION-6: ``scan_change`` populates
+    ``DriftReport.unable_reason`` from typed ``GraphLoadError`` exceptions.
+
+    Mapping:
+    - GraphMissing → ``'graph_file_missing'``
+    - GraphMalformed → ``'graph_file_malformed'``
+    - PermissionDenied → ``'graph_file_unreadable'``
+    - SnapshotEnvelopeCorrupt → ``'snapshot_envelope_corrupt'``
+    - SnapshotGraphMissing (D2 graceful degradation) → RAISES (NOT mapped)
+    """
+
+    def test_unable_reason_is_graph_file_missing_for_missing_path(
+        self, tmp_path,
+    ) -> None:
+        from flow_engineering import decision_drift
+
+        absent = tmp_path / "does_not_exist.json"
+        report = decision_drift.scan_change(
+            "my-change", graph_json_path=absent,
+        )
+        assert report.graph_unavailable is True
+        assert report.unable_reason == "graph_file_missing"
+
+    def test_unable_reason_is_snapshot_envelope_corrupt_for_bad_sha(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        import gzip
+        import json
+
+        from flow_engineering import decision_drift
+
+        snapshots_dir = tmp_path / "snaps_t51"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snapshots_dir))
+
+        envelope = {
+            "schema": 1,
+            "id": "snap_corrupt_t51",
+            "created_at": "2026-07-08T00:00:00Z",
+            "trigger": "manual",
+            "description": "t51-corrupt",
+            "graph_state": {"observations": [], "project_tags": {}},
+            "metadata": {
+                "obs_count": 0,
+                "project_count": 0,
+                "file_size_bytes": 0,
+                "sha256": "deadbeef" * 8,
+                "include_graph": True,
+            },
+        }
+        (snapshots_dir / "snap_corrupt_t51.json.gz").write_bytes(
+            gzip.compress(
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+            )
+        )
+
+        report = decision_drift.scan_change(
+            "my-change", snap_id="snap_corrupt_t51",
+        )
+        assert report.graph_unavailable is True
+        assert report.unable_reason == "snapshot_envelope_corrupt"
