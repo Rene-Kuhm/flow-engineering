@@ -311,7 +311,10 @@ def _load_graph_from_snapshot(
     # Honour the FLOW_SNAPSHOTS_DIR / test override pattern via the env
     # variable so the production default is consistent with the CLI.
     snapshots_dir = _resolve_snapshots_dir()
-    manager = SnapshotManager(snapshots_dir=snapshots_dir, backend=_DummyBackend())  # type: ignore[arg-type]
+    manager = SnapshotManager(
+        snapshots_dir=snapshots_dir,
+        backend=None,  # type: ignore[arg-type]  # show() never touches backend
+    )
     try:
         envelope = manager.show(snap_id)
     except SnapshotEnvelopeError:
@@ -362,20 +365,11 @@ def _load_graph_from_snapshot(
     return (None, None, None)
 
 
-class _DummyBackend:
-    """Backend stub used by ``_load_graph_from_snapshot``.
-
-    The ``SnapshotManager`` constructor requires an ``EngramBackend`` but
-    the snap-id branch never calls ``iter_observations`` — it only reads
-    the envelope file directly via ``show``. The dummy satisfies the
-    constructor signature without exposing any real data.
-    """
-
-    def iter_observations(self, *, project=None):  # type: ignore[no-untyped-def]  # pragma: no cover - unreachable
-        return []
-
-    def mem_search(self, *args, **kwargs):  # type: ignore[no-untyped-def]  # pragma: no cover - unreachable
-        return []
+# ``_DummyBackend\` was removed at T5.2 GREEN (REQ-DRIFT-DETECTION-5).
+# The SnapshotGraphLoader + FrozenBackendObservationSource Protocol
+# adapters pass ``backend=None`` to ``SnapshotManager`` because
+# ``show()`` never touches the backend (see design §3 / §7 for the
+# design rationale).
 
 
 def _resolve_snapshots_dir() -> Path:
@@ -410,7 +404,7 @@ def _snapshot_has_graph(snap_id: str) -> bool:
     )
     manager = SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
-        backend=_DummyBackend(),  # type: ignore[arg-type]
+        backend=None,  # type: ignore[arg-type]  # show() never touches backend
     )
     try:
         envelope = manager.show(snap_id)
@@ -438,7 +432,7 @@ def _frozen_backend_from_snapshot(snap_id: str) -> EngramBackend:
 
     manager = SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
-        backend=_DummyBackend(),  # type: ignore[arg-type]
+        backend=None,  # type: ignore[arg-type]  # show() never touches backend
     )
     try:
         envelope = manager.show(snap_id)
@@ -613,9 +607,7 @@ def _scan_with_protocols(
             decisions_total=0,
             bindings_total=0,
             graph_unavailable=True,
-            unable_reason=_UNABLE_REASON_BY_EXC_NAME.get(
-                type(exc).__name__, None,
-            ),
+            unable_reason=_UNABLE_REASON_BY_EXC_NAME.get(type(exc).__name__),
         )
 
     # D2 graceful degradation: snapshot exists but has no graph content.
