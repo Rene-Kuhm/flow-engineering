@@ -9,9 +9,18 @@ import subprocess
 from pathlib import Path
 
 
+def _plugins_dir() -> Path:
+    """Return repo-bundled plugin fixtures, with user-home fallback for smoke tests."""
+    repo_plugins = Path(__file__).resolve().parents[1] / "plugins"
+    expected = ("graphify.js", "flow-engineering.js")
+    if all((repo_plugins / name).is_file() for name in expected):
+        return repo_plugins
+    return Path.home() / ".opencode" / "plugins"
+
+
 def test_both_plugins_have_valid_syntax() -> None:
     """Both plugin files must parse as ES modules and export a Plugin function."""
-    plugins_dir = Path.home() / ".opencode" / "plugins"
+    plugins_dir = _plugins_dir()
     for name in ("graphify.js", "flow-engineering.js"):
         plugin_path = plugins_dir / name
         assert plugin_path.exists(), f"{name} not found at {plugin_path}"
@@ -31,7 +40,7 @@ def test_both_plugins_export_expected_function(tmp_path: Path) -> None:
     Uses a small node script file with pathToFileURL to avoid Windows path issues.
     """
 
-    plugins_dir = Path.home() / ".opencode" / "plugins"
+    plugins_dir = _plugins_dir()
     cases = [
         ("graphify.js", "GraphifyPlugin"),
         ("flow-engineering.js", "FlowEngineeringPlugin"),
@@ -61,7 +70,7 @@ def test_both_plugins_export_expected_function(tmp_path: Path) -> None:
 
 def test_plugin_file_sizes_similar() -> None:
     """Both plugins should be roughly the same size (≤50 lines each per spec)."""
-    plugins_dir = Path.home() / ".opencode" / "plugins"
+    plugins_dir = _plugins_dir()
     for name in ("graphify.js", "flow-engineering.js"):
         content = (plugins_dir / name).read_text(encoding="utf-8")
         line_count = sum(1 for line in content.splitlines() if line.strip())
@@ -83,10 +92,11 @@ def test_both_plugins_activate_on_their_conditions(tmp_path: Path) -> None:
     assert (go_dir / "graph.json").exists(), "graphify condition should be met"
 
     # Verify the plugins would actually fire by inspecting their source
-    flow_plugin = (Path.home() / ".opencode" / "plugins" / "flow-engineering.js").read_text()
+    plugins_dir = _plugins_dir()
+    flow_plugin = (plugins_dir / "flow-engineering.js").read_text()
     assert "existsSync" in flow_plugin, "flow-engineering plugin must check existsSync"
     assert "flow-engineering" in flow_plugin, "flow-engineering plugin must check its dir"
 
-    graphify_plugin = (Path.home() / ".opencode" / "plugins" / "graphify.js").read_text()
+    graphify_plugin = (plugins_dir / "graphify.js").read_text()
     assert "existsSync" in graphify_plugin, "graphify plugin must check existsSync"
     assert "graphify-out" in graphify_plugin, "graphify plugin must check its dir"

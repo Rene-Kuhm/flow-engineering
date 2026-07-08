@@ -77,22 +77,61 @@ def _rg_argv() -> list[str] | None:
 def _grep_argv() -> list[str] | None:
     """Return the POSIX ``grep -rn`` argv prefix when grep is on PATH; ``None`` otherwise.
 
-    Windows lacks ``grep`` natively; when ``rg`` is also missing we
-    short-circuit to empty output so the consumer gets ``(no matches)``
-    rather than a stack trace.
+    Windows lacks ``grep`` natively; when ``rg`` is also missing the search
+    path falls back to the pure-Python scanner in :func:`_run_search`.
     """
     if shutil.which("grep") is not None:
         return ["grep", "-rn", "-H", "--color", "never", "--"]
     return None
 
 
+def _iter_search_files(paths: Iterable[str], cwd: Path) -> Iterable[Path]:
+    """Yield files under the requested relative search ``paths``.
+
+    Missing paths are skipped so callers keep the same fail-open behaviour as
+    the rg/grep subprocess path. Ordering is deterministic for byte-identical
+    CLI output across invocations.
+    """
+    for raw_path in paths:
+        target = cwd / raw_path
+        if target.is_file():
+            yield target
+            continue
+        if not target.is_dir():
+            continue
+        for child in sorted(target.rglob("*")):
+            if child.is_file():
+                yield child
+
+
+def _run_python_search(query: str, paths: Iterable[str], cwd: Path) -> str:
+    """Pure-Python regex search used when neither ``rg`` nor ``grep`` exists."""
+    try:
+        pattern = re.compile(query)
+    except re.error:
+        return ""
+
+    rows: list[str] = []
+    for file_path in _iter_search_files(paths, cwd):
+        try:
+            rel_path = file_path.relative_to(cwd).as_posix()
+            with file_path.open("r", encoding="utf-8", errors="replace") as handle:
+                for line_no, line in enumerate(handle, start=1):
+                    text = line.rstrip("\r\n")
+                    if pattern.search(text):
+                        rows.append(f"{rel_path}:{line_no}:{text}")
+        except (OSError, ValueError):
+            continue
+    return "\n".join(rows) + ("\n" if rows else "")
+
+
 def _run_search(query: str, paths: Iterable[str], cwd: Path) -> str:
     """Run the available search tool and return its stdout (utf-8).
 
     Picks ``rg`` first (``_rg_argv``); falls back to POSIX ``grep -rn``
-    (``_grep_argv``). When neither tool is on PATH returns ``""`` so the
-    callers render ``(no matches)`` instead of crashing — the project's
-    fail-open discipline (``graphify_query._run_graphify_cli``).
+    (``_grep_argv``). When neither tool is on PATH uses a deterministic
+    pure-Python regex scanner so Windows service runners without Unix tools
+    still exercise the real retrieval behaviour.
 
     Exit-code semantics:
     - ``0`` → matches found (stdout parsed normally).
@@ -121,7 +160,7 @@ def _run_search(query: str, paths: Iterable[str], cwd: Path) -> str:
         if completed.returncode in (0, 1):
             return completed.stdout or ""
         return ""
-    return ""
+    return _run_python_search(query, paths, cwd)
 
 
 def _parse_hits(output: str) -> list[WhereHit]:
