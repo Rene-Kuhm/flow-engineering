@@ -77,6 +77,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from flow_engineering._jsonl_rotation import _rotate_jsonl_if_needed
+
 DEFAULT_METRICS_DIR: Path = Path.home() / ".flow-engineering"
 DEFAULT_METRICS_FILE: str = "metrics.jsonl"
 METRICS_PATH_ENV: str = "FLOW_METRICS_PATH"
@@ -203,12 +205,20 @@ def increment(name: str, **fields: Any) -> None:
     any unexpected ``OSError`` is swallowed (the counter is best-effort).
 
     REQ-V1.2.1: a size-based rotation is run BEFORE the write via
-    :func:`_rotate_metrics_if_needed`. The rotation helper itself is
-    best-effort (``try/except OSError`` swallow internally) so a slow
+    :func:`flow_engineering._jsonl_rotation._rotate_jsonl_if_needed`
+    (passing the ``metrics`` glob scheme). The rotation helper itself
+    is best-effort (``try/except OSError`` swallow internally) so a slow
     rename on a network FS never crashes the sink path resolution.
     """
     path = _resolve_path()
-    _rotate_metrics_if_needed(path)
+    _rotate_jsonl_if_needed(
+        path,
+        glob_prefix="metrics",
+        max_bytes_env=METRICS_LOG_MAX_BYTES_ENV,
+        max_age_days_env=METRICS_LOG_MAX_AGE_DAYS_ENV,
+        default_max_bytes=METRICS_ROTATE_BYTES_DEFAULT,
+        default_max_age_days=METRICS_ROTATE_AGE_DAYS_DEFAULT,
+    )
     event = {"name": name, "fields": fields, "ts": _now_iso()}
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,97 +228,6 @@ def increment(name: str, **fields: Any) -> None:
     except OSError:
         # Best-effort counter. Failing to write MUST NOT break the save flow.
         return
-
-
-def _resolve_metrics_rotation_threshold_bytes() -> int:
-    """Read ``FLOW_METRICS_LOG_MAX_BYTES`` (0 = disable).
-
-    Mirrors ``drift_event_log._resolve_rotation_threshold_bytes`` exactly:
-    missing/empty env var returns the default; non-integer env var falls
-    back to the default; negative values are clamped to 0 (disabled).
-    """
-    raw = os.environ.get(METRICS_LOG_MAX_BYTES_ENV)
-    if raw is None or raw == "":
-        return METRICS_ROTATE_BYTES_DEFAULT
-    try:
-        value = int(raw)
-    except ValueError:
-        return METRICS_ROTATE_BYTES_DEFAULT
-    return max(0, value)
-
-
-def _resolve_metrics_max_age_days() -> int:
-    """Read ``FLOW_METRICS_LOG_MAX_AGE_DAYS`` (0 = disable).
-
-    Mirrors ``drift_event_log._resolve_max_age_days`` exactly: missing
-    env var returns the default; non-integer env var falls back to the
-    default; values <= 0 disable age-based cleanup.
-    """
-    raw = os.environ.get(METRICS_LOG_MAX_AGE_DAYS_ENV)
-    if raw is None or raw == "":
-        return METRICS_ROTATE_AGE_DAYS_DEFAULT
-    try:
-        value = int(raw)
-    except ValueError:
-        return METRICS_ROTATE_AGE_DAYS_DEFAULT
-    return max(0, value)
-
-
-def _delete_stale_metrics_siblings(path: Path, max_age_days: int) -> None:
-    """Delete rotated ``metrics.*.jsonl`` siblings older than ``max_age_days``.
-
-    Extracted from :func:`_rotate_metrics_if_needed` so the age-cleanup
-    concern is testable in isolation. Behaviour mirrors the equivalent
-    block in :func:`drift_event_log._rotate_if_needed` at
-    ``drift_event_log.py:243-254`` (REQ-V1.1.1 precedent; the metrics
-    helper is REQ-V1.2.1):
-
-    - ``max_age_days <= 0`` returns immediately (cleanup disabled).
-    - Otherwise walk ``path.parent.glob("metrics.*.jsonl")`` and unlink
-      any sibling whose ``st_mtime`` is older than the cutoff.
-    - The active ``path`` itself is skipped (never delete the live sink).
-    - All filesystem operations are wrapped in ``try/except OSError``
-      so a slow FS never crashes the caller (best-effort contract).
-    """
-    if max_age_days <= 0:
-        return
-    cutoff = datetime.now(UTC).timestamp() - (max_age_days * 86400)
-    parent = path.parent
-    for sibling in parent.glob("metrics.*.jsonl"):
-        if sibling == path:
-            continue
-        try:
-            if sibling.stat().st_mtime < cutoff:
-                sibling.unlink()
-        except OSError:
-            pass
-
-
-def _rotate_metrics_if_needed(path: Path) -> None:
-    """Rotate ``path`` when its size meets the configured threshold (REQ-V1.2.1).
-
-    Mirrors ``drift_event_log._rotate_if_needed`` at lines 220-254. The
-    helper is best-effort: every filesystem call is wrapped in
-    ``try/except OSError`` so a slow rename on a network FS never crashes
-    the sink. Behaviour:
-
-    - If ``path.stat().st_size >= FLOW_METRICS_LOG_MAX_BYTES`` (default 10 MB),
-      rename ``path`` to ``metrics.<ISO-no-colons>.jsonl`` so the next
-      append creates a fresh active file.
-    - Delegate to :func:`_delete_stale_metrics_siblings` for the
-      age-based cleanup of rotated siblings (default 30 days).
-    """
-    threshold = _resolve_metrics_rotation_threshold_bytes()
-    if threshold > 0 and path.exists():
-        try:
-            if path.stat().st_size >= threshold:
-                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-                rotated = path.with_name(f"metrics.{stamp}.jsonl")
-                path.rename(rotated)
-        except OSError:
-            pass
-
-    _delete_stale_metrics_siblings(path, _resolve_metrics_max_age_days())
 
 
 def flush() -> None:
