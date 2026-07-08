@@ -111,6 +111,8 @@ The orchestrator enforces **strict TDD per Constitution Article III**: `sdd-appl
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev workflow, conventional commit discipline, and the chained-PR policy. Constitution at `.specify/memory/constitution.md` is binding — PRs that violate any article will be flagged by `sdd-verify`.
 
+See [Engineering Quality Gates](docs/engineering-quality-gates.md) for self-hosted runner operations, lean SDD documentation rules, and drift-detection slice limits.
+
 ## License
 
 [MIT](LICENSE) — © 2026 Rene-Kuhm.
