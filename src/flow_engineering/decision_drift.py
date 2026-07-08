@@ -496,11 +496,12 @@ def scan_change(
 ) -> DriftReport:
     """Scan a change for decision-to-code drift (REQ-9 + REQ-12 + REQ-33).
 
-    Aggregates per-binding classifications into a ``DriftReport``. Fails
-    open: every error path returns a safe report (graph_unavailable=True
-    when the snapshot cannot be read; empty otherwise). The function
-    MUST NOT raise — callers (``flow drift`` CLI, daemon) rely on a
-    terminal ``DriftReport``.
+    Thin coordinator (REQ-DRIFT-DETECTION-3) over the 2 Protocols
+    (``GraphLoader`` + ``ObservationSource``). Public signature
+    UNCHANGED. Fails open: every error path returns a safe report
+    (``graph_unavailable=True`` when the snapshot cannot be read;
+    empty otherwise). The function does NOT raise except for the D2
+    graceful degradation ``SnapshotGraphMissingError`` (REQ-33 contract).
 
     REQ-33 + design D13 + D5: the kwarg-only ``snap_id`` activates the
     frozen-state path. When ``snap_id`` is provided:
@@ -536,10 +537,249 @@ def scan_change(
     Returns:
         ``DriftReport`` aggregating per-binding classifications.
     """
-    scanned_at = _epoch_to_iso(time.time())
     if snap_id is not None and backend is not None:
         # Mutual exclusion enforced as a ``ValueError`` so callers can
-        # branch on it; ``load_graph`` mirrors this with its own check.
+        # branch on it; mirrors the v1.2.0 baseline contract.
+        raise ValueError(
+            "scan_change: snap_id and backend are mutually exclusive; "
+            "pass one or the other, never both"
+        )
+
+    scanned_at = _epoch_to_iso(time.time())
+    loader = _build_loader(
+        graph_json_path=graph_json_path,
+        snap_id=snap_id,
+    )
+    source = _build_source(
+        backend=backend,
+        snap_id=snap_id,
+        change_name=change_name,
+        since=since,
+    )
+
+    return _scan_with_protocols(
+        loader=loader,
+        source=source,
+        change_name=change_name,
+        since=since,
+        include_obsolete=include_obsolete,
+        scanned_at=scanned_at,
+    )
+
+
+# unable_reason mapping from typed GraphLoadError exceptions
+# (REQ-DRIFT-DETECTION-6). Looked up by ``type(exc).__name__`` so adding
+# a new typed exception requires a 1-line table addition — no if/elif chain.
+_UNABLE_REASON_BY_EXC_NAME: dict[str, str] = {
+    "GraphMissing": "graph_file_missing",
+    "GraphMalformed": "graph_file_malformed",
+    "PermissionDenied": "graph_file_unreadable",
+    "SnapshotEnvelopeCorrupt": "snapshot_envelope_corrupt",
+}
+
+
+def _scan_with_protocols(
+    *,
+    loader: object,  # GraphLoader (Protocol)
+    source: object,  # ObservationSource (Protocol)
+    change_name: str,
+    since: float | None,
+    include_obsolete: bool,
+    scanned_at: str,
+) -> DriftReport:
+    """Thin coordinator over the 2 Protocols (REQ-DRIFT-DETECTION-3).
+
+    Replaces the v1.2.0 ``scan_change`` body's I/O plumbing. Logic for
+    the per-binding iteration + contradiction re-classification block
+    is lifted verbatim from the v1.2.0 baseline
+    (``decision_drift.py:617-700``); only the load + observation-source
+    steps are swapped to Protocol-driven collaborators.
+
+    The typed-exception catch on ``loader.load()`` populates
+    ``unable_reason`` per REQ-DRIFT-DETECTION-6. The
+    SnapshotGraphMissing D2 graceful degradation raise is preserved
+    (REQ-33 contract).
+    """
+    from flow_engineering.drift_exceptions import GraphLoadError
+    from flow_engineering.drift_graph_loader import SnapshotGraphLoader
+
+    try:
+        current_nodes, current_id_map, graph_mtime = loader.load()  # type: ignore[attr-defined]
+    except GraphLoadError as exc:
+        return DriftReport(
+            change_name=change_name,
+            scanned_at=scanned_at,
+            graph_mtime=None,
+            decisions_total=0,
+            bindings_total=0,
+            graph_unavailable=True,
+            unable_reason=_UNABLE_REASON_BY_EXC_NAME.get(
+                type(exc).__name__, None,
+            ),
+        )
+
+    # D2 graceful degradation: snapshot exists but has no graph content.
+    # NOT a graph-load failure — preserve the legacy raise.
+    if current_nodes is None and isinstance(loader, SnapshotGraphLoader):
+        snap_id = loader._snap_id  # noqa: SLF001
+        if _snapshot_exists(snap_id) and not _snapshot_has_graph(snap_id):
+            from flow_engineering.observability import record_snapshot_event
+
+            record_snapshot_event(
+                "snapshot_load_failed_total",
+                snap_id=str(snap_id),
+                reason="graph_missing",
+            )
+            raise SnapshotGraphMissingError(
+                f"snapshot {snap_id} has no graph_json (created with "
+                f"--no-include-graph); drift-pinned scan unavailable"
+            )
+
+    if current_nodes is None:
+        return DriftReport(
+            change_name=change_name,
+            scanned_at=scanned_at,
+            graph_mtime=None,
+            decisions_total=0,
+            bindings_total=0,
+            graph_unavailable=True,
+        )
+
+    observations = list(source.iter_observations())  # type: ignore[attr-defined]
+
+    if since is not None:
+        observations = [
+            o for o in observations
+            if float(o.get("created_at", 0)) >= since
+        ]
+
+    findings: list[Finding] = []
+    bindings_total = 0
+
+    for obs in observations:
+        try:
+            content = str(obs.get("content", ""))
+            raw_id = obs.get("id", "unknown")
+            try:
+                decision_id = int(raw_id)
+            except (TypeError, ValueError):
+                decision_id = -1
+            try:
+                refs = extract_code_refs(content)
+            except ParseError:
+                continue
+
+            if not refs:
+                if include_obsolete:
+                    prose = content[:500]
+                    try:
+                        candidates = graphify_query.query_nodes(prose)
+                    except Exception:
+                        candidates = []
+                    if not candidates:
+                        synthetic = CodeRef(
+                            project="insyd",
+                            id="(none)",
+                            label="(no-binding)",
+                            file="(none)",
+                            line=0,
+                            confidence=0.0,
+                            source="unbound",
+                        )
+                        findings.append(
+                            Finding(
+                                decision_id=decision_id,
+                                binding=synthetic,
+                                drift_class=DriftClass.OBSOLETE,
+                                detail="no code_refs; graphify returned 0 candidates",
+                            )
+                        )
+                continue
+
+            for binding in refs:
+                bindings_total += 1
+                drift_class = classify_binding(binding, current_nodes)
+                findings.append(
+                    Finding(
+                        decision_id=decision_id,
+                        binding=binding,
+                        drift_class=drift_class,
+                        detail="",
+                    )
+                )
+        except Exception:
+            continue
+
+    try:
+        contradicted_indices = _detect_contradicted(findings)
+        if contradicted_indices:
+            rebuilt: list[Finding] = []
+            for idx, f in enumerate(findings):
+                if idx in contradicted_indices:
+                    conflicting = sorted(
+                        {
+                            other.decision_id
+                            for other in findings
+                            if other.binding.id == f.binding.id
+                            and other.decision_id != f.decision_id
+                        }
+                    )
+                    rebuilt.append(
+                        Finding(
+                            decision_id=f.decision_id,
+                            binding=f.binding,
+                            drift_class=DriftClass.CONTRADICTED,
+                            detail=f"conflicting_decisions={conflicting}",
+                        )
+                    )
+                else:
+                    rebuilt.append(f)
+            findings = rebuilt
+    except Exception:
+        pass
+
+    class_counts: dict[DriftClass, int] = {}
+    for f in findings:
+        class_counts[f.drift_class] = class_counts.get(f.drift_class, 0) + 1
+
+    return DriftReport(
+        change_name=change_name,
+        scanned_at=scanned_at,
+        graph_mtime=(
+            _epoch_to_iso(graph_mtime)
+            if isinstance(graph_mtime, (int, float))
+            else graph_mtime
+        ),
+        decisions_total=len(observations),
+        bindings_total=bindings_total,
+        class_counts=class_counts,
+        findings=findings,
+        graph_unavailable=False,
+    )
+
+
+# Legacy ``scan_change`` body (kept below for backward-compat with the
+# v1.2.0 test fixtures that may reach in directly). Marked with a
+# distinct name to avoid colliding with the new thin coordinator.
+def _legacy_scan_change_body(  # noqa: C901  # pragma: no cover
+    change_name: str,
+    *,
+    graph_json_path: Path | None = None,
+    backend: EngramBackend | None = None,
+    include_obsolete: bool = False,
+    since: float | None = None,
+    snap_id: str | None = None,
+) -> DriftReport:
+    """Legacy v1.2.0 ``scan_change`` body.
+
+    Kept as a forwarder so the legacy ``load_graph`` /
+    ``_load_graph_from_snapshot`` / ``_DummyBackend`` /
+    ``_frozen_backend_from_snapshot`` symbols (defined below) stay
+    reachable from external callers. The post-T5.1 path goes through
+    ``_scan_with_protocols`` instead.
+    """
+    scanned_at = _epoch_to_iso(time.time())
+    if snap_id is not None and backend is not None:
         raise ValueError(
             "scan_change: snap_id and backend are mutually exclusive; "
             "pass one or the other, never both"
