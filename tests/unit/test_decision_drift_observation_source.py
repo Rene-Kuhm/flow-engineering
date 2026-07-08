@@ -102,3 +102,118 @@ class TestBackendObservationSource:
         # since=1001.0 is strictly greater than the observation's
         # created_at=1000.0 → observation is dropped.
         assert list(source.iter_observations()) == []
+
+
+# ---------- T2.2b — FrozenBackendObservationSource round-trip (2 tests) ----------
+
+
+class TestFrozenBackendObservationSource:
+    """REQ-DRIFT-DETECTION-2 scenario 3: rebuilds an ``InMemoryBackend``
+    from a snapshot's ``graph_state.observations`` preserving ids.
+    """
+
+    def test_round_trips_snapshot_observations(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        import gzip
+        import hashlib
+        import json
+        import secrets
+        from datetime import UTC, datetime
+
+        from flow_engineering.drift_observation_source import (
+            FrozenBackendObservationSource,
+        )
+
+        snapshots_dir = tmp_path / "snaps"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snapshots_dir))
+
+        # Build a snapshot envelope with 2 observations.
+        iso = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
+        snap_id = f"snap_{iso}-{secrets.token_hex(3)}"
+        obs_list = [
+            {"id": 1, "topic_key": "sdd/obs-detection/x", "content": "first"},
+            {"id": 2, "topic_key": "sdd/obs-detection/y", "content": "second"},
+        ]
+        envelope = {
+            "schema": 1,
+            "id": snap_id,
+            "created_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "trigger": "manual",
+            "description": "t22b-fixture",
+            "graph_state": {
+                "observations": obs_list,
+                "project_tags": {},
+            },
+            "metadata": {
+                "obs_count": 2,
+                "project_count": 0,
+                "file_size_bytes": 0,
+                "sha256": "",
+                "include_graph": False,
+            },
+        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+        envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+        envelope_for_hash["metadata"] = meta_for_hash
+        envelope["metadata"]["sha256"] = hashlib.sha256(
+            json.dumps(envelope_for_hash, ensure_ascii=False,
+                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        ).hexdigest()
+        (snapshots_dir / f"{snap_id}.json.gz").write_bytes(
+            gzip.compress(
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+            )
+        )
+
+        source = FrozenBackendObservationSource(snap_id)
+        result = list(source.iter_observations())
+
+        # Both observations round-trip.
+        assert len(result) == 2
+        ids = sorted(o["id"] for o in result)
+        assert ids == [1, 2]
+
+    def test_envelope_corruption_yields_empty_observations(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        """Consistent with the existing legacy behavior: a corrupt envelope
+        yields an empty observation set (the scan will fail later via the
+        GraphLoader raising ``SnapshotEnvelopeCorrupt``).
+        """
+        import gzip
+        import json
+
+        from flow_engineering.drift_observation_source import (
+            FrozenBackendObservationSource,
+        )
+
+        snapshots_dir = tmp_path / "snaps_corrupt"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snapshots_dir))
+
+        envelope = {
+            "schema": 1,
+            "id": "snap_corrupt_obs",
+            "created_at": "2026-07-08T00:00:00Z",
+            "trigger": "manual",
+            "description": "corrupt",
+            "graph_state": {"observations": [], "project_tags": {}},
+            "metadata": {
+                "obs_count": 0,
+                "project_count": 0,
+                "file_size_bytes": 0,
+                "sha256": "badbadbad" * 5,
+                "include_graph": False,
+            },
+        }
+        (snapshots_dir / "snap_corrupt_obs.json.gz").write_bytes(
+            gzip.compress(
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+            )
+        )
+
+        source = FrozenBackendObservationSource("snap_corrupt_obs")
+        # Corrupt envelope → empty list (consistent with legacy behavior).
+        assert list(source.iter_observations()) == []
