@@ -29,6 +29,8 @@ the existing test files only — these are new files, not modifications.
 
 from __future__ import annotations
 
+from typing import Protocol as _Protocol
+
 import pytest
 
 # ---------- T1.1 — Protocol-contract tests (4 tests, RED → GREEN) ----------
@@ -54,8 +56,6 @@ class TestGraphLoaderProtocol:
         (not ``abc.ABC``). The check uses ``issubclass`` against the
         Protocol meta so the assertion is import-order independent.
         """
-        from typing import Protocol as _Protocol
-
         from flow_engineering.drift_graph_loader import GraphLoader
 
         assert issubclass(GraphLoader, _Protocol)
