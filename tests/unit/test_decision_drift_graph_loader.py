@@ -438,3 +438,56 @@ class TestTypedExceptionHierarchy:
             assert issubclass(cls, Exception), (
                 f"{cls.__name__} must inherit from Exception"
             )
+
+
+# ---------- T4.1 — SnapshotGraphMissing canonical relocation (2 tests) ----------
+
+
+class TestSnapshotGraphMissingReExport:
+    """REQ-DRIFT-DETECTION-7: ``SnapshotGraphMissing`` is canonical at
+    ``flow_engineering.snapshot_manager.SnapshotGraphMissingError`` (since
+    v1.1.6). ``decision_drift.SnapshotGraphMissing`` is a PEP 562 lazy
+    re-export that emits a ``DeprecationWarning`` at import time.
+
+    (Test (b) verifies the DeprecationWarning matches the v1.1.6 wording.)
+    """
+
+    def test_snapshot_graph_missing_module_is_canonical(self) -> None:
+        """The class object's ``__module__`` MUST be the canonical
+        ``flow_engineering.snapshot_manager`` — NOT the deprecated
+        ``flow_engineering.decision_drift``. PEP 562 ``__getattr__``
+        is for module-attribute access, NOT for class identity, so the
+        ``SnapshotGraphMissing IS SnapshotGraphMissingError`` invariant
+        must hold.
+        """
+        from flow_engineering.decision_drift import SnapshotGraphMissing
+        from flow_engineering.snapshot_manager import SnapshotGraphMissingError
+
+        # Class identity is preserved (PEP 562 returns the canonical class).
+        assert SnapshotGraphMissing is SnapshotGraphMissingError
+        # The canonical module is snapshot_manager, NOT decision_drift.
+        assert SnapshotGraphMissing.__module__ == "flow_engineering.snapshot_manager"
+
+    def test_snapshot_graph_missing_deprecation_warning(self) -> None:
+        """Importing ``decision_drift.SnapshotGraphMissing`` MUST emit a
+        ``DeprecationWarning`` matching the v1.1.6 wording. The warning
+        fires once per import per Python's PEP 562 cache.
+        """
+        import warnings as _warnings
+
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            # Trigger the PEP 562 lookup.
+            from flow_engineering.decision_drift import (  # noqa: F401
+                SnapshotGraphMissing,
+            )
+
+        deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        assert deprecations, (
+            "Expected a DeprecationWarning when importing "
+            "decision_drift.SnapshotGraphMissing"
+        )
+        # Wording matches v1.1.6 precedent at snapshot_manager.py:113-124.
+        msg = str(deprecations[0].message)
+        assert "deprecated" in msg.lower()
+        assert "SnapshotGraphMissingError" in msg
