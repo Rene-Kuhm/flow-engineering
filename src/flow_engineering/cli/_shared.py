@@ -44,7 +44,21 @@ def _iter_project_subdirs(root: Path) -> list[Path]:
     time so the workspace stays focused on real code (view-only filter;
     no directory is modified, archived, or deleted).
     """
-    return sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
+    subdirs: list[Path] = []
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return subdirs
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        try:
+            if entry.is_dir():
+                subdirs.append(entry)
+        except OSError:
+            continue
+    return subdirs
+
 
 def _read_pyproject_min_skill_versions(
     pyproject_path: Path,

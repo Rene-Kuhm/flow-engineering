@@ -196,6 +196,27 @@ class TestGrepRepo:
         assert any(h.path == "src/foo.py" for h in code)
         assert any(h.path == "tests/test_x.py" for h in tests)
 
+    def test_rg_and_grep_missing_falls_back_to_python_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Windows service runners without rg/grep still get real search hits."""
+        _make_src_tree(
+            tmp_path,
+            {
+                "src/foo.py": "def make_jwt():\n    return 'token'\n",
+                "tests/test_x.py": "def test_jwt():\n    pass\n",
+            },
+        )
+        monkeypatch.chdir(tmp_path)
+
+        import flow_engineering.where as where_mod
+
+        monkeypatch.setattr(where_mod.shutil, "which", lambda _name: None)
+
+        code, tests = where.grep_repo("jwt", limit=20)
+        assert [h.path for h in code] == ["src/foo.py"]
+        assert [h.path for h in tests] == ["tests/test_x.py"]
+
 
 # ---------- T1.3 / T1.4 — REQ-V1.0.1: split_code_vs_tests ----------
 
