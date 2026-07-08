@@ -33,6 +33,11 @@ from typing import Protocol as _Protocol
 
 import pytest
 
+from flow_engineering.drift_graph_loader import (
+    LiveDiskGraphLoader as _LiveDiskGraphLoader,
+    SnapshotGraphLoader as _SnapshotGraphLoader,
+)
+
 # ---------- T1.1 — Protocol-contract tests (4 tests, RED → GREEN) ----------
 
 
@@ -491,3 +496,36 @@ class TestSnapshotGraphMissingReExport:
         msg = str(deprecations[0].message)
         assert "deprecated" in msg.lower()
         assert "SnapshotGraphMissingError" in msg
+
+
+# ---------- T6.1a — _build_loader dispatch tests (2 tests) ----------
+
+
+class TestBuildLoaderDispatch:
+    """REQ-DRIFT-DETECTION-8: ``_build_loader`` is the internal helper
+    that dispatches public kwargs to a ``GraphLoader`` collaborator.
+
+    - ``snap_id="abc"`` → ``SnapshotGraphLoader("abc")``
+    - ``graph_json_path=Path("foo")`` → ``LiveDiskGraphLoader(Path("foo"))``
+    - Both ``None`` → ``LiveDiskGraphLoader(DEFAULT_GRAPH_JSON)`` (raises
+      ``GraphMissing`` on ``.load()`` if the default is absent)
+    """
+
+    def test_snap_id_dispatches_to_snapshot_graph_loader(self) -> None:
+        from flow_engineering.decision_drift import _build_loader
+
+        loader = _build_loader(graph_json_path=None, snap_id="snap_abc")
+        assert isinstance(loader, _SnapshotGraphLoader)
+        assert loader._snap_id == "snap_abc"  # noqa: SLF001
+
+    def test_graph_json_path_dispatches_to_live_disk_loader(self) -> None:
+        from pathlib import Path as _Path
+
+        from flow_engineering.decision_drift import _build_loader
+
+        loader = _build_loader(
+            graph_json_path=_Path("foo.json"),
+            snap_id=None,
+        )
+        assert isinstance(loader, _LiveDiskGraphLoader)
+        assert loader._path == _Path("foo.json")  # noqa: SLF001
