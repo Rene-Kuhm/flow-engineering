@@ -1,29 +1,27 @@
 """GraphLoader Protocol + concrete adapters (REQ-DRIFT-DETECTION-1..4).
 
-Slice 1 of the drift-detection change. The Protocol seam replaces the
-inline graph-load plumbing inside ``decision_drift.scan_change`` so
-future slices (OTel push, cross-project federation, per-finding
-``graph_unavailable`` refinement) can plug in without touching the pure
-classifier.
+Slice 1 (T1.2a + T1.2b + T3.2) of the drift-detection change. The
+Protocol seam replaces the inline graph-load plumbing inside
+``decision_drift.scan_change`` so future slices (OTel push,
+cross-project federation, per-finding ``graph_unavailable``) can plug
+in without touching the pure classifier.
+
+The 4 typed exceptions (``GraphLoadError`` + ``GraphMissing`` +
+``GraphMalformed`` + ``PermissionDenied`` + ``SnapshotEnvelopeCorrupt``)
+live in a dedicated ``drift_exceptions.py`` module (T3.2 GREEN) and are
+re-imported here for backward-compat with the pre-T3.2 import path.
 
 Module surface
 --------------
 
-- ``GraphLoadError`` + 4 typed exceptions (``GraphMissing``,
-  ``GraphMalformed``, ``PermissionDenied``, ``SnapshotEnvelopeCorrupt``)
-  — the typed hierarchy that replaces the bare ``Exception``/``RuntimeError``
-  swallows in the v1.2.0 baseline (``load_graph:238-248``,
-  ``_load_graph_from_snapshot:314-315``).
 - ``GraphLoader`` — the ``@runtime_checkable`` Protocol with a single
   ``load(self) -> tuple[dict | None, dict | None, float | None]`` method.
 - ``LiveDiskGraphLoader(graph_json_path: Path)`` — concrete adapter for
-  the live-disk path; raises the 3 live-path typed exceptions.
+  the live-disk path.
 - ``SnapshotGraphLoader(snap_id: str)`` — concrete adapter for the
-  snapshot-pinned path; raises ``SnapshotEnvelopeCorrupt`` when the
-  envelope is corrupt.
-- ``_parse_envelope_graph`` + ``_index_graph_payload`` — co-located
-  helpers shared by ``SnapshotGraphLoader`` and (test fixtures) the
-  legacy ``decision_drift.load_graph``.
+  snapshot-pinned path.
+- ``_parse_envelope_graph`` + ``_index_graph_payload`` + ``_parse_line_for_loader``
+  + ``_resolve_snapshots_dir_for_loader`` — co-located helpers.
 
 Design references: ``openspec/changes/drift-detection/design.md`` §3
 (Protocol definitions) + §4 (typed exception hierarchy).
@@ -40,76 +38,30 @@ import tempfile
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from flow_engineering.drift_exceptions import (
+    GraphLoadError,
+    GraphMalformed,
+    GraphMissing,
+    PermissionDenied,
+    SnapshotEnvelopeCorrupt,
+)
 from flow_engineering.snapshot_manager import (
     SnapshotEnvelopeError,
     SnapshotManager,
 )
 
-# ---------- Typed exception hierarchy (REQ-DRIFT-DETECTION-4) ----------
-
-
-class GraphLoadError(Exception):
-    """Base class for typed graph-load failures.
-
-    All 4 typed exceptions below inherit from this base so callers can
-    catch ``except GraphLoadError`` to handle ANY graph-load failure
-    uniformly while still distinguishing subtypes for fine-grained
-    ``unable_reason`` mapping.
-
-    Inherits from ``Exception`` (NOT ``RuntimeError`` or ``ValueError``)
-    so it does NOT collide with the ``SnapshotGraphMissing`` (the D2
-    graceful degradation signal that lives at
-    ``snapshot_manager.SnapshotGraphMissingError`` since v1.1.6) — the
-    latter stays a distinct ``raise`` at the scan boundary per REQ-33
-    contract.
-    """
-
-
-class GraphMissing(GraphLoadError):  # noqa: N818
-    """Raised when ``graph_json_path.exists() is False`` on the live path.
-
-    Replaces the bare ``return (None, None, None)`` fail-open at
-    ``decision_drift.py:238`` (the old path C). ``unable_reason`` maps
-    to ``"graph_file_missing"``.
-    """
-
-
-class GraphMalformed(GraphLoadError):  # noqa: N818
-    """Raised when ``json.loads()`` fails, OR the top-level shape is not a
-    ``dict``, OR the ``nodes`` field is not a ``list``.
-
-    Replaces the bare ``return (None, None, None)`` fail-open at
-    ``decision_drift.py:242-248`` (the old path D). ``unable_reason``
-    maps to ``"graph_file_malformed"``.
-    """
-
-
-class PermissionDenied(GraphLoadError):  # noqa: N818
-    """Raised when ``OSError`` carries ``errno`` in ``{EACCES, EPERM, EROFS}``
-    while reading the graph file.
-
-    Replaces the indistinguishable ``OSError`` swallow in the old path D.
-    ``unable_reason`` maps to ``"graph_file_unreadable"``.
-    """
-
-
-class SnapshotEnvelopeCorrupt(GraphLoadError):  # noqa: N818
-    """Raised when ``SnapshotManager.show(snap_id)`` raises
-    :class:`SnapshotEnvelopeError` (sha256 verification failure or
-    unrecognised schema version).
-
-    Distinct from ``SnapshotGraphMissing`` because an envelope can be
-    CORRUPT (sha256 mismatch) without being MISSING (--no-include-graph
-    at create time). ``unable_reason`` maps to
-    ``"snapshot_envelope_corrupt"``.
-
-    Note: this exception is a graph-loader concern, not a
-    snapshot-manager concern. ``snapshot_manager.py`` already raises
-    ``SnapshotEnvelopeError`` for the broader envelope-integrity use
-    case; we re-raise it as ``SnapshotEnvelopeCorrupt`` here so the
-    ``scan_change`` boundary can distinguish graph-load failures from
-    other snapshot failures.
-    """
+# Re-export the typed exceptions for backward-compat with pre-T3.2 callers
+# that did ``from flow_engineering.drift_graph_loader import GraphMissing`` etc.
+__all__ = [
+    "GraphLoadError",
+    "GraphMissing",
+    "GraphMalformed",
+    "PermissionDenied",
+    "SnapshotEnvelopeCorrupt",
+    "GraphLoader",
+    "LiveDiskGraphLoader",
+    "SnapshotGraphLoader",
+]
 
 
 # ---------- Protocol (REQ-DRIFT-DETECTION-1) ----------
@@ -120,35 +72,12 @@ class GraphLoader(Protocol):
     """Narrow contract for a graph-loader collaborator.
 
     ``scan_change`` consumes a ``GraphLoader`` instead of inlining the
-    graph-load logic. Two concrete adapters ship in Slice 1; future
-    slices (OTel-instrumented loader, federated loader) plug in here
-    without touching ``scan_change``.
-
-    Runtime-checkable so ``isinstance(loader, GraphLoader)`` works
-    without explicit registration.
+    graph-load logic. Runtime-checkable so ``isinstance(loader, GraphLoader)``
+    works without explicit registration.
     """
 
     def load(self) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
-        """Return ``(current_nodes, current_id_map, graph_mtime)`` for the
-        scan to consume.
-
-        Raises:
-            GraphMissing: graph file absent (live path).
-            GraphMalformed: JSON decode failure or shape mismatch.
-            PermissionDenied: OSError with EACCES/EPERM/EROFS errno.
-            SnapshotEnvelopeCorrupt: snapshot envelope fails sha256 or
-                schema-version check.
-
-        Returns:
-            ``(current_nodes, current_id_map, graph_mtime)`` 3-tuple. The
-            legacy fail-open ``(None, None, None)`` is NOT a valid
-            return value for the live-disk path — the typed exception
-            hierarchy replaces it. The snapshot path MAY return
-            ``(None, None, None)`` when the envelope lacks
-            ``graph_json_content`` (the D2 graceful degradation signal
-            that surfaces as ``SnapshotGraphMissing`` at the scan
-            boundary).
-        """
+        """Return ``(current_nodes, current_id_map, graph_mtime)`` for the scan to consume."""
         ...
 
 
@@ -156,13 +85,12 @@ class GraphLoader(Protocol):
 
 
 class LiveDiskGraphLoader:
-    """Adapter that wraps the current ``load_graph(graph_json_path)`` happy
-    path (REQ-DRIFT-DETECTION-1 scenario 1 + 2).
+    """Adapter that wraps the current ``load_graph(graph_json_path)`` happy path.
 
-    Concrete implementation of :class:`GraphLoader`. Reads from
-    ``graph_json_path`` on the live disk. Raises the 3 live-path typed
-    exceptions; ``SnapshotEnvelopeCorrupt`` is unreachable from this
-    adapter.
+    Raises ``GraphMissing`` (path absent), ``GraphMalformed`` (JSON
+    decode / shape mismatch), or ``PermissionDenied`` (OSError with
+    errno in {EACCES, EPERM, EROFS}) — replaces the bare
+    ``return (None, None, None)`` fail-open at ``decision_drift.py:238-248``.
     """
 
     def __init__(self, graph_json_path: Path) -> None:
@@ -186,7 +114,7 @@ class LiveDiskGraphLoader:
                 raise PermissionDenied(
                     f"graph file unreadable (errno={exc.errno}): {self._path}"
                 ) from exc
-            raise  # unexpected OSError → let it propagate
+            raise
         except json.JSONDecodeError as exc:
             raise GraphMalformed(
                 f"graph file is not valid JSON: {self._path} "
@@ -208,18 +136,12 @@ class LiveDiskGraphLoader:
 
 
 class SnapshotGraphLoader:
-    """Adapter that wraps the current ``_load_graph_from_snapshot(snap_id)``
-    (REQ-DRIFT-DETECTION-1 scenario 3).
+    """Adapter that wraps the current ``_load_graph_from_snapshot(snap_id)``.
 
-    Concrete implementation of :class:`GraphLoader`. Reads the frozen
-    ``graph_state.graph_json_content`` (or legacy ``graph_json`` dict)
-    from the snapshot envelope.
-
-    ``SnapshotManager.show()`` does NOT touch the backend, so we pass
-    ``backend=None`` — the constructor accepts ``None`` because the
-    constructor only requires the argument when the backend is USED
-    (e.g., ``mem_save``); ``show()`` reads the envelope file directly
-    without touching the backend.
+    Reads the frozen ``graph_state.graph_json_content`` (or legacy
+    ``graph_json`` dict) from the snapshot envelope via
+    ``SnapshotManager.show()``. NO ``_DummyBackend`` is constructed
+    (REQ-DRIFT-DETECTION-5).
     """
 
     def __init__(self, snap_id: str) -> None:
@@ -244,10 +166,10 @@ class SnapshotGraphLoader:
 def _parse_envelope_graph(envelope: dict) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
     """Parse a snapshot envelope's frozen graph content.
 
-    Mirrors the existing ``_load_graph_from_snapshot:319-359`` logic
-    EXACTLY (returns ``(None, None, None)`` when no graph content is
-    present — this is the signal for ``scan_change`` to raise
-    ``SnapshotGraphMissing`` per the D2 graceful degradation contract).
+    Mirrors the existing ``decision_drift._load_graph_from_snapshot:319-359``
+    logic EXACTLY (returns ``(None, None, None)`` when no graph content
+    is present — the D2 graceful degradation signal that surfaces as
+    ``SnapshotGraphMissing`` at the scan boundary).
     """
     graph_state = envelope.get("graph_state", {})
     meta = envelope.get("metadata", {})
@@ -288,7 +210,7 @@ def _parse_envelope_graph(envelope: dict) -> tuple[dict | None, dict | None, flo
     return (None, None, None)
 
 
-# ---------- Helpers (REQ-DRIFT-DETECTION-1 + REQ-DRIFT-DETECTION-8) ----------
+# ---------- Helpers ----------
 
 
 def _index_graph_payload(
@@ -297,13 +219,9 @@ def _index_graph_payload(
 ) -> tuple[dict[str, dict] | None, dict[str, tuple[str, int, str]] | None, float | None]:  # type: ignore[type-arg]
     """Convert a raw ``graph.json`` ``nodes`` list into the index tuple.
 
-    Identical to the existing ``decision_drift._index_graph_payload``
-    (lines 252-274). Co-located here because it's an adapter
-    implementation detail, not part of the public ``decision_drift``
-    API.
-
-    Tolerates both ``file/line`` and ``source_file/source_location``
-    node shapes (legacy v0.3.0 graph.json schema compatibility).
+    Mirrors the existing ``decision_drift._index_graph_payload``
+    (lines 252-274). Tolerates both ``file/line`` and
+    ``source_file/source_location`` node shapes.
     """
     if not isinstance(nodes, list):
         return (None, None, None)
@@ -326,12 +244,7 @@ _LINE_PATTERN = re.compile(r"\d+")
 
 
 def _parse_line_for_loader(location: object) -> int:
-    """Best-effort line-int coercion for graph.json schema variants.
-
-    Mirrors ``decision_drift._parse_line`` (lines 190-197). Duplicated
-    here to keep ``drift_graph_loader`` independent of ``decision_drift``
-    (the Protocol refactor reverses the dependency direction).
-    """
+    """Best-effort line-int coercion for graph.json schema variants."""
     if isinstance(location, int):
         return location
     if isinstance(location, str):
@@ -347,14 +260,7 @@ def _resolve_snapshots_dir_for_loader() -> Path:
     design §3 typo (the design imports it from ``snapshot_manager``
     where it does NOT live; the canonical home is
     ``decision_drift._resolve_snapshots_dir`` at line 378).
-
-    Fallback inline implementation covers the case where the
-    ``decision_drift`` import is shadowed by a circular import (e.g.,
-    when ``decision_drift`` itself lazy-imports this module).
     """
-    import os as _os
-    from pathlib import Path as _Path
-
     try:
         from flow_engineering.decision_drift import (
             _resolve_snapshots_dir as _impl,
@@ -362,19 +268,9 @@ def _resolve_snapshots_dir_for_loader() -> Path:
 
         return _impl()
     except ImportError:
+        import os as _os
+
         env = _os.environ.get("FLOW_SNAPSHOTS_DIR")
         if env:
-            return _Path(env)
-        return _Path.home() / ".flow-engineering" / "snapshots"
-
-
-__all__ = [
-    "GraphLoadError",
-    "GraphMissing",
-    "GraphMalformed",
-    "PermissionDenied",
-    "SnapshotEnvelopeCorrupt",
-    "GraphLoader",
-    "LiveDiskGraphLoader",
-    "SnapshotGraphLoader",
-]
+            return Path(env)
+        return Path.home() / ".flow-engineering" / "snapshots"
