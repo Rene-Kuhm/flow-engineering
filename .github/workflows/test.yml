@@ -64,6 +64,9 @@ jobs:
       - name: Upload coverage
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v7
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}\codecov-gitconfig
+          HOME: ${{ runner.temp }}
         with:
           files: ${{ env.CHECKOUT_DIR }}/coverage.xml
           fail_ci_if_error: false
