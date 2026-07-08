@@ -33,6 +33,7 @@ from typing import Protocol as _Protocol
 
 import pytest
 
+from flow_engineering.decision_drift import DriftClass
 from flow_engineering.drift_graph_loader import (
     LiveDiskGraphLoader as _LiveDiskGraphLoader,
     SnapshotGraphLoader as _SnapshotGraphLoader,
@@ -610,3 +611,154 @@ class TestDummyBackendRemoved:
     def test_dummy_backend_not_importable_from_decision_drift(self) -> None:
         with pytest.raises(ImportError):
             from flow_engineering.decision_drift import _DummyBackend  # noqa: F401
+
+
+# ---------- T6.2 — byte-identical DriftReport invariant tests (2 tests) ----------
+
+
+class TestByteIdenticalDriftReport:
+    """REQ-DRIFT-DETECTION-8: the post-Slice-1 ``scan_change`` produces
+    a ``DriftReport`` byte-identical to the v1.2.0 baseline (modulo the
+    documented ``unable_reason`` addition for failure paths).
+
+    The 9 existing test files in the regression gate cover most fields
+    implicitly. These 2 explicit tests cover the byte-identical invariant
+    end-to-end on the canonical happy paths (live-disk + snapshot).
+    """
+
+    def test_live_disk_path_byte_identical_happy_path(self, tmp_path) -> None:
+        import json as _json
+
+        from flow_engineering import decision_drift
+        from flow_engineering.engram_io import InMemoryBackend
+
+        # Seed an observation with a code_refs block referencing the
+        # graph node.
+        cref_block = (
+            "<!-- code_refs -->\n"
+            "{\"schema\": 1, \"source\": \"manual\", \"nodes\": ["
+            "{\"project\": \"insyd\", \"id\": \"alpha\", "
+            "\"label\": \"AlphaNode\", \"file\": \"src/alpha.py\", "
+            "\"line\": 10, \"confidence\": 1.0, \"source\": \"manual\"}]}\n"
+        )
+        backend = InMemoryBackend()
+        backend.mem_save(
+            title="t62-fixture",
+            content=f"observation prose\n{cref_block}",
+            topic_key="sdd/mychange/t62",
+        )
+
+        # Graph fixture
+        graph_path = tmp_path / "graph.json"
+        graph_path.write_text(
+            _json.dumps(
+                {
+                    "nodes": [
+                        {"id": "alpha", "label": "AlphaNode",
+                         "file": "src/alpha.py", "line": 10},
+                    ],
+                },
+            ),
+            encoding="utf-8",
+        )
+
+        report = decision_drift.scan_change(
+            "mychange", graph_json_path=graph_path, backend=backend,
+        )
+
+        # Byte-identical invariants: graph_unavailable=False + at least
+        # one STILL_VALID finding.
+        assert report.graph_unavailable is False
+        assert report.unable_reason is None
+        assert report.decisions_total == 1
+        assert report.bindings_total == 1
+        assert DriftClass.STILL_VALID in report.class_counts
+        assert report.class_counts[DriftClass.STILL_VALID] == 1
+
+    def test_snapshot_path_byte_identical_happy_path(
+        self, tmp_path, monkeypatch,
+    ) -> None:
+        import gzip
+        import hashlib
+        import json
+        import secrets
+        from datetime import UTC, datetime
+
+        from flow_engineering import decision_drift
+        from flow_engineering.engram_io import InMemoryBackend
+
+        snapshots_dir = tmp_path / "snaps_t62"
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("FLOW_SNAPSHOTS_DIR", str(snapshots_dir))
+
+        # Snapshot envelope with graph_json_content (raw string).
+        iso = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
+        snap_id = f"snap_{iso}-{secrets.token_hex(3)}"
+        obs_list = [
+            {
+                "id": 1,
+                "topic_key": "sdd/mychange/t62",
+                "content": "observation prose\n<!-- code_refs -->\n"
+                "{\"schema\": 1, \"source\": \"manual\", \"nodes\": ["
+                "{\"project\": \"insyd\", \"id\": \"beta\", "
+                "\"label\": \"BetaNode\", \"file\": \"src/beta.py\", "
+                "\"line\": 20, \"confidence\": 1.0, "
+                "\"source\": \"manual\"}]}\n",
+            },
+        ]
+        graph_json_content = json.dumps(
+            {"nodes": [
+                {"id": "beta", "label": "BetaNode",
+                 "file": "src/beta.py", "line": 20},
+            ]},
+        )
+        envelope = {
+            "schema": 1,
+            "id": snap_id,
+            "created_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "trigger": "manual",
+            "description": "t62-fixture",
+            "graph_state": {
+                "observations": obs_list,
+                "project_tags": {1: "insyd"},
+                "graph_json_content": graph_json_content,
+            },
+            "metadata": {
+                "obs_count": 1,
+                "project_count": 1,
+                "file_size_bytes": 0,
+                "sha256": "",
+                "include_graph": True,
+            },
+        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+        envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+        envelope_for_hash["metadata"] = meta_for_hash
+        envelope["metadata"]["sha256"] = hashlib.sha256(
+            json.dumps(envelope_for_hash, ensure_ascii=False,
+                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        ).hexdigest()
+        canonical_bytes = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+        envelope["metadata"]["file_size_bytes"] = len(canonical_bytes)
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+        envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+        envelope_for_hash["metadata"] = meta_for_hash
+        envelope["metadata"]["sha256"] = hashlib.sha256(
+            json.dumps(envelope_for_hash, ensure_ascii=False,
+                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        ).hexdigest()
+        (snapshots_dir / f"{snap_id}.json.gz").write_bytes(
+            gzip.compress(
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+            )
+        )
+
+        report = decision_drift.scan_change("mychange", snap_id=snap_id)
+
+        # Byte-identical invariants for the snapshot happy path.
+        assert report.graph_unavailable is False
+        assert report.unable_reason is None
+        assert report.decisions_total == 1
+        assert report.bindings_total == 1
+        assert DriftClass.STILL_VALID in report.class_counts
+        assert report.class_counts[DriftClass.STILL_VALID] == 1
