@@ -21,13 +21,13 @@ jobs:
         python-version: ["3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: ${{ env.CHECKOUT_DIR }}
           clean: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
 
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
-          file: ${{ env.CHECKOUT_DIR }}/coverage.xml
+          files: ${{ env.CHECKOUT_DIR }}/coverage.xml
           fail_ci_if_error: false
