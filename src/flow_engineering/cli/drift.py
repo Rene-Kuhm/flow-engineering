@@ -46,7 +46,6 @@ from flow_engineering.drift_event_log import (
     DriftEventLogLegacyFormatError,
 )
 
-
 # ---------- REQ-10/11/14: flow drift <change> ----------
 
 
@@ -208,6 +207,8 @@ def _write_back_findings(
     # body adjustments item 1).
     from flow_engineering.cli import (  # noqa: F401
         EngramClient as _EngramClient,
+    )
+    from flow_engineering.cli import (
         _default_save_backend,
     )
     backend = _default_save_backend()

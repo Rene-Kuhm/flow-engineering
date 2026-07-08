@@ -39,7 +39,6 @@ from flow_engineering.snapshot_manager import (
     SnapshotMeta,
 )
 
-
 # ---------- REQ-28..34: flow snapshot subcommand group (T1.5) ----------
 
 
@@ -50,8 +49,12 @@ def _build_snapshot_manager() -> SnapshotManager:
     backend so every ``flow snapshot`` subcommand gets a consistent
     facade without each command re-deriving the path.
     """
-    from flow_engineering.cli.drift import _resolve_snapshots_dir  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
-    from flow_engineering.cli import _default_save_backend  # noqa: F401  (lazy; lives in cli.__init__ post-Slice-5)
+    from flow_engineering.cli import (
+        _default_save_backend,  # noqa: F401  (lazy; lives in cli.__init__ post-Slice-5)
+    )
+    from flow_engineering.cli.drift import (
+        _resolve_snapshots_dir,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    )
     return SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
         backend=_default_save_backend(),

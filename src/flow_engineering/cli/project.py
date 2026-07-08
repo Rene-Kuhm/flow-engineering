@@ -35,7 +35,6 @@ from flow_engineering.cli import main  # noqa: F401  (parent group; see design Â
 from flow_engineering.cli._shared import _iter_project_subdirs
 from flow_engineering.project_detector import apply_tag as _apply_tag
 
-
 # ---------- REQ-24: flow projects backfill ----------
 
 

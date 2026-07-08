@@ -56,6 +56,18 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "PT", "RET", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# ``cli/__init__.py`` performs lazy submodule imports AFTER the ``main`` Click
+# group is defined (v1.3-cli-split design §6). Each submodule executes
+# ``from flow_engineering.cli import main`` at module (decorator-evaluation)
+# time, so ``main`` MUST already exist in the cli namespace before the
+# submodules are imported. Relocating these imports to the top of the file
+# would break that circular-import seam at runtime (ImportError on a
+# partially-initialised ``flow_engineering.cli`` module). E402 is therefore
+# scoped-off for this one file; the deliberate placement is documented inline
+# on each import.
+"src/flow_engineering/cli/__init__.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -75,6 +87,22 @@ warn_redundant_casts = true
 # extra — we just opt out of strict import checking for it.
 module = ["torch", "sentence_transformers", "sqlite_vec", "yaml"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The cli submodules import the ``main`` Click group from the package
+# ``__init__`` at module (decorator-evaluation) time, forming the intentional
+# import cycle documented in v1.3-cli-split design §6 (``__init__`` lazily
+# imports the submodules AFTER defining ``main``). mypy cannot resolve
+# ``main``'s type across this cycle, so it emits ``has-type`` on the first use
+# of ``main`` in each submodule and, as a knock-on, ``untyped-decorator`` on
+# every ``@main.group()`` / ``@<group>.command()`` -- the click decorators ARE
+# typed; they only look untyped because ``main`` degrades to ``Any`` through
+# the cycle. Both are false positives caused solely by the cycle. Scope the two
+# codes off for the cli submodules only; the package ``__init__`` (where
+# ``main`` resolves correctly) keeps full strict checking.
+module = ["flow_engineering.cli.*"]
+disallow_untyped_decorators = false
+disable_error_code = ["has-type"]
 
 [tool.flow_engineering.prompts]
 directory = "prompts"

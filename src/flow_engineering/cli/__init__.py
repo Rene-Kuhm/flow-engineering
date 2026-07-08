@@ -2,25 +2,22 @@
 
 from __future__ import annotations
 
-import contextlib
 import csv as _csv
-import io
 import json
 import os
 import re
-import subprocess
 import sys
 import time
-from collections import Counter
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import click
-from rich.console import Console
+from rich.console import Console as Console  # re-exported for cli.workspace (monkeypatch seam)
 
-from flow_engineering import decision_drift, observability, workspace_hygiene
+from flow_engineering import (
+    decision_drift as decision_drift,  # re-exported for tests (cli_mod.decision_drift)
+)
+from flow_engineering import observability
 from flow_engineering import where as where_mod
 from flow_engineering.auto_suggest_code_refs import FLOW_AUTO_SUGGEST_ENV
 from flow_engineering.binding import (
@@ -29,48 +26,25 @@ from flow_engineering.binding import (
     extract_code_refs,
 )
 from flow_engineering.daemon import start_watch
-from flow_engineering.drift_event_log import (
-    DriftEvent,
-    DriftEventLog,
-    DriftEventLogLegacyFormatError,
-)
 from flow_engineering.engram_io import (
     EngramBackend,
-    EngramClient,
     InMemoryBackend,
     iter_observations_for_change,
+)
+from flow_engineering.engram_io import (
+    EngramClient as EngramClient,  # re-exported for cli.drift
 )
 from flow_engineering.orchestrator import (
     apply_change,
     archive_change,
     verify_change,
 )
-from flow_engineering.project_detector import apply_tag as _apply_tag
-from flow_engineering.registry import (
-    ArchivedEntry,
-    ProjectEntry,
-    Registry,
-    RegistryError,
-    load_registry,
-    save_registry_atomic,
-)
 from flow_engineering.scaffold import (
     load_change_yaml,
     render_new_project,
     scaffold_change,
 )
-from flow_engineering.snapshot_manager import (
-    PruneNoFilterError,
-    PruneSafetyGateError,
-    RollbackConflictError,
-    RollbackRefusedError,
-    SnapshotDiff,
-    SnapshotEnvelopeError,
-    SnapshotManager,
-    SnapshotMeta,
-)
 from flow_engineering.state import StateMachine
-
 
 # Lazy submodule import (v1.3-cli-split, Slice 1). Keeps ``cli._shared``
 # registered in ``sys.modules`` so subsequent submodule-scope decorators
@@ -79,12 +53,11 @@ from flow_engineering.state import StateMachine
 # design §6) and is harmless here.
 from . import _shared as _shared  # noqa: F401  (lazy; see design §6)
 from ._shared import (
-    _DEFAULT_PROJECTS_ROOT_WIN,
-    _DEFAULT_PROJECTS_ROOT_NIX,
-    _resolve_projects_root,
-    _iter_project_subdirs,
-    _read_pyproject_min_skill_versions,
     _enforce_min_skill_versions_or_exit,
+    _resolve_projects_root,
+)
+from ._shared import (
+    _iter_project_subdirs as _iter_project_subdirs,  # re-exported for tests
 )
 
 
@@ -101,23 +74,23 @@ def main() -> None:
 # ``main`` is defined ABOVE this lazy import so ``workspace.py`` can
 # ``from flow_engineering.cli import main`` at decorator-evaluation time
 # without hitting a NameError on the partially-loaded __init__ namespace.
-from . import workspace as _workspace  # noqa: F401  (lazy; see design §6)
-from .workspace import workspace_health_cmd  # noqa: F401
-from .workspace import _summarize_workspace_status  # noqa: F401
-
-
-# Lazy submodule import (v1.3-cli-split, Slice 3). Keeps ``cli.project``
-# registered in ``sys.modules`` so its ``@projects_group.command``
-# decorators fire deterministically when this module is imported; the
-# lazy-import pattern is the v1.3-cli-split convention (see design §6).
-# ``main`` is defined ABOVE this lazy import so ``project.py`` can
-# ``from flow_engineering.cli import main`` at decorator-evaluation time
-# without hitting a NameError on the partially-loaded __init__ namespace.
-# Same precedent as Slice 2 (``workspace.py``).
-from . import project as _project  # noqa: F401  (lazy; see design §6)
-from .project import _detect_project_markers  # noqa: F401
-from .project import _git  # noqa: F401
-
+# Lazy submodule import (v1.3-cli-split, Slice 8/8, FINAL). Keeps
+# ``cli.archive`` registered in ``sys.modules`` so its ``@main.group``
+# + ``@archive_group.command`` decorators fire deterministically when
+# this module is imported; the lazy-import pattern is the
+# v1.3-cli-split convention (see design §6). ``main`` is defined ABOVE
+# this lazy import so ``archive.py`` can ``from flow_engineering.cli
+# import main`` at decorator-evaluation time without hitting a NameError
+# on the partially-loaded __init__ namespace. Same precedent as Slices
+# 2-7.
+#
+# ONE re-export is required: ``rotate_cmd`` is the 8th of the 8 names
+# the public-API grep MUST preserve (REQ-CLI-SPLIT-2 + tasks.md T-8
+# explicit ``re_exports`` list). The old ``cli/rotation.py`` path is
+# reduced to a 3-line back-compat shim that re-exports the same name
+# from this module; both paths resolve to the same function object
+# (verified via ``is`` identity check in the Slice 8 PR verification).
+from . import archive as _archive  # noqa: F401  (lazy; see design §6)
 
 # Lazy submodule import (v1.3-cli-split, Slice 4). Keeps ``cli.drift``
 # registered in ``sys.modules`` so its ``@drift_group.command``,
@@ -129,22 +102,38 @@ from .project import _git  # noqa: F401
 # without hitting a NameError on the partially-loaded __init__ namespace.
 # Same precedent as Slice 2 (``workspace.py``) and Slice 3 (``project.py``).
 from . import drift as _drift  # noqa: F401  (lazy; see design §6)
-from .drift import _format_drift_events_text  # noqa: F401
 
+# Lazy submodule import (v1.3-cli-split, Slice 7). Keeps ``cli.metrics``
+# registered in ``sys.modules`` so its ``@main.group`` +
+# ``@metrics.command`` decorators fire deterministically when this module
+# is imported; the lazy-import pattern is the v1.3-cli-split convention
+# (see design §6). ``main`` is defined ABOVE this lazy import so
+# ``metrics.py`` can ``from flow_engineering.cli import main`` at
+# decorator-evaluation time without hitting a NameError on the
+# partially-loaded __init__ namespace. Same precedent as Slice 2
+# (``workspace.py``), Slice 3 (``project.py``), Slice 4 (``drift.py``),
+# Slice 5 (``snapshot.py``), and Slice 6 (``prompts.py``). NO command
+# re-exports -- ``metrics`` subcommands are reached via the ``main``
+# Click group; the helpers (``_summarize_metrics``, ``_apply_metrics_filters``,
+# ``SUMMARY_WINDOW_CHOICES``, ``SUMMARY_DOMAIN_CHOICES``,
+# ``AGGREGATE_PERCENTILE_CHOICES``) are submodule-internal only.
+#
+# The legacy flat dump shim (REQ-V1.3.6 followup; lines 1546-1548 of the
+# pre-Slice-7 ``__init__.py``) is preserved VERBATIM in ``cli.metrics``
+# -- the ``if ctx.invoked_subcommand is not None: return`` block inside
+# the root ``metrics`` command emits the v0.6.0-era byte-identical
+# text/JSON dump of the JSONL counter sink when no subcommand is invoked.
+from . import metrics as _metrics  # noqa: F401  (lazy; see design §6)
 
-# Lazy submodule import (v1.3-cli-split, Slice 5). Keeps ``cli.snapshot``
-# registered in ``sys.modules`` so its ``@snapshot_group.command``
+# Lazy submodule import (v1.3-cli-split, Slice 3). Keeps ``cli.project``
+# registered in ``sys.modules`` so its ``@projects_group.command``
 # decorators fire deterministically when this module is imported; the
 # lazy-import pattern is the v1.3-cli-split convention (see design §6).
-# ``main`` is defined ABOVE this lazy import so ``snapshot.py`` can
+# ``main`` is defined ABOVE this lazy import so ``project.py`` can
 # ``from flow_engineering.cli import main`` at decorator-evaluation time
 # without hitting a NameError on the partially-loaded __init__ namespace.
-# Same precedent as Slice 2 (``workspace.py``), Slice 3 (``project.py``),
-# and Slice 4 (``drift.py``). NO re-exports — ``snapshot`` subcommands
-# are reached via the ``main`` Click group; the snapshot helpers
-# (``_build_snapshot_manager`` etc.) are submodule-internal only.
-from . import snapshot as _snapshot  # noqa: F401  (lazy; see design §6)
-
+# Same precedent as Slice 2 (``workspace.py``).
+from . import project as _project  # noqa: F401  (lazy; see design §6)
 
 # Lazy submodule import (v1.3-cli-split, Slice 6). Keeps ``cli.prompts``
 # registered in ``sys.modules`` so its ``@prompts_group.command``
@@ -179,50 +168,35 @@ from . import snapshot as _snapshot  # noqa: F401  (lazy; see design §6)
 # ``_default_save_backend` lazy import pattern (the released-by-test
 # helper stays at the top level so the test fixture can patch it).
 from . import prompts as _prompts  # noqa: F401  (lazy; see design §6)
-from .prompts import _GOLDEN_PROMPTS_DIR  # noqa: F401  (test seam - TestGoldenUpdate monkeypatches flow_engineering.cli._GOLDEN_PROMPTS_DIR)
 
-
-# Lazy submodule import (v1.3-cli-split, Slice 7). Keeps ``cli.metrics``
-# registered in ``sys.modules`` so its ``@main.group`` +
-# ``@metrics.command`` decorators fire deterministically when this module
-# is imported; the lazy-import pattern is the v1.3-cli-split convention
-# (see design §6). ``main`` is defined ABOVE this lazy import so
-# ``metrics.py`` can ``from flow_engineering.cli import main`` at
-# decorator-evaluation time without hitting a NameError on the
-# partially-loaded __init__ namespace. Same precedent as Slice 2
-# (``workspace.py``), Slice 3 (``project.py``), Slice 4 (``drift.py``),
-# Slice 5 (``snapshot.py``), and Slice 6 (``prompts.py``). NO command
-# re-exports -- ``metrics`` subcommands are reached via the ``main``
-# Click group; the helpers (``_summarize_metrics``, ``_apply_metrics_filters``,
-# ``SUMMARY_WINDOW_CHOICES``, ``SUMMARY_DOMAIN_CHOICES``,
-# ``AGGREGATE_PERCENTILE_CHOICES``) are submodule-internal only.
-#
-# The legacy flat dump shim (REQ-V1.3.6 followup; lines 1546-1548 of the
-# pre-Slice-7 ``__init__.py``) is preserved VERBATIM in ``cli.metrics``
-# -- the ``if ctx.invoked_subcommand is not None: return`` block inside
-# the root ``metrics`` command emits the v0.6.0-era byte-identical
-# text/JSON dump of the JSONL counter sink when no subcommand is invoked.
-from . import metrics as _metrics  # noqa: F401  (lazy; see design §6)
-
-
-# Lazy submodule import (v1.3-cli-split, Slice 8/8, FINAL). Keeps
-# ``cli.archive`` registered in ``sys.modules`` so its ``@main.group``
-# + ``@archive_group.command`` decorators fire deterministically when
-# this module is imported; the lazy-import pattern is the
-# v1.3-cli-split convention (see design §6). ``main`` is defined ABOVE
-# this lazy import so ``archive.py`` can ``from flow_engineering.cli
-# import main`` at decorator-evaluation time without hitting a NameError
-# on the partially-loaded __init__ namespace. Same precedent as Slices
-# 2-7.
-#
-# ONE re-export is required: ``rotate_cmd`` is the 8th of the 8 names
-# the public-API grep MUST preserve (REQ-CLI-SPLIT-2 + tasks.md T-8
-# explicit ``re_exports`` list). The old ``cli/rotation.py`` path is
-# reduced to a 3-line back-compat shim that re-exports the same name
-# from this module; both paths resolve to the same function object
-# (verified via ``is`` identity check in the Slice 8 PR verification).
-from . import archive as _archive  # noqa: F401  (lazy; see design §6)
+# Lazy submodule import (v1.3-cli-split, Slice 5). Keeps ``cli.snapshot``
+# registered in ``sys.modules`` so its ``@snapshot_group.command``
+# decorators fire deterministically when this module is imported; the
+# lazy-import pattern is the v1.3-cli-split convention (see design §6).
+# ``main`` is defined ABOVE this lazy import so ``snapshot.py`` can
+# ``from flow_engineering.cli import main`` at decorator-evaluation time
+# without hitting a NameError on the partially-loaded __init__ namespace.
+# Same precedent as Slice 2 (``workspace.py``), Slice 3 (``project.py``),
+# and Slice 4 (``drift.py``). NO re-exports — ``snapshot`` subcommands
+# are reached via the ``main`` Click group; the snapshot helpers
+# (``_build_snapshot_manager`` etc.) are submodule-internal only.
+from . import snapshot as _snapshot  # noqa: F401  (lazy; see design §6)
+from . import workspace as _workspace  # noqa: F401  (lazy; see design §6)
 from .archive import rotate_cmd  # noqa: F401
+from .drift import _format_drift_events_text  # noqa: F401
+from .project import (
+    _detect_project_markers as _detect_project_markers,  # re-exported for cli.workspace + health.py + tests
+)
+from .project import (
+    _git as _git,  # re-exported for cli.project + workspace_hygiene.py + tests
+)
+from .prompts import (
+    _GOLDEN_PROMPTS_DIR as _GOLDEN_PROMPTS_DIR,  # test seam - monkeypatched via golden_snapshot_dir fixture
+)
+from .workspace import (
+    _summarize_workspace_status,  # noqa: F401
+    workspace_health_cmd,  # noqa: F401
+)
 
 
 @main.command()
@@ -1222,7 +1196,9 @@ def search(
     / ``--type`` filters. The federated and vector paths are mutually
     exclusive.
     """
-    from flow_engineering.cli.drift import _parse_since  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    from flow_engineering.cli.drift import (
+        _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    )
     if semantic_flag and hybrid_flag:
         click.echo(
             "ERROR: --semantic and --hybrid are mutually exclusive.", err=True

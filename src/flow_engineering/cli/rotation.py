@@ -20,18 +20,18 @@ namespace and requires ``subprocess`` to be an attribute of this
 module. Re-exporting the stdlib bindings preserves that test seam
 without forcing the test to change.
 """
-from flow_engineering.cli.archive import (  # noqa: F401
-    rotate_cmd,
-    _candidate_entries,
-    _entry_mtime,
-)
-from flow_engineering.cli.archive import (  # noqa: F401
-    hashlib,
-    json,
-    subprocess,
-)
-from flow_engineering.cli.archive import UTC, datetime  # noqa: F401
-from flow_engineering.cli.archive import Path  # noqa: F401
-from flow_engineering.cli.archive import Any  # noqa: F401
 import click  # noqa: F401
 import yaml  # noqa: F401
+
+from flow_engineering.cli.archive import (  # noqa: F401  # noqa: F401  # noqa: F401
+    UTC,
+    Any,  # noqa: F401
+    Path,  # noqa: F401
+    _candidate_entries,
+    _entry_mtime,
+    datetime,
+    hashlib,
+    json,
+    rotate_cmd,
+    subprocess,
+)

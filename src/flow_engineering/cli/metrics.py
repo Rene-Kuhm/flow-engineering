@@ -42,7 +42,6 @@ import click
 from flow_engineering import observability
 from flow_engineering.cli import main  # noqa: F401  (parent group; see design section 6)
 
-
 # ---------- REQ-8 close: flow metrics ----------
 
 
@@ -156,7 +155,9 @@ def metrics_summary(
       (D9 ``EXIT_MALFORMED_METRICS``); emits ``"Error: metrics file at
       <path> is malformed."`` to stderr.
     """
-    from flow_engineering.cli.drift import _parse_since  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    from flow_engineering.cli.drift import (
+        _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    )
     fmt_lower = fmt.lower()
 
     since_epoch: float | None = None
@@ -351,7 +352,9 @@ def metrics_export(
       failure).
     - 4: write failure on ``--out``.
     """
-    from flow_engineering.cli.drift import _parse_since  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    from flow_engineering.cli.drift import (
+        _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    )
     fmt_lower = fmt.lower()
 
     since_epoch: float | None = None
@@ -529,7 +532,9 @@ def metrics_aggregate(
       on ``--percentile`` / ``--domain``; ``--window`` parse failure;
       ``--since`` / ``--until`` ISO parse failure).
     """
-    from flow_engineering.cli.drift import _parse_since  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    from flow_engineering.cli.drift import (
+        _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
+    )
     fmt_lower = fmt.lower()
 
     # Parse the --percentile labels into integers; validate against the
