@@ -35,6 +35,7 @@ import contextlib
 import errno
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -321,7 +322,7 @@ def _index_graph_payload(
     return (current_nodes, current_id_map, mtime)
 
 
-_LINE_PATTERN = __import__("re").compile(r"\d+")
+_LINE_PATTERN = re.compile(r"\d+")
 
 
 def _parse_line_for_loader(location: object) -> int:
