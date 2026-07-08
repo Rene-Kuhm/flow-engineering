@@ -217,3 +217,23 @@ class TestFrozenBackendObservationSource:
         source = FrozenBackendObservationSource("snap_corrupt_obs")
         # Corrupt envelope → empty list (consistent with legacy behavior).
         assert list(source.iter_observations()) == []
+
+
+# ---------- T2.3 — StaticObservationSource identity-iteration (1 test) ----------
+
+
+class TestStaticObservationSource:
+    """REQ-DRIFT-DETECTION-5: ``StaticObservationSource`` replaces the
+    legacy ``_DummyBackend`` for test fixtures. Identity iteration only.
+    """
+
+    def test_iterates_canned_list_unchanged(self) -> None:
+        from flow_engineering.drift_observation_source import StaticObservationSource
+
+        canned = [
+            {"id": 1, "topic_key": "sdd/c/a", "content": "x"},
+            {"id": 2, "topic_key": "sdd/c/b", "content": "y"},
+        ]
+        source = StaticObservationSource(canned)
+        result = list(source.iter_observations())
+        assert result == canned
