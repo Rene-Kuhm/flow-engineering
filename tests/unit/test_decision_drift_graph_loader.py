@@ -356,3 +356,85 @@ class TestSnapshotGraphLoader:
             loader.load()
 
         assert "snap_corrupt" in str(exc_info.value)
+
+
+# ---------- T3.1 — Typed exception hierarchy tests (4 tests, RED → GREEN) ----------
+
+
+class TestTypedExceptionHierarchy:
+    """REQ-DRIFT-DETECTION-4: 4 typed exceptions (``GraphMissing``,
+    ``GraphMalformed``, ``PermissionDenied``, ``SnapshotEnvelopeCorrupt``)
+    inheriting from a common base ``GraphLoadError(Exception)``. The 4 are
+    siblings (NOT parent-child) — the 4 failure modes are mutually
+    exclusive.
+
+    The classes live in a dedicated ``drift_exceptions.py`` module (per
+    user's task D10 override of the design's co-location choice —
+    design.md §2 had them co-located in ``drift_graph_loader.py``).
+    """
+
+    def test_graph_load_error_is_exception_subclass(self) -> None:
+        from flow_engineering.drift_exceptions import GraphLoadError
+
+        # Base class inherits from Exception (NOT RuntimeError or ValueError)
+        # so it doesn't collide with SnapshotGraphMissing (Exception since v1.1.6).
+        assert issubclass(GraphLoadError, Exception)
+        assert not issubclass(GraphLoadError, RuntimeError)
+        assert not issubclass(GraphLoadError, ValueError)
+
+    def test_typed_exceptions_are_siblings_under_base(self) -> None:
+        from flow_engineering.drift_exceptions import (
+            GraphLoadError,
+            GraphMalformed,
+            GraphMissing,
+            PermissionDenied,
+            SnapshotEnvelopeCorrupt,
+        )
+
+        # All 4 inherit from GraphLoadError.
+        for cls in (GraphMissing, GraphMalformed, PermissionDenied, SnapshotEnvelopeCorrupt):
+            assert issubclass(cls, GraphLoadError), (
+                f"{cls.__name__} must inherit from GraphLoadError"
+            )
+        # But siblings — no parent-child between them.
+        assert not issubclass(GraphMissing, GraphMalformed)
+        assert not issubclass(GraphMalformed, GraphMissing)
+        assert not issubclass(PermissionDenied, GraphMissing)
+        assert not issubclass(SnapshotEnvelopeCorrupt, GraphMissing)
+
+    def test_typed_exceptions_carry_message(self) -> None:
+        from flow_engineering.drift_exceptions import (
+            GraphMissing,
+            PermissionDenied,
+            SnapshotEnvelopeCorrupt,
+        )
+
+        # Each carries a human-readable message referencing the
+        # path/snap_id so callers can render structured CLI errors.
+        missing = GraphMissing("graph file not found: /tmp/g.json")
+        denied = PermissionDenied("graph file unreadable: /tmp/g.json (errno=13)")
+        corrupt = SnapshotEnvelopeCorrupt("snapshot envelope corrupt: snap_id='abc'")
+
+        assert "graph file not found" in str(missing)
+        assert "/tmp/g.json" in str(missing)
+        assert "errno=13" in str(denied)
+        assert "snap_id='abc'" in str(corrupt)
+
+    def test_typed_exceptions_all_inherit_from_exception(self) -> None:
+        """REQ-DRIFT-DETECTION-4: all 4 inherit from ``Exception`` (NOT
+        ``RuntimeError`` or ``ValueError``). This keeps the type system
+        orthogonal to ``SnapshotGraphMissingError(Exception)`` (the D2
+        graceful degradation signal since v1.1.6).
+        """
+        from flow_engineering.drift_exceptions import (
+            GraphLoadError,
+            GraphMalformed,
+            GraphMissing,
+            PermissionDenied,
+            SnapshotEnvelopeCorrupt,
+        )
+
+        for cls in (GraphLoadError, GraphMissing, GraphMalformed, PermissionDenied, SnapshotEnvelopeCorrupt):
+            assert issubclass(cls, Exception), (
+                f"{cls.__name__} must inherit from Exception"
+            )
