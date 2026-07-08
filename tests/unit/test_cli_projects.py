@@ -236,6 +236,32 @@ def test_flow_projects_default_root_permission_error_reports_message(
     assert "not found or inaccessible" in result.output.lower()
 
 
+def test_flow_projects_ls_isolates_unreadable_project_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One unreadable project directory must not abort the whole listing."""
+    root = tmp_path / "projects"
+    root.mkdir()
+    readable = make_fake_python_project(root, name="readable")
+    blocked = root / "blocked"
+    blocked.mkdir()
+
+    original_detect = cli_mod._detect_project_markers
+
+    def fake_detect(project_dir: Path) -> dict[str, object]:
+        if project_dir == blocked:
+            raise PermissionError(13, "Access denied")
+        return original_detect(project_dir)
+
+    monkeypatch.setattr(cli_mod._project, "_detect_project_markers", fake_detect)
+
+    result = runner.invoke(main, ["projects", "ls", "--root", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert readable.name in result.output
+    assert blocked.name in result.output
+
+
 # ---------- Tests (workspace-intelligence: 9 new unit tests) ----------
 
 
