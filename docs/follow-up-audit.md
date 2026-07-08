@@ -33,10 +33,7 @@ No urgent blocker remains. If continuing drift-detection, choose one small behav
 ## Health checks
 
 ```powershell
-Get-Service | Where-Object { $_.Name -like "actions.runner.*" } |
-  Select-Object Status,StartType,Name
-
-gh run list --repo Rene-Kuhm/flow-engineering --limit 5
+.\scripts\system_health.ps1
 ```
 
 Expected state:

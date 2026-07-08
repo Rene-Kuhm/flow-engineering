@@ -113,6 +113,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev workflow, conventional commit
 
 See [Engineering Quality Gates](docs/engineering-quality-gates.md) for self-hosted runner operations, lean SDD documentation rules, and drift-detection slice limits.
 See [Follow-up Audit](docs/follow-up-audit.md) for the current debt triage policy and next-slice guidance.
+See [System Health](docs/system-health.md) for the lightweight runner/CI/follow-up dashboard.
+See [Memory Maintenance](docs/memory-maintenance.md) for keeping Engram/SDD context useful instead of noisy.
 
 ## License
 

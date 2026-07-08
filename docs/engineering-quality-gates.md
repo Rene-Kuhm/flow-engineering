@@ -51,6 +51,12 @@ Get-Service | Where-Object { $_.Name -like "actions.runner.*" } |
 gh run list --repo Rene-Kuhm/flow-engineering --limit 5
 ```
 
+For the compact project dashboard, run:
+
+```powershell
+.\scripts\system_health.ps1
+```
+
 For local Windows test runs, avoid pytest's shared `pytest-current` temp link:
 
 ```powershell
@@ -106,3 +112,4 @@ Extract protocols, change CLI output, rewrite persistence, and update docs in on
 - [ ] SDD artifacts are short and decision-focused.
 - [ ] Tests are with the behavior they verify.
 - [ ] Archive/spec sync is included only when the change is complete.
+- [ ] Memory/follow-up context was checked via `docs/memory-maintenance.md` before promoting old work.
