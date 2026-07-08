@@ -72,6 +72,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: `workspace_health_cmd`, `_summarize_workspace_status`; lazy `from . import workspace as _workspace  # noqa: F401`
 - commit_messages: `refactor(cli): relocate workspace group to cli/workspace.py (Slice 2/8)` → `refactor(cli): re-export workspace_health_cmd from cli/workspace.py (Slice 2/8)` → `chore(cli): verify cli/workspace.py slice 2 byte-determinism green (Slice 2/8)`
 - over_400_loc: **true** — PR body requires "Mechanical relocation, not new logic" justification
+- [x] **applied 2026-07-07 (PR #33, merged)** — `cli/workspace.py` created (737 LOC); `cli/__init__.py` net -681 LOC; byte-determinism preserved (SHA-256 `B51EC7F5...` matches `origin/main` baseline); 34/34 targeted workspace tests PASS. See `apply-progress.md` §"Slice 2" for full evidence. *Stale-checkbox reconciliation at archive time: T-2 was not marked [x] by sdd-apply; the orchestrator's archive instruction confirmed full implementation and apply-progress.md documents the per-slice commit + verification. Marked [x] at archive.*
 
 ### T-3 — `cli/project.py` (~600 LOC)
 
@@ -81,6 +82,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: `_detect_project_markers`, `_git`; lazy `from . import project as _project  # noqa: F401`
 - commit_messages: `refactor(cli): relocate projects group to cli/project.py (Slice 3/8)` → `refactor(cli): re-export _detect_project_markers from cli/project.py (Slice 3/8)` → `chore(cli): verify cli/project.py slice 3 pytest green (Slice 3/8)`
 - over_400_loc: **true** — justification required
+- [x] **applied 2026-07-07 (PR #35, merged)** — `cli/project.py` created (579 LOC); `cli/__init__.py` net -528 LOC; public API preserved (`_detect_project_markers`, `_git`); 34/34 targeted workspace tests PASS. See `apply-progress.md` §"Slice 3" for full evidence. *Stale-checkbox reconciliation at archive time: marked [x] at archive per orchestrator instruction + apply-progress proof.*
 
 ### T-4 — `cli/drift.py` (~700 LOC, preserves `drift_events_alias_group` intact)
 
@@ -90,6 +92,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: `_format_drift_events_text`; lazy `from . import drift as _drift  # noqa: F401`
 - commit_messages: `refactor(cli): relocate drift group to cli/drift.py (Slice 4/8)` → `refactor(cli): re-export _format_drift_events_text from cli/drift.py (Slice 4/8)` → `chore(cli): verify cli/drift.py slice 4 pytest green (Slice 4/8)`
 - over_400_loc: **true** — justification required
+- [x] **applied 2026-07-07 (PR #36, merged)** — `cli/drift.py` created (890 LOC); `cli/__init__.py` net -807 LOC; `drift_events_alias_group` preserved INTACT (REQ-V1.2.4); 20/20 drift tests + 34/34 targeted workspace tests PASS. See `apply-progress.md` §"Slice 4" for full evidence. *Stale-checkbox reconciliation at archive time: marked [x] at archive per orchestrator instruction + apply-progress proof.*
 
 ### T-5 — `cli/snapshot.py` (~350 LOC)
 
@@ -99,6 +102,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: (none — `snapshot_*` reached via `main` group); lazy `from . import snapshot as _snapshot  # noqa: F401`
 - commit_messages: `refactor(cli): relocate snapshot group to cli/snapshot.py (Slice 5/8)` → `refactor(cli): lazy-import cli/snapshot.py (Slice 5/8)` → `chore(cli): verify cli/snapshot.py slice 5 pytest green (Slice 5/8)`
 - over_400_loc: false
+- [x] **applied 2026-07-07 (PR #37, merged)** — `cli/snapshot.py` created (420 LOC); `cli/__init__.py` net -363 LOC; 24/24 snapshot tests PASS + 335/335 CLI tests PASS; byte-determinism preserved. See `apply-progress.md` §"Slice 5" for full evidence. *Stale-checkbox reconciliation at archive time: marked [x] at archive per orchestrator instruction + apply-progress proof.*
 
 ### T-6 — `cli/prompts.py` (~300 LOC)
 
@@ -108,6 +112,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: (none); lazy `from . import prompts as _prompts  # noqa: F401`
 - commit_messages: `refactor(cli): relocate prompts group to cli/prompts.py (Slice 6/8)` → `refactor(cli): lazy-import cli/prompts.py (Slice 6/8)` → `chore(cli): verify cli/prompts.py slice 6 pytest green (Slice 6/8)`
 - over_400_loc: false
+- [x] **applied 2026-07-07 (PR #38, merged)** — `cli/prompts.py` created (717 LOC; tasks.md ~300 estimate undersized — actual 717 per apply-progress §"Slice 6"); `cli/__init__.py` net -766 LOC; 38/38 prompts tests + 11/11 golden snapshot tests + 34/34 targeted workspace tests PASS. `_GOLDEN_PROMPTS_DIR` test-seam re-export pattern applied. See `apply-progress.md` §"Slice 6" for full evidence. *Stale-checkbox reconciliation at archive time: marked [x] at archive per orchestrator instruction + apply-progress proof.*
 
 ### T-7 — `cli/metrics.py` (~500 LOC, legacy flat dump preserved verbatim)
 
@@ -117,6 +122,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: (none); lazy `from . import metrics as _metrics  # noqa: F401`
 - commit_messages: `refactor(cli): relocate metrics group to cli/metrics.py (Slice 7/8)` → `refactor(cli): lazy-import cli/metrics.py (Slice 7/8)` → `chore(cli): verify cli/metrics.py slice 7 pytest green (Slice 7/8)`
 - over_400_loc: **true** — justification required
+- [x] **applied 2026-07-08 (PR #39, merged)** — `cli/metrics.py` created (595 LOC); `cli/__init__.py` net -529 LOC; legacy flat dump shim preserved VERBATIM (REQ-V1.3.6 contract); 30/30 metrics tests PASS (2 pre-existing time-sensitive `test_*_with_window_filter` failures deselected — same pattern on `origin/main` and tracker pre-Slice-7, NOT regressions). See `apply-progress.md` §"Slice 7" for full evidence. *Stale-checkbox reconciliation at archive time: marked [x] at archive per orchestrator instruction + apply-progress proof.*
 
 ### T-8 — `cli/archive.py` rename (~150 LOC + 3-line back-compat shim in old path)
 
@@ -126,6 +132,7 @@ Each slice = 3 work-unit commits (C1=C2=C3) + optional C4 readability nit. Patte
 - re_exports: `rotate_cmd`; lazy `from . import archive as _archive  # noqa: F401`
 - commit_messages: `refactor(cli): rename rotation.py → archive.py and relocate archive group (Slice 8/8)` → `refactor(cli): back-compat shim cli/rotation.py → cli/archive.py (Slice 8/8)` → `chore(cli): verify cli/archive.py slice 8 pytest green (Slice 8/8)`
 - over_400_loc: false
+- [x] **applied 2026-07-08 (PR #40, merged)** — `cli/rotation.py` renamed to `cli/archive.py` (267 LOC total = rotation body + archive group + archive_change_cmd + late import); `cli/rotation.py` reduced to 3-line back-compat shim preserving `from flow_engineering.cli.rotation import (...)` test seam. `rotate_cmd` importable from `flow_engineering.cli` (REQ-CLI-SPLIT-2). See `apply-progress.md` §"Slice 8" for full evidence. *Stale-checkbox reconciliation at archive time: marked [x] at archive per orchestrator instruction + apply-progress proof.*
 
 ## Per-Slice Optional Commit (C4)
 
