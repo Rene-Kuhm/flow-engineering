@@ -1294,3 +1294,257 @@ The task spec prescribed 2 work-unit commits (C1 relocate + C2 verify). Implemen
 - `src/flow_engineering/cli/__init__.py` — net -766 LOC (2895 → 2129); added prompts lazy import + `_GOLDEN_PROMPTS_DIR` test-seam re-export + 17 lines of explanatory comment block.
 - `openspec/changes/v1.3-cli-split/apply-progress.md` — THIS FILE (appended Slice 6 section).
 
+
+---
+
+## Slice 7 — T-7 (cli/metrics.py)
+
+> **Apply batch**: 7 of 8 (Slice 7 / 8)
+> **Date**: 2026-07-08
+> **Branch base**: `codex/v1.3-cli-split-6-prompts @ dc180ba` (Slice 6 merged via PR #38 → tracker `3a0844d`)
+> **Tracker**: `feature/v1.3-cli-split @ 3a0844d`
+> **Slice branch**: `codex/v1.3-cli-split-7-metrics`
+> **PR**: https://github.com/Rene-Kuhm/flow-engineering/pull/39
+
+### Goal
+
+Mechanically relocate the `flow metrics` Click group + its 3 subcommands (`summary` / `export` / `aggregate`) + the 2 private helpers (`_summarize_metrics`, `_apply_metrics_filters`) + the 3 module-level constants (`SUMMARY_WINDOW_CHOICES`, `SUMMARY_DOMAIN_CHOICES`, `AGGREGATE_PERCENTILE_CHOICES`) from `cli/__init__.py` to a NEW `cli/metrics.py`, preserving the **legacy flat dump shim** (REQ-V1.3.6 followup) VERBATIM (the `if ctx.invoked_subcommand is not None: return` block at lines 1546-1548 of the pre-Slice-7 `__init__.py` — now at lines 77-78 of `cli/metrics.py`). No public API re-exports; `metrics` subcommands are reached via the existing `main` Click group tree (Slice 2-6 precedent).
+
+### Source range adaptation
+
+The orchestrator spec quoted `cli/__init__.py:1517-2074` (planned). After adding the Slice 7 lazy import block at the top of `__init__.py` (23 lines), the same content lives at `1515-2089` post-lazy-import. Boundaries match the Slice 6 precedent:
+
+- **Start** at line 1515 (post-lazy-import): `# ---------- REQ-8 close: flow metrics ----------` section header.
+- **End** at line 2089 (post-lazy-import): last of the 2 trailing blank lines (PEP-8 separator before `# ---------- Phase 3: flow workspace status ----------`).
+
+Final extracted range: post-Slice-1+2+3+4+5+6 `cli/__init__.py:1515-2089` (575 body LOC).
+
+### Files Changed
+
+| File | Action | LOC | Detail |
+|---|---|---|---|
+| `src/flow_engineering/cli/metrics.py` | NEW | +595 (575 body + 20 imports/docstring) | Verbatim body relocation + minimal top-level imports (`json`, `sys`, `datetime.UTC`, `datetime.datetime`, `Path`, `typing.Any`, `click`, `flow_engineering.observability`, `flow_engineering.cli.main`). Plus module docstring describing Slice 7 origin + the legacy flat dump shim preservation contract. |
+| `src/flow_engineering/cli/__init__.py` | modified | -529 net (575 deleted + 23 inserted + 0 from re-export) | Removed the metrics cluster (lines 1515-2089 post-lazy-import). Added: lazy `from . import metrics as _metrics` (Slice 2/3/4/5/6 precedent), 23-line explanatory comment block describing the Slice 7 layout + the legacy flat dump shim preservation contract. NO re-exports — metrics subcommands are reached via the `main` Click group; the helpers + constants are submodule-internal only. |
+
+Net: `cli/__init__.py` went from 2150 → 1621 LOC. `cli/metrics.py` 0 → 595 LOC. Net project: +66 LOC (scaffolding + docstring).
+
+### Pragmatic body adjustments
+
+NO cross-module reference fixes were required (the simplest of all 7 slices):
+
+1. **`_parse_since`** already used function-body lazy imports (`from flow_engineering.cli.drift import _parse_since`) inside `metrics_summary` / `metrics_export` / `metrics_aggregate` (Slice 4 precedent). The lazy-import pattern is preserved verbatim.
+2. **`observability` / `main`** are imported at module top of the new `metrics.py`. `main` resolves via `from flow_engineering.cli import main` (parent group reference, design §6).
+3. The 3 module-level constants (`SUMMARY_WINDOW_CHOICES`, `SUMMARY_DOMAIN_CHOICES`, `AGGREGATE_PERCENTILE_CHOICES`) are **not** monkeypatched by any test fixture (verified by the public-API grep below). They live in `cli.metrics` with no top-level re-export on `cli.__init__`. The Slice 6 `_GOLDEN_PROMPTS_DIR` test-seam pattern is NOT required for Slice 7.
+
+### Verification Evidence
+
+#### Public API preserved (REQ-CLI-SPLIT-2 — 14 names re-exported via `flow_engineering.cli`)
+
+```
+$ uv run python -c "import flow_engineering.cli as cli; names = ['main', 'workspace_health_cmd', '_detect_project_markers', '_format_drift_events_text', '_iter_project_subdirs', '_summarize_workspace_status', '_git', 'rotate_cmd', '_resolve_projects_root', '_DEFAULT_PROJECTS_ROOT_WIN', '_DEFAULT_PROJECTS_ROOT_NIX', '_read_pyproject_min_skill_versions', '_enforce_min_skill_versions_or_exit', '_GOLDEN_PROMPTS_DIR']; [print(f'  OK: {n}: {type(getattr(cli, n)).__name__}') for n in names]"
+  OK: main: Group
+  OK: workspace_health_cmd: Command
+  OK: _detect_project_markers: function
+  OK: _format_drift_events_text: function
+  OK: _iter_project_subdirs: function
+  OK: _summarize_workspace_status: function
+  OK: _git: function
+  OK: rotate_cmd: Command
+  OK: _resolve_projects_root: function
+  OK: _DEFAULT_PROJECTS_ROOT_WIN: str
+  OK: _DEFAULT_PROJECTS_ROOT_NIX: str
+  OK: _read_pyproject_min_skill_versions: function
+  OK: _enforce_min_skill_versions_or_exit: function
+  OK: _GOLDEN_PROMPTS_DIR: WindowsPath
+```
+
+All 14 names resolve through the top-level re-export (post-Slice-6 final state).
+
+```
+$ git grep -nE "from flow_engineering\.cli import.*(_summarize_metrics|_apply_metrics_filters|SUMMARY_WINDOW_CHOICES|SUMMARY_DOMAIN_CHOICES|AGGREGATE_PERCENTILE_CHOICES)" tests/ src/
+(no output)
+```
+
+Zero metrics-private names imported from `flow_engineering.cli` across all tests + src files. The metrics group + helpers are reached via the Click group tree (`main.commands['metrics'].commands['summary|export|aggregate']`). The 3 constants live in `cli.metrics` only — no test seam needed.
+
+#### pytest gate — targeted workspace slice (34 tests)
+
+```
+$ uv run pytest tests/unit/test_cli_workspace_status.py tests/unit/test_cli_workspace_health.py -q --no-header -p no:cacheprovider --basetemp='C:\Users\insyd\AppData\Local\Temp\opencode\pytest-tmp-workspace'
+..................................                                       [100%]
+34 passed in 0.37s
+```
+
+#### pytest gate — metrics-specific tests (32 tests, 2 pre-existing time-sensitive failures deselected)
+
+```
+$ uv run pytest tests/unit/test_cli_metrics_summary.py tests/unit/test_cli_metrics_export.py tests/unit/test_cli_metrics_aggregate.py -q --no-header -p no:cacheprovider --basetemp='C:\Users\insyd\AppData\Local\Temp\opencode\pytest-tmp-metrics-final' --deselect tests/unit/test_cli_metrics_aggregate.py::TestMetricsAggregateFilters::test_metrics_aggregate_with_window_filter --deselect tests/unit/test_cli_metrics_export.py::TestMetricsExportFilters::test_metrics_export_with_window_filter
+..............................                                           [100%]
+30 passed, 2 deselected in 0.33s
+```
+
+**Pre-existing time-sensitive failures (NOT regressions introduced by Slice 7)**:
+
+The 2 deselected tests (`test_metrics_export_with_window_filter`, `test_metrics_aggregate_with_window_filter`) construct stale events with `ts=now.replace(hour=0)` and expect them to be filtered out by `--window=1h`. At 00:08 UTC (the current time of the system), `now.replace(hour=0)` is INSIDE the 1h window (only 8 minutes ago), so the window filter correctly includes them and the test fails.
+
+Cross-checked against the unmodified `codex/v1.3-cli-split-6-prompts @ dc180ba` (tracker pre-Slice-7): both tests fail with **identical output** on the unmodified tracker, confirming these are pre-existing time-sensitive test bugs NOT introduced by Slice 7.
+
+This mirrors the Slice 1-5 `test_cli_reindex.py` pattern: env-only failures that depend on system time / external backends, NOT algorithmic regressions. The env improvements from Slice 6 (which reported 1434/1434 full PASS) have now reverted for the 2 metrics window-filter tests at 00:08 UTC; the remaining 30/30 metrics tests pass.
+
+#### pytest gate — CLI-only (`tests/unit/ -k "test_cli"`)
+
+```
+$ uv run pytest tests/unit/ -k "test_cli" -q --no-header -p no:cacheprovider --basetemp='C:\Users\insyd\AppData\Local\Temp\opencode\pytest-tmp-cli'
+2 failed, 333 passed, 1099 deselected in 57.69s
+```
+
+333 PASS matches the Slice 4+5+6 baseline exactly (335 PASS → 333 PASS, accounting for the 2 newly-discovered time-sensitive failures at 00:08 UTC). **Zero regressions introduced by Slice 7.**
+
+#### Byte-determinism (REQ-CLI-SPLIT-3)
+
+```
+$ uv run flow workspace health --json > slice7-after-workspace-health.txt
+SHA-256 baseline (codex/v1.3-cli-split-6-prompts @ dc180ba): B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+SHA-256 after   (codex/v1.3-cli-split-7-metrics   @ 1cf7363): B51EC7F54995C6C48261AF4BB35617A75D05812F5FA109410C1D1E4693B2CA9D
+Byte-identical.
+
+$ uv run flow metrics --help > slice7-after-metrics-help.txt
+SHA-256 baseline: F42BFFDC506A1343835EDD24B45437867557333C2BF64430AC096ADD56B1C159
+SHA-256 after:    F42BFFDC506A1343835EDD24B45437867557333C2BF64430AC096ADD56B1C159
+Byte-identical.
+
+$ uv run flow --help > slice7-after-flow-help.txt
+SHA-256 baseline: 995062E451E679E95B87B0CD3F5332ACD3215CA9CBBD8BB41F91084665FE6FDD
+SHA-256 after:    995062E451E679E95B87B0CD3F5332ACD3215CA9CBBD8BB41F91084665FE6FDD
+Byte-identical.
+```
+
+All 3 help outputs byte-identical pre/post Slice 7. REQ-CLI-SPLIT-3 satisfied.
+
+#### Click group integrity (no double-registration)
+
+```
+$ uv run flow --help 2>&1 | grep -E '^\s+(apply|archive|drift|drift-events|metrics|projects|prompts|snapshot|where|workspace)\s'
+  apply            Apply tasks for a change (TASKED -> APPLYING -> VERIFYING) ...
+  archive          Read-only archive introspection (REQ-V1.3.4).
+  drift            Drift detection + read-side CLI namespace ...
+  drift-events     DEPRECATED alias for ``flow drift events`` (REQ-V1.2.4).
+  metrics          Dump the JSONL counter sink as a summary (REQ-8 close).
+  projects         Manage project tags and aliases (REQ-24, REQ-27).
+  prompts          Inspect and validate prompt registry + SKILL catalog ...
+  snapshot         Manage immutable snapshots of the Engram observation ...
+  where            Answer "where did I implement X?" (REQ-V1.0.1..V1.0.4 ...
+  workspace        Inspect workspace-level status synthesized from ...
+```
+
+`metrics` appears exactly ONCE in the top-level `flow --help`. All 8 groups + 2 leaves (apply, where) registered.
+
+```
+$ uv run flow metrics --help
+Usage: flow metrics [OPTIONS] [COMMAND] [ARGS]...
+
+  Dump the JSONL counter sink as a summary (REQ-8 close).
+
+  With no subcommand, renders the legacy flat text/JSON dump (REQ-8 close
+  contract; byte-identical to v0.6.0). The ``summary`` subcommand renders the
+  new per-domain dashboard (REQ-35).
+
+Options:
+  --json  Emit machine-readable JSON instead of a text summary.
+  --help  Show this message and exit.
+
+Commands:
+  aggregate  Compute percentiles over counter values (REQ-39 / change #6...
+  export     Export metrics in text / json / prometheus format (REQ-38 /...
+  summary    Render the per-domain text dashboard (REQ-35 / change #6...
+```
+
+The `metrics` group exposes exactly the 3 expected subcommands: `summary`, `export`, `aggregate`. The legacy flat dump shim is preserved (the help text still says "With no subcommand, renders the legacy flat text/JSON dump").
+
+#### UTF-8 round-trip (Lesson 1 mandate)
+
+```
+$ uv run python -c "
+import pathlib
+for p in ['src/flow_engineering/cli/__init__.py', 'src/flow_engineering/cli/metrics.py']:
+    pathlib.Path(p).read_text(encoding='utf-8')
+    print(f'{p}: utf-8 OK')
+"
+src/flow_engineering/cli/__init__.py: utf-8 OK
+src/flow_engineering/cli/metrics.py: utf-8 OK
+```
+
+Both files round-trip cleanly through UTF-8. No cp1252 mojibake; no encoding corruption. The `metrics.py` file was written via the `write` tool (UTF-8) and `__init__.py` was modified via `Edit` (UTF-8). The body relocation used `pathlib.Path.read_text(encoding='utf-8')` for source reading AND `pathlib.Path.write_text(..., encoding='utf-8')` for the new file (not Python's default `open()` text mode, which would default to cp1252 on Windows).
+
+#### Legacy flat dump shim preservation (REQ-V1.3.6 followup)
+
+```
+$ grep -nE 'invoked_subcommand|legacy|byte-identical to v0.6.0' src/flow_engineering/cli/metrics.py
+L12: Preserves the legacy flat dump shim (REQ-V1.3.6 followup): the root
+L18: original (the ``if ctx.invoked_subcommand is not None: return`` shim)
+L73:     With no subcommand, renders the legacy flat text/JSON dump (REQ-8 close
+L74:     contract; byte-identical to v0.6.0). The ``summary`` subcommand renders
+L77:     if ctx.invoked_subcommand is not None:
+L78:     # Subcommand handles its own output (e.g. `flow metrics summary`).
+```
+
+The shim block (`if ctx.invoked_subcommand is not None: return`) is preserved VERBATIM at lines 77-78 of `cli/metrics.py`. The shim comment at line 78 is identical to the pre-Slice-7 comment at line 1547 of `cli/__init__.py`. The docstring at lines 73-74 retains the "byte-identical to v0.6.0" language and the docstring at line 12 of the module-level docstring documents the preservation contract.
+
+### 400-LOC budget (REQ-CLI-SPLIT-5)
+
+| Metric | Value | Threshold | Status |
+|---|---|---|---|
+| Insertions | 618 | — | — |
+| Deletions | 552 | — | — |
+| Net changed | 1170 (sum) / +66 (net) | 400 | **OVER budget** — "Mechanical relocation, not new logic" justification required per REQ-CLI-SPLIT-5 |
+
+Justification (literal copy in PR body):
+- 552 deletions are pure mechanical extraction of lines 1515-2089 (no new logic).
+- 618 insertions are 595 lines of new file (`metrics.py` body + imports/docstring) + 23 lines of `__init__.py` modifications (lazy import + 20-line explanatory comment block).
+- Net +66 LOC = scaffolding + docstring + explanatory comments, no algorithmic behavior added.
+- Slice 7 fits the same chained-PR-allowed pattern as Slices 2 + 3 + 4 + 5 + 6 (all over-budget with the same justification).
+
+Per tasks.md T-7 spec: `over_400_loc: true` was the planned answer; actual is `true` (618 insertions on C1 exceed the 400-line budget by 218). The PR body contains the literal `Mechanical relocation, not new logic` phrase as required by REQ-CLI-SPLIT-5.
+
+### Commits Made (this slice = 2 code commits + this apply-progress.md update)
+
+```
+a30f41c refactor(cli): relocate metrics group to cli/metrics.py (Slice 7/8)
+        2 files changed, 618 insertions(+), 552 deletions(-)
+        create mode 100644 src/flow_engineering/cli/metrics.py
+1cf7363 chore(cli): verify cli/metrics.py slice 7 byte-determinism green (Slice 7/8)
+        Empty commit; body documents the byte-determinism + pytest + Click group + UTF-8 + legacy-shim gates.
+```
+
+The task spec prescribed 2 work-unit commits (C1 relocate + C2 verify). Implementation matches: C1 (relocate + 1 lazy import + block deletion) in `a30f41c`, C2 (verification evidence as empty commit with body) in `1cf7363`. Per-slice rollback (`git revert a30f41c 1cf7363`) still works cleanly — rollback boundary is the slice, not the per-step commit.
+
+### PR URL
+
+https://github.com/Rene-Kuhm/flow-engineering/pull/39
+
+### Risks Discovered
+
+- **r1 (NEW, encoded)**: 2 pre-existing time-sensitive test failures (`test_metrics_export_with_window_filter`, `test_metrics_aggregate_with_window_filter`) re-surfaced at 00:08 UTC. These use `now.replace(hour=0)` as the stale timestamp, which is INSIDE the 1h window between 00:00-01:00 UTC. Both fail identically on the unmodified `codex/v1.3-cli-split-6-prompts @ dc180ba` tracker commit, confirming these are pre-existing bugs NOT regressions from Slice 7. Same pattern as the Slice 1-5 `test_cli_reindex.py` env failures.
+- **r2 (carried)**: `utf-8` cp1252 mojibake trap (Lesson 1). All file writes in this slice used `pathlib.Path.write_text(..., encoding='utf-8')` or the `Edit` tool (UTF-8). Verified via explicit round-trip check on both modified files.
+- **r3 (carried, encoded)**: Public-API regression risk. 14/14 public API names still importable; 0 metrics-private names needed by tests + src. Re-exports are deliberately omitted per T-7 spec ("NO re-exports"). The metrics group + helpers are reached via the Click group tree, matching Slices 2-6 precedent.
+
+### Deviations from Design / Spec
+
+- **Source range**: orchestrator spec said `cli/__init__.py:1517-2074` (planned, with tasks.md T-7 as authority). Post-Slice-1+2+3+4+5+6 + lazy-import equivalent is `1515-2089` (the +23 LOC shift from the Slice 7 lazy import comment block, AND the +2 trailing blank lines for PEP-8 separation, matching Slice 6 precedent). Final range: 1515-2089 (575 body LOC).
+- **Body modifications**: ZERO function-level lazy imports added. The metrics block is the cleanest of all 7 slices — all its cross-module references were already handled via Slice 4's `_parse_since` lazy-import precedent (3 function-body lazy imports preserved verbatim from the pre-Slice-7 source). NO public API re-exports required (no test seam; the 3 constants are submodule-internal only).
+- **Commit granularity**: spec prescribed 2 commits (C1+C2); implementation is 2 commits (`a30f41c` + `1cf7363`) plus this `apply-progress.md` update. Matches Slice 4+5+6 precedent. Per-slice rollback boundary holds.
+- **No UTF-8 corruption**: Slice 2 had a CRITICAL encoding corruption (sdd-verify issue A-1, fixed in `f88b3a0`) caused by writing Python files through a path that defaulted to cp1252 on Windows. Slice 7 uses explicit UTF-8 throughout (`pathlib.Path.write_text(content, encoding='utf-8')` and `Edit` tool); verified round-trip clean on both modified files.
+- **over_400_loc flag**: tasks.md T-7 says `over_400_loc: true`; actual is `true` (618 insertions on C1 exceed the 400-line budget by 218). The orchestrator prompt explicitly acknowledged this and instructed to include the literal `Mechanical relocation, not new logic` phrase in the PR body.
+
+### Next Steps (for orchestrator)
+
+1. **Merge PR #39 into `feature/v1.3-cli-split` (TRACKER)** — Slice 7 is independent and low-risk. Uses `--merge` (NOT `--squash`) per Lesson 3 so the 7 openspec artifacts (already on `feature/v1.3-cli-split @ 3a0844d` via prior Slice 1-6 merges) survive onto the tracker unchanged.
+2. **Slice 8 (T-8 — `cli/archive.py` rename + 3-line back-compat shim)** branches from this slice's tracker commit after merge. Estimated 150 LOC, under budget.
+3. **Follow-up issue**: Fix the 2 time-sensitive test failures (`test_metrics_export_with_window_filter`, `test_metrics_aggregate_with_window_filter`) by replacing `now.replace(hour=0)` with `now - timedelta(hours=2)` for deterministic stale-timestamp generation. Out of scope for v1.3-cli-split; track as a follow-up.
+
+### Relevant Files
+
+- `src/flow_engineering/cli/metrics.py` — NEW; 595 LOC (575 body + 20 imports/docstring).
+- `src/flow_engineering/cli/__init__.py` — net -529 LOC (2150 → 1621); added metrics lazy import + 20-line explanatory comment block.
+- `openspec/changes/v1.3-cli-split/apply-progress.md` — THIS FILE (appended Slice 7 section).
+
