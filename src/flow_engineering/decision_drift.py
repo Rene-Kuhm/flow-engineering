@@ -45,6 +45,11 @@ from flow_engineering.snapshot_manager import (
 
 if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
+    # Static-only declaration for the PEP 562 re-export below. Keeping this
+    # inside TYPE_CHECKING satisfies mypy's ``except SnapshotGraphMissing``
+    # contract without creating a real module attribute that would bypass the
+    # runtime deprecation warning.
+    SnapshotGraphMissing: type[SnapshotGraphMissingError] = SnapshotGraphMissingError
 
 
 _LINE_PATTERN = re.compile(r"\d+")

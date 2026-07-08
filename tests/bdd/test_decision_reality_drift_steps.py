@@ -1238,6 +1238,26 @@ def drift_cli_world(
         )
 
     monkeypatch.setattr(_dd_mod, "scan_change", _patched_scan_change)
+
+    # REQ-16: create a deterministic per-scenario mock skills directory so
+    # the sdd-verify Step 6a protocol (and the grep step) never depend on
+    # host/global skill files being present.  Each mock SKILL.md carries the
+    # ``## Drift detection hook`` section header that Step 6a checks for.
+    skills_root = tmp_path / "skills"
+    for skill in (
+        "sdd-propose",
+        "sdd-design",
+        "sdd-tasks",
+        "sdd-apply",
+        "sdd-verify",
+        "sdd-archive",
+    ):
+        skill_dir = skills_root / skill
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "# " + skill + "\n\n## Drift detection hook\n", encoding="utf-8"
+        )
+
     return {
         "metrics_path": metrics_path,
         "graph_path": graph_path,
@@ -1248,6 +1268,7 @@ def drift_cli_world(
         "report": None,
         "stdout": "",
         "stderr": "",
+        "skills_root": skills_root,
     }
 
 
@@ -1960,7 +1981,9 @@ def when_run_sdd_verify_step_6a(drift_cli_world: dict) -> None:
     SKILL.md files (REQ-16 #1)."""
     import re as _re
 
-    skills_root = Path.home() / ".config" / "opencode" / "skills"
+    skills_root = drift_cli_world.get(
+        "skills_root", Path.home() / ".config" / "opencode" / "skills"
+    )
     required = [
         "sdd-propose", "sdd-design", "sdd-tasks",
         "sdd-apply", "sdd-verify", "sdd-archive",
@@ -1986,7 +2009,9 @@ def when_run_sdd_verify_step_6a(drift_cli_world: dict) -> None:
 def when_grep_drift_hook_across_skills(drift_cli_world: dict) -> None:
     """Locate the 6 SKILL.md files and count how many carry a section
     header line matching ``## Drift detection hook``."""
-    skills_root = Path.home() / ".config" / "opencode" / "skills"
+    skills_root = drift_cli_world.get(
+        "skills_root", Path.home() / ".config" / "opencode" / "skills"
+    )
     required = [
         "sdd-propose", "sdd-design", "sdd-tasks",
         "sdd-apply", "sdd-verify", "sdd-archive",
