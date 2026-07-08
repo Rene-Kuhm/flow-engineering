@@ -29,3 +29,6 @@ venv/
 
 # Flow state (per-change)
 flow-engineering/*/state.json
+
+# Atl (skill registry cache — regenerated on demand)
+.atl/*.cache.json
