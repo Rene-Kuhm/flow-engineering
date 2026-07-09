@@ -19,6 +19,7 @@ Usage::
 The output is written to ``docs/prompts.md`` (overwrites existing file).
 The script is idempotent — repeated runs produce identical output.
 """
+
 from __future__ import annotations
 
 import sys
@@ -53,8 +54,7 @@ PURPOSE_BY_NAME: dict[str, str] = {
         "[a]ll / [n]one / comma-separated numbers (e.g., 1,3)."
     ),
     "auto_suggest_empty": (
-        "Fallback text shown when no auto-suggested bindings are "
-        "available for the current change."
+        "Fallback text shown when no auto-suggested bindings are available for the current change."
     ),
 }
 
@@ -97,9 +97,7 @@ def _render_example_with_sentinels(prompt: PromptDef) -> str:
         # No variables → return the template body as-is.
         return prompt.template
 
-    safe_kwargs: dict[str, str] = {
-        var: f"<{var}>" for var in declared
-    }
+    safe_kwargs: dict[str, str] = {var: f"<{var}>" for var in declared}
     try:
         return prompt.template.format(**safe_kwargs)
     except (KeyError, IndexError):
@@ -121,12 +119,8 @@ def build_section(prompt: PromptDef) -> str:
     name = prompt.name
     domain = prompt.domain.value
     version = prompt.version
-    template_path = prompt.metadata.get(
-        "template_file", f"prompts/{name}.j2"
-    )
-    declared_vars: tuple[str, ...] = tuple(
-        prompt.metadata.get("variables", ())
-    )
+    template_path = prompt.metadata.get("template_file", f"prompts/{name}.j2")
+    declared_vars: tuple[str, ...] = tuple(prompt.metadata.get("variables", ()))
 
     example = _render_example_with_sentinels(prompt)
 
@@ -137,23 +131,15 @@ def build_section(prompt: PromptDef) -> str:
         f"- **Version:** `{version}`",
         f"- **Template file:** `{template_path}`",
         "- **Variables:** "
-        + (
-            ", ".join(f"`{v}`" for v in declared_vars)
-            if declared_vars
-            else "_(none)_"
-        ),
+        + (", ".join(f"`{v}`" for v in declared_vars) if declared_vars else "_(none)_"),
         "",
         "### Purpose",
         "",
-        PURPOSE_BY_NAME.get(
-            name, "_TODO: document purpose for this prompt._"
-        ),
+        PURPOSE_BY_NAME.get(name, "_TODO: document purpose for this prompt._"),
         "",
         "### Where it appears",
         "",
-        WHERE_BY_NAME.get(
-            name, "_TODO: document call-site for this prompt._"
-        ),
+        WHERE_BY_NAME.get(name, "_TODO: document call-site for this prompt._"),
         "",
         "### Example output",
         "",
@@ -199,9 +185,7 @@ def build_doc() -> str:
         for p in PROMPT_NAMES
     ]
     section_blocks: list[str] = [build_section(p) for p in PROMPT_NAMES]
-    return "\n".join(
-        header_lines + table_rows + ["", "---", ""] + section_blocks
-    )
+    return "\n".join(header_lines + table_rows + ["", "---", ""] + section_blocks)
 
 
 def main() -> int:
@@ -213,9 +197,7 @@ def main() -> int:
     except OSError as exc:
         print(f"error: failed to write {DOC_PATH}: {exc}", file=sys.stderr)
         return 1
-    print(
-        f"Wrote {DOC_PATH} ({len(body)} chars, {len(PROMPT_NAMES)} sections)"
-    )
+    print(f"Wrote {DOC_PATH} ({len(body)} chars, {len(PROMPT_NAMES)} sections)")
     return 0
 
 

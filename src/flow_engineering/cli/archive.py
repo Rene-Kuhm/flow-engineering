@@ -77,7 +77,9 @@ from flow_engineering.orchestrator import archive_change
 # future reader does not have to re-derive which `parents[N]` resolves to what.
 
 _REPO_PARENT_DEPTH = 2  # archive_dir.parents[2] = repo root (cwd for ``git log``)
-_OUTPUT_RELATIVE_PARENT = 1  # archive_dir.parents[1] = "openspec/" (relative-to base for output paths)
+_OUTPUT_RELATIVE_PARENT = (
+    1  # archive_dir.parents[1] = "openspec/" (relative-to base for output paths)
+)
 
 _SECONDS_PER_DAY = 86400  # seconds in one day (epoch ⇄ days conversions)
 _GIT_FALLBACK_THRESHOLD_DAYS = 30
@@ -148,11 +150,13 @@ def _candidate_entries(archive_dir: Path, older_than_days: int) -> list[dict[str
             rel = entry.relative_to(archive_dir.parents[_OUTPUT_RELATIVE_PARENT])
         except ValueError:
             rel = entry
-        candidates.append({
-            "path": str(rel),
-            "mtime_days_ago": int((now_ts - mtime) / _SECONDS_PER_DAY),
-            "sha256": sha,
-        })
+        candidates.append(
+            {
+                "path": str(rel),
+                "mtime_days_ago": int((now_ts - mtime) / _SECONDS_PER_DAY),
+                "sha256": sha,
+            }
+        )
     return candidates
 
 
@@ -177,7 +181,10 @@ def _candidate_entries(archive_dir: Path, older_than_days: int) -> list[dict[str
 )
 @click.pass_context
 def rotate_cmd(
-    ctx: click.Context, older_than: int, dry_run: bool, fmt: str,
+    ctx: click.Context,
+    older_than: int,
+    dry_run: bool,
+    fmt: str,
 ) -> None:
     """List ``openspec/changes/archive/`` entries older than N days. Read-only."""
     archive_dir = Path("openspec") / "changes" / "archive"
