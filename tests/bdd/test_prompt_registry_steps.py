@@ -17,6 +17,7 @@ Test isolation:
   teardown so the global ``PROMPT_NAMES`` catalog stays pristine across
   scenarios.
 """
+
 from __future__ import annotations
 
 import json
@@ -78,6 +79,7 @@ def _cleanup_registered_prompts(prompt_world: dict[str, Any]) -> Any:
     """Auto-unregister any prompts added during the scenario."""
     yield
     import contextlib
+
     for name in prompt_world.get("registered", []):
         with contextlib.suppress(Exception):
             unregister_prompt(name)
@@ -199,18 +201,12 @@ def when_call_get_prompt(prompt_world: dict[str, Any], name: str) -> None:
 
 
 @then(parsers.parse("stdout contains a number >= {min_count:d}"))
-def then_stdout_contains_number_at_least(
-    prompt_world: dict[str, Any], min_count: int
-) -> None:
+def then_stdout_contains_number_at_least(prompt_world: dict[str, Any], min_count: int) -> None:
     """Assert stdout contains an integer >= ``min_count``."""
     match = re.search(r"\b(\d+)\b", prompt_world["stdout"])
-    assert match is not None, (
-        f"expected a number in stdout; got {prompt_world['stdout']!r}"
-    )
+    assert match is not None, f"expected a number in stdout; got {prompt_world['stdout']!r}"
     actual = int(match.group(1))
-    assert actual >= min_count, (
-        f"expected stdout number >= {min_count}; got {actual}"
-    )
+    assert actual >= min_count, f"expected stdout number >= {min_count}; got {actual}"
 
 
 @then("exit code is 0")
@@ -243,9 +239,7 @@ def then_catalog_has_4_entries(prompt_world: dict[str, Any]) -> None:
     """Assert the snapshot carries exactly 4 entries (REQ-45 baseline)."""
     snapshot = prompt_world.get("catalog_snapshot")
     assert snapshot is not None, "catalog snapshot not initialized"
-    assert len(snapshot) == 4, (
-        f"expected 4 entries in PROMPT_NAMES; got {len(snapshot)}"
-    )
+    assert len(snapshot) == 4, f"expected 4 entries in PROMPT_NAMES; got {len(snapshot)}"
 
 
 @then("every entry has owner, variables, and location fields")
@@ -269,36 +263,33 @@ def then_every_entry_has_owner_variables_location(
             f"expected owner=flow/... for {entry.name!r}; got {owner!r}"
         )
         assert isinstance(variables, tuple), (
-            f"expected variables=tuple for {entry.name!r}; "
-            f"got {type(variables).__name__}"
+            f"expected variables=tuple for {entry.name!r}; got {type(variables).__name__}"
         )
         assert location, (
-            f"expected non-empty location (template_file) for {entry.name!r}; "
-            f"got empty"
+            f"expected non-empty location (template_file) for {entry.name!r}; got empty"
         )
 
 
 @then(parsers.parse('the entry "{name}" has owner "{owner}"'))
 def then_entry_has_owner(
-    prompt_world: dict[str, Any], name: str, owner: str,
+    prompt_world: dict[str, Any],
+    name: str,
+    owner: str,
 ) -> None:
     """Assert ``entry.domain`` derives to the expected owner string."""
     snapshot = prompt_world.get("catalog_snapshot")
     assert snapshot is not None, "catalog snapshot not initialized"
     matching = [e for e in snapshot if e.name == name]
-    assert matching, (
-        f"expected entry with name={name!r}; "
-        f"got names {[e.name for e in snapshot]!r}"
-    )
+    assert matching, f"expected entry with name={name!r}; got names {[e.name for e in snapshot]!r}"
     actual_owner = f"flow/{matching[0].domain.value}"
-    assert actual_owner == owner, (
-        f"expected {name!r} owner={owner!r}; got {actual_owner!r}"
-    )
+    assert actual_owner == owner, f"expected {name!r} owner={owner!r}; got {actual_owner!r}"
 
 
 @then(parsers.re(r'the entry "(?P<name>[^"]+)" declares variables (?P<variables>\([^)]*\))'))
 def then_entry_declares_variables(
-    prompt_world: dict[str, Any], name: str, variables: str,
+    prompt_world: dict[str, Any],
+    name: str,
+    variables: str,
 ) -> None:
     """Assert ``entry.metadata['variables']`` matches the Gherkin tuple body.
 
@@ -312,10 +303,7 @@ def then_entry_declares_variables(
     snapshot = prompt_world.get("catalog_snapshot")
     assert snapshot is not None, "catalog snapshot not initialized"
     matching = [e for e in snapshot if e.name == name]
-    assert matching, (
-        f"expected entry with name={name!r}; "
-        f"got names {[e.name for e in snapshot]!r}"
-    )
+    assert matching, f"expected entry with name={name!r}; got names {[e.name for e in snapshot]!r}"
     declared = list(matching[0].metadata.get("variables", ()))
     inner = variables.strip()[1:-1].strip() if len(variables) >= 2 else ""
     if not inner:
@@ -324,14 +312,14 @@ def then_entry_declares_variables(
         tokens = [t.strip() for t in inner.split(",")]
         expected_list = [t.strip().strip('"').strip("'") for t in tokens if t.strip()]
     assert declared == expected_list, (
-        f"expected {name!r} declared variables={expected_list!r}; "
-        f"got {declared!r}"
+        f"expected {name!r} declared variables={expected_list!r}; got {declared!r}"
     )
 
 
 @then(parsers.parse('the entry "{name}" location points to an existing file'))
 def then_entry_location_points_to_existing_file(
-    prompt_world: dict[str, Any], name: str,
+    prompt_world: dict[str, Any],
+    name: str,
 ) -> None:
     """Assert ``entry.metadata['template_file']`` resolves to an existing file.
 
@@ -344,45 +332,29 @@ def then_entry_location_points_to_existing_file(
     snapshot = prompt_world.get("catalog_snapshot")
     assert snapshot is not None, "catalog snapshot not initialized"
     matching = [e for e in snapshot if e.name == name]
-    assert matching, (
-        f"expected entry with name={name!r}; "
-        f"got names {[e.name for e in snapshot]!r}"
-    )
+    assert matching, f"expected entry with name={name!r}; got names {[e.name for e in snapshot]!r}"
     location = matching[0].metadata.get("template_file", "")
-    assert location, (
-        f"expected non-empty template_file for {name!r}; got empty"
-    )
+    assert location, f"expected non-empty template_file for {name!r}; got empty"
     resolved = Path(location)
     if not resolved.is_absolute():
         resolved = Path.cwd() / resolved
     assert resolved.exists(), (
-        f"expected {name!r} location {location!r} to exist on disk; "
-        f"resolved to {resolved!r}"
+        f"expected {name!r} location {location!r} to exist on disk; resolved to {resolved!r}"
     )
 
 
 @then(parsers.parse('a KeyError is raised with "{fragment}"'))
-def then_keyerror_with_fragment(
-    prompt_world: dict[str, Any], fragment: str
-) -> None:
+def then_keyerror_with_fragment(prompt_world: dict[str, Any], fragment: str) -> None:
     exc = prompt_world["exception"]
     assert exc is not None, "expected an exception to be raised"
-    assert isinstance(exc, KeyError), (
-        f"expected KeyError; got {type(exc).__name__}: {exc}"
-    )
-    assert fragment in str(exc), (
-        f"expected {fragment!r} in error message; got {str(exc)!r}"
-    )
+    assert isinstance(exc, KeyError), f"expected KeyError; got {type(exc).__name__}: {exc}"
+    assert fragment in str(exc), f"expected {fragment!r} in error message; got {str(exc)!r}"
 
 
 # ---------- REQ-46 Given steps ----------
 
 
-@given(
-    parsers.parse(
-        'the prompt "{name}" exists with template "{template}"'
-    )
-)
+@given(parsers.parse('the prompt "{name}" exists with template "{template}"'))
 def given_prompt_exists_with_template(
     prompt_world: dict[str, Any], name: str, template: str
 ) -> None:
@@ -401,9 +373,7 @@ def given_prompt_exists_with_template(
 
 
 @when(parsers.parse('I call `render_prompt("{name}")`'))
-def when_render_prompt_no_kwargs(
-    prompt_world: dict[str, Any], name: str
-) -> None:
+def when_render_prompt_no_kwargs(prompt_world: dict[str, Any], name: str) -> None:
     """Call ``render_prompt(name)`` with no kwargs."""
     try:
         prompt_world["rendered"] = render_prompt(name)
@@ -412,14 +382,8 @@ def when_render_prompt_no_kwargs(
         prompt_world["exception"] = exc
 
 
-@when(
-    parsers.parse(
-        'I call `render_prompt("{name}", {kwargs})`'
-    )
-)
-def when_render_prompt_with_kwargs(
-    prompt_world: dict[str, Any], name: str, kwargs: str
-) -> None:
+@when(parsers.parse('I call `render_prompt("{name}", {kwargs})`'))
+def when_render_prompt_with_kwargs(prompt_world: dict[str, Any], name: str, kwargs: str) -> None:
     """Call ``render_prompt(name, **kwargs)`` parsing the kwargs literal.
 
     The kwargs literal is a BDD-style ``key=value`` list, e.g.
@@ -429,9 +393,7 @@ def when_render_prompt_with_kwargs(
     """
     import ast
 
-    rewritten = re.sub(
-        r"([A-Za-z_][A-Za-z0-9_]*)\s*=", r'"\1":', kwargs
-    )
+    rewritten = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", r'"\1":', kwargs)
     parsed: dict[str, Any] = ast.literal_eval("{" + rewritten + "}")
     try:
         prompt_world["rendered"] = render_prompt(name, **parsed)
@@ -446,23 +408,17 @@ def when_render_prompt_with_kwargs(
 @then(parsers.parse('the result equals "{expected}"'))
 def then_result_equals(prompt_world: dict[str, Any], expected: str) -> None:
     rendered = prompt_world["rendered"]
-    assert rendered == expected, (
-        f"expected rendered == {expected!r}; got {rendered!r}"
-    )
+    assert rendered == expected, f"expected rendered == {expected!r}; got {rendered!r}"
 
 
 @then(parsers.parse('a PromptRenderError is raised mentioning "{fragment}"'))
-def then_promptrendererror_mentioning(
-    prompt_world: dict[str, Any], fragment: str
-) -> None:
+def then_promptrendererror_mentioning(prompt_world: dict[str, Any], fragment: str) -> None:
     exc = prompt_world["exception"]
     assert exc is not None, "expected a PromptRenderError to be raised"
     assert isinstance(exc, PromptRenderError), (
         f"expected PromptRenderError; got {type(exc).__name__}: {exc}"
     )
-    assert fragment in str(exc), (
-        f"expected {fragment!r} in error message; got {str(exc)!r}"
-    )
+    assert fragment in str(exc), f"expected {fragment!r} in error message; got {str(exc)!r}"
 
 
 # ---------- REQ-47 Given steps ----------
@@ -470,13 +426,10 @@ def then_promptrendererror_mentioning(
 
 @given(
     parsers.parse(
-        'I register a broken prompt with template "{template}" and '
-        'no metadata.required_vars'
+        'I register a broken prompt with template "{template}" and no metadata.required_vars'
     )
 )
-def given_register_broken_prompt(
-    prompt_world: dict[str, Any], template: str
-) -> None:
+def given_register_broken_prompt(prompt_world: dict[str, Any], template: str) -> None:
     """Register a prompt with a Jinja2 placeholder but no ``required_vars``.
 
     The prompt body references an undeclared variable, so the
@@ -507,24 +460,18 @@ def when_lint_prompts(prompt_world: dict[str, Any]) -> None:
 def then_lint_is_clean(prompt_world: dict[str, Any]) -> None:
     report = prompt_world["lint_report"]
     assert report is not None, "expected lint report to be set"
-    assert report.is_clean is True, (
-        f"expected is_clean=True; got {report.to_dict()!r}"
-    )
+    assert report.is_clean is True, f"expected is_clean=True; got {report.to_dict()!r}"
 
 
 @then("the result error_count > 0")
 def then_lint_error_count_positive(prompt_world: dict[str, Any]) -> None:
     report = prompt_world["lint_report"]
     assert report is not None, "expected lint report to be set"
-    assert report.error_count > 0, (
-        f"expected error_count > 0; got {report.to_dict()!r}"
-    )
+    assert report.error_count > 0, f"expected error_count > 0; got {report.to_dict()!r}"
 
 
 @then(parsers.parse('one error has error_code="{code}"'))
-def then_one_error_has_code(
-    prompt_world: dict[str, Any], code: str
-) -> None:
+def then_one_error_has_code(prompt_world: dict[str, Any], code: str) -> None:
     report = prompt_world["lint_report"]
     assert report is not None, "expected lint report to be set"
     matching = [e for e in report.errors if e.error_code == code]
@@ -557,7 +504,8 @@ def test_req49_check_drift_passes_clean(prompt_world: dict[str, Any]) -> None:
 
 
 def _build_20_entry_catalog(
-    prompt_world: dict[str, Any], tmp_path: Path,
+    prompt_world: dict[str, Any],
+    tmp_path: Path,
 ) -> dict[str, SkillEntry]:
     """Create a 20-entry test catalog mirroring the production SKILL_CATALOG shape.
 
@@ -573,8 +521,16 @@ def _build_20_entry_catalog(
     catalog: dict[str, SkillEntry] = {}
     skill_files: dict[str, Path] = {}
     agent_names = [
-        "sdd-init", "sdd-explore", "sdd-propose", "sdd-design", "sdd-spec",
-        "sdd-tasks", "sdd-apply", "sdd-verify", "sdd-archive", "sdd-onboard",
+        "sdd-init",
+        "sdd-explore",
+        "sdd-propose",
+        "sdd-design",
+        "sdd-spec",
+        "sdd-tasks",
+        "sdd-apply",
+        "sdd-verify",
+        "sdd-archive",
+        "sdd-onboard",
     ]
     for name in agent_names:
         for surface in ("skill", "prompt"):
@@ -604,7 +560,8 @@ def _build_20_entry_catalog(
 
 @given("a SKILL_CATALOG with 20 entries (10 skills + 10 prompts)")
 def given_skill_catalog_with_20_entries(
-    prompt_world: dict[str, Any], tmp_path: Path,
+    prompt_world: dict[str, Any],
+    tmp_path: Path,
 ) -> None:
     """Build a 20-entry test catalog mirroring the production shape."""
     _build_20_entry_catalog(prompt_world, tmp_path)
@@ -612,12 +569,13 @@ def given_skill_catalog_with_20_entries(
 
 @given(
     parsers.parse(
-        'a sidecar prompt_checksums.json recording stale checksums '
-        '(e.g., sdd-apply last_verified={stale})'
+        "a sidecar prompt_checksums.json recording stale checksums "
+        "(e.g., sdd-apply last_verified={stale})"
     )
 )
 def given_sidecar_with_stale_checksum(
-    prompt_world: dict[str, Any], stale: str,
+    prompt_world: dict[str, Any],
+    stale: str,
 ) -> None:
     """Write a sidecar with a stale ``abc123`` checksum for ``sdd-apply/skill``.
 
@@ -642,9 +600,11 @@ def given_sidecar_with_stale_checksum(
                 "checksum": entry.last_verified_checksum,
                 "last_verified_at": "2026-06-26T00:00:00Z",
             }
-    sidecar_path = prompt_world["skill_files"][
-        "sdd-apply/skill"
-    ].parent.parent.parent / ".flow-engineering" / "prompt_checksums.json"
+    sidecar_path = (
+        prompt_world["skill_files"]["sdd-apply/skill"].parent.parent.parent
+        / ".flow-engineering"
+        / "prompt_checksums.json"
+    )
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     sidecar_path.write_text(
         json.dumps(sidecar, indent=2, sort_keys=True),
@@ -655,12 +615,14 @@ def given_sidecar_with_stale_checksum(
 
 @given(
     parsers.parse(
-        'the on-disk ~/.config/opencode/skills/sdd-apply/SKILL.md has been '
-        'edited since last verification (current frontmatter checksum={current})'
+        "the on-disk ~/.config/opencode/skills/sdd-apply/SKILL.md has been "
+        "edited since last verification (current frontmatter checksum={current})"
     )
 )
 def given_on_disk_skill_md_edited(
-    prompt_world: dict[str, Any], current: str, tmp_path: Path,
+    prompt_world: dict[str, Any],
+    current: str,
+    tmp_path: Path,
 ) -> None:
     """Mutate the on-disk SKILL.md so its current checksum equals ``current``.
 
@@ -684,7 +646,8 @@ def given_on_disk_skill_md_edited(
     original = skill_path.read_text(encoding="utf-8")
     if "description:" in original:
         edited = original.replace(
-            "description: skill", f"description: edited-{current[:6]}",
+            "description: skill",
+            f"description: edited-{current[:6]}",
         )
     else:
         edited = original + "extra: drift-marker\n"
@@ -697,8 +660,8 @@ def given_on_disk_skill_md_edited(
 
 @given(
     parsers.parse(
-        'a freshly updated sidecar prompt_checksums.json where every entry\'s '
-        'checksum matches the current on-disk frontmatter'
+        "a freshly updated sidecar prompt_checksums.json where every entry's "
+        "checksum matches the current on-disk frontmatter"
     )
 )
 def given_freshly_updated_sidecar(prompt_world: dict[str, Any]) -> None:
@@ -722,7 +685,8 @@ def given_freshly_updated_sidecar(prompt_world: dict[str, Any]) -> None:
         }
     sidecar_path = (
         list(skill_files.values())[0].parent.parent.parent
-        / ".flow-engineering" / "prompt_checksums.json"
+        / ".flow-engineering"
+        / "prompt_checksums.json"
     )
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     sidecar_path.write_text(
@@ -763,25 +727,22 @@ def when_check_drift_on_skill_catalog(prompt_world: dict[str, Any]) -> None:
 
 @then(parsers.parse("the result is a list with at least {min_count:d} SkillDrift entry"))
 def then_drift_list_has_at_least(
-    prompt_world: dict[str, Any], min_count: int,
+    prompt_world: dict[str, Any],
+    min_count: int,
 ) -> None:
     """Assert the drift list has >= ``min_count`` entries."""
     drift_list = prompt_world["drift_list"]
     assert drift_list is not None, "check_drift was not invoked"
     assert len(drift_list) >= min_count, (
-        f"expected at least {min_count} drift entries; "
-        f"got {len(drift_list)}"
+        f"expected at least {min_count} drift entries; got {len(drift_list)}"
     )
 
 
-@then(
-    parsers.parse(
-        'the drift entry has skill_name={skill_name} and '
-        'drift_kind={drift_kind}'
-    )
-)
+@then(parsers.parse("the drift entry has skill_name={skill_name} and drift_kind={drift_kind}"))
 def then_drift_entry_has_skill_and_kind(
-    prompt_world: dict[str, Any], skill_name: str, drift_kind: str,
+    prompt_world: dict[str, Any],
+    skill_name: str,
+    drift_kind: str,
 ) -> None:
     """Assert at least one drift entry matches the skill+kind pair."""
     drift_list = prompt_world["drift_list"]
@@ -792,7 +753,8 @@ def then_drift_entry_has_skill_and_kind(
         f"got skill_names {[d.skill_name for d in drift_list]!r}"
     )
     target = next(
-        (d for d in matching if d.drift_kind == drift_kind), None,
+        (d for d in matching if d.drift_kind == drift_kind),
+        None,
     )
     assert target is not None, (
         f"expected drift_kind={drift_kind!r} for skill={skill_name!r}; "
@@ -801,13 +763,10 @@ def then_drift_entry_has_skill_and_kind(
     prompt_world["target_drift"] = target
 
 
-@then(
-    parsers.parse(
-        "the drift entry's expected_checksum equals the stale value ({value})"
-    )
-)
+@then(parsers.parse("the drift entry's expected_checksum equals the stale value ({value})"))
 def then_drift_expected_checksum_equals(
-    prompt_world: dict[str, Any], value: str,
+    prompt_world: dict[str, Any],
+    value: str,
 ) -> None:
     """Assert the drift entry's ``expected_checksum`` matches the spec value."""
     target = prompt_world["target_drift"]
@@ -817,13 +776,10 @@ def then_drift_expected_checksum_equals(
     )
 
 
-@then(
-    parsers.parse(
-        "the drift entry's on_disk_checksum equals the current value ({value})"
-    )
-)
+@then(parsers.parse("the drift entry's on_disk_checksum equals the current value ({value})"))
 def then_drift_on_disk_checksum_equals_marker(
-    prompt_world: dict[str, Any], value: str,
+    prompt_world: dict[str, Any],
+    value: str,
 ) -> None:
     """Document the spec value; the actual on-disk checksum is the real SHA.
 
@@ -836,23 +792,18 @@ def then_drift_on_disk_checksum_equals_marker(
     target = prompt_world["target_drift"]
     assert target is not None, "target drift entry not set"
     import re
+
     assert re.fullmatch(r"[0-9a-f]{64}", target.on_disk_checksum), (
-        f"expected on_disk_checksum to be a 64-char hex SHA; "
-        f"got {target.on_disk_checksum!r}"
+        f"expected on_disk_checksum to be a 64-char hex SHA; got {target.on_disk_checksum!r}"
     )
 
 
-@then(
-    "the function does NOT raise; it returns the list for the caller (CLI) "
-    "to surface"
-)
+@then("the function does NOT raise; it returns the list for the caller (CLI) to surface")
 def then_check_drift_did_not_raise(prompt_world: dict[str, Any]) -> None:
     """Assert no exception was raised by ``check_drift``."""
     exc = prompt_world["exception"]
     assert exc is None, f"expected no exception; got {exc!r}"
-    assert prompt_world["drift_list"] is not None, (
-        "expected drift list to be set (no exception)"
-    )
+    assert prompt_world["drift_list"] is not None, "expected drift list to be set (no exception)"
 
 
 @then("the result is an empty list")
@@ -877,14 +828,10 @@ def then_check_drift_under_one_second(prompt_world: dict[str, Any]) -> None:
     """Assert the check_drift call returned in under 1000ms."""
     elapsed_ms = prompt_world["drift_elapsed_ms"]
     assert elapsed_ms is not None, "elapsed time not recorded"
-    assert elapsed_ms < 1000.0, (
-        f"expected check_drift to complete in <1s; took {elapsed_ms:.1f}ms"
-    )
+    assert elapsed_ms < 1000.0, f"expected check_drift to complete in <1s; took {elapsed_ms:.1f}ms"
 
 
-@then(
-    "the function does NOT raise; the empty list is the \"clean state\" signal"
-)
+@then('the function does NOT raise; the empty list is the "clean state" signal')
 def then_clean_state_no_raise(prompt_world: dict[str, Any]) -> None:
     """Assert no exception; the empty list is the clean-state signal."""
     exc = prompt_world["exception"]
@@ -924,9 +871,7 @@ def test_req50_prompts_show_unknown(prompt_world: dict[str, Any]) -> None:
 # ---------- REQ-50 Given steps ----------
 
 
-@given(
-    "PROMPT_REGISTRY has 4 entries (1 flow/observability, 3 flow/binding)"
-)
+@given("PROMPT_REGISTRY has 4 entries (1 flow/observability, 3 flow/binding)")
 def given_prompt_registry_has_4_entries(prompt_world: dict[str, Any]) -> None:
     """The PROMPT_NAMES catalog has the 4 migrated entries (REQ-45 + REQ-50).
 
@@ -935,19 +880,12 @@ def given_prompt_registry_has_4_entries(prompt_world: dict[str, Any]) -> None:
     (auto_suggest_header, auto_suggest_footer, auto_suggest_empty).
     """
     assert len(prompt_registry.PROMPT_NAMES) == 4, (
-        f"expected 4 entries in PROMPT_NAMES; "
-        f"got {len(prompt_registry.PROMPT_NAMES)}"
+        f"expected 4 entries in PROMPT_NAMES; got {len(prompt_registry.PROMPT_NAMES)}"
     )
     by_domain: dict[str, int] = {}
     for entry in prompt_registry.PROMPT_NAMES:
-        domain_value = (
-            entry.domain.value
-            if hasattr(entry.domain, "value")
-            else str(entry.domain)
-        )
-        by_domain[f"flow/{domain_value}"] = (
-            by_domain.get(f"flow/{domain_value}", 0) + 1
-        )
+        domain_value = entry.domain.value if hasattr(entry.domain, "value") else str(entry.domain)
+        by_domain[f"flow/{domain_value}"] = by_domain.get(f"flow/{domain_value}", 0) + 1
     assert by_domain.get("flow/observability") == 1, (
         f"expected exactly 1 flow/observability entry; got {by_domain!r}"
     )
@@ -956,13 +894,11 @@ def given_prompt_registry_has_4_entries(prompt_world: dict[str, Any]) -> None:
     )
 
 
-@given(
-    parsers.parse(
-        'PROMPT_REGISTRY has an entry `{name}` with variables=({variables})'
-    )
-)
+@given(parsers.parse("PROMPT_REGISTRY has an entry `{name}` with variables=({variables})"))
 def given_prompt_registry_has_entry_with_variables(
-    prompt_world: dict[str, Any], name: str, variables: str,
+    prompt_world: dict[str, Any],
+    name: str,
+    variables: str,
 ) -> None:
     """The catalog contains ``name`` with the documented variables tuple.
 
@@ -980,11 +916,10 @@ def given_prompt_registry_has_entry_with_variables(
     )
 
 
-@given(
-    parsers.parse("the user provides an unknown prompt id `{name}`")
-)
+@given(parsers.parse("the user provides an unknown prompt id `{name}`"))
 def given_unknown_prompt_id(
-    prompt_world: dict[str, Any], name: str,
+    prompt_world: dict[str, Any],
+    name: str,
 ) -> None:
     """Capture the unknown prompt id the user will try to render.
 
@@ -1000,9 +935,7 @@ def given_unknown_prompt_id(
 # ---------- REQ-50 When steps ----------
 
 
-@when(
-    parsers.parse("the user runs `flow prompts list`")
-)
+@when(parsers.parse("the user runs `flow prompts list`"))
 def when_run_prompts_list(prompt_world: dict[str, Any]) -> None:
     """Invoke ``flow prompts list`` via CliRunner; capture stdout/exit."""
     result = runner.invoke(main, ["prompts", "list"])
@@ -1011,13 +944,11 @@ def when_run_prompts_list(prompt_world: dict[str, Any]) -> None:
     prompt_world["exit_code"] = result.exit_code
 
 
-@when(
-    parsers.re(
-        r'the user runs `flow prompts show (?P<name>\S+) --var (?P<pair>[^`]+)`'
-    )
-)
+@when(parsers.re(r"the user runs `flow prompts show (?P<name>\S+) --var (?P<pair>[^`]+)`"))
 def when_run_prompts_show_with_var(
-    prompt_world: dict[str, Any], name: str, pair: str,
+    prompt_world: dict[str, Any],
+    name: str,
+    pair: str,
 ) -> None:
     """Invoke ``flow prompts show <name> --var <pair>`` via CliRunner.
 
@@ -1032,13 +963,10 @@ def when_run_prompts_show_with_var(
     prompt_world["exit_code"] = result.exit_code
 
 
-@when(
-    parsers.re(
-        r'the user runs `flow prompts show (?P<name>[^`]+)`'
-    )
-)
+@when(parsers.re(r"the user runs `flow prompts show (?P<name>[^`]+)`"))
 def when_run_prompts_show_no_var(
-    prompt_world: dict[str, Any], name: str,
+    prompt_world: dict[str, Any],
+    name: str,
 ) -> None:
     """Invoke ``flow prompts show <name>`` (no --var) via CliRunner.
 
@@ -1057,7 +985,8 @@ def when_run_prompts_show_no_var(
 
 @then(parsers.parse("stdout contains a header line `{fragment}`"))
 def then_stdout_contains_header_line(
-    prompt_world: dict[str, Any], fragment: str,
+    prompt_world: dict[str, Any],
+    fragment: str,
 ) -> None:
     """Assert stdout contains the header marker line for `flow prompts list`.
 
@@ -1068,25 +997,23 @@ def then_stdout_contains_header_line(
     stdout_lower = prompt_world["stdout"].lower()
     fragment_lower = fragment.lower()
     assert fragment_lower in stdout_lower, (
-        f"expected {fragment!r} (case-insensitive) in stdout; "
-        f"got {prompt_world['stdout']!r}"
+        f"expected {fragment!r} (case-insensitive) in stdout; got {prompt_world['stdout']!r}"
     )
 
 
 @then(
-    parsers.parse(
-        'stdout contains a row for `{name}` with version="{version}" '
-        'and owner="{owner}"'
-    )
+    parsers.parse('stdout contains a row for `{name}` with version="{version}" and owner="{owner}"')
 )
 def then_stdout_contains_row_for(
-    prompt_world: dict[str, Any], name: str, version: str, owner: str,
+    prompt_world: dict[str, Any],
+    name: str,
+    version: str,
+    owner: str,
 ) -> None:
     """Assert stdout has a row carrying ``name`` + ``version`` + ``owner``."""
     stdout = prompt_world["stdout"]
     matching_lines = [
-        line for line in stdout.splitlines()
-        if name in line and version in line and owner in line
+        line for line in stdout.splitlines() if name in line and version in line and owner in line
     ]
     assert matching_lines, (
         f"expected row with name={name!r} version={version!r} owner={owner!r}; "
@@ -1096,83 +1023,68 @@ def then_stdout_contains_row_for(
 
 @then(parsers.parse("stdout contains a footer line `{fragment}`"))
 def then_stdout_contains_footer_line(
-    prompt_world: dict[str, Any], fragment: str,
+    prompt_world: dict[str, Any],
+    fragment: str,
 ) -> None:
     """Assert stdout contains the footer marker line for `flow prompts list`."""
     assert fragment in prompt_world["stdout"], (
-        f"expected {fragment!r} in stdout footer; "
-        f"got {prompt_world['stdout']!r}"
+        f"expected {fragment!r} in stdout footer; got {prompt_world['stdout']!r}"
     )
 
 
-@then(
-    parsers.parse(
-        'stdout contains a `prompt_id:` line with `{name}`'
-    )
-)
+@then(parsers.parse("stdout contains a `prompt_id:` line with `{name}`"))
 def then_stdout_contains_prompt_id_line(
-    prompt_world: dict[str, Any], name: str,
+    prompt_world: dict[str, Any],
+    name: str,
 ) -> None:
     """Assert stdout has a ``prompt_id:`` line carrying ``name``."""
     stdout = prompt_world["stdout"]
     matches = [
-        line for line in stdout.splitlines()
-        if line.startswith("prompt_id:") and name in line
+        line for line in stdout.splitlines() if line.startswith("prompt_id:") and name in line
     ]
-    assert matches, (
-        f"expected 'prompt_id:' line with {name!r} in stdout; "
-        f"got stdout={stdout!r}"
-    )
+    assert matches, f"expected 'prompt_id:' line with {name!r} in stdout; got stdout={stdout!r}"
 
 
-@then(
-    parsers.parse(
-        'stdout contains a `version:` line with `{value}`'
-    )
-)
+@then(parsers.parse("stdout contains a `version:` line with `{value}`"))
 def then_stdout_contains_version_line(
-    prompt_world: dict[str, Any], value: str,
+    prompt_world: dict[str, Any],
+    value: str,
 ) -> None:
     """Assert stdout has a ``version:`` line carrying ``value``."""
     matches = [
-        line for line in prompt_world["stdout"].splitlines()
+        line
+        for line in prompt_world["stdout"].splitlines()
         if line.startswith("version:") and value in line
     ]
     assert matches, (
-        f"expected 'version:' line with {value!r} in stdout; "
-        f"got stdout={prompt_world['stdout']!r}"
+        f"expected 'version:' line with {value!r} in stdout; got stdout={prompt_world['stdout']!r}"
     )
 
 
-@then(
-    parsers.parse(
-        'stdout contains a `variables:` line with `{pair}`'
-    )
-)
+@then(parsers.parse("stdout contains a `variables:` line with `{pair}`"))
 def then_stdout_contains_variables_line(
-    prompt_world: dict[str, Any], pair: str,
+    prompt_world: dict[str, Any],
+    pair: str,
 ) -> None:
     """Assert stdout has a ``variables:`` line carrying the ``pair`` marker."""
     matches = [
-        line for line in prompt_world["stdout"].splitlines()
+        line
+        for line in prompt_world["stdout"].splitlines()
         if line.startswith("variables:") and pair in line
     ]
     assert matches, (
-        f"expected 'variables:' line with {pair!r} in stdout; "
-        f"got stdout={prompt_world['stdout']!r}"
+        f"expected 'variables:' line with {pair!r} in stdout; got stdout={prompt_world['stdout']!r}"
     )
 
 
-@then(
-    parsers.parse("stdout contains the rendered string `{value}`")
-)
+@then(parsers.parse("stdout contains the rendered string `{value}`"))
 def then_stdout_contains_rendered_string(
-    prompt_world: dict[str, Any], value: str,
+    prompt_world: dict[str, Any],
+    value: str,
 ) -> None:
     """Assert stdout contains the rendered template body fragment."""
     assert value in prompt_world["stdout"], (
-        f"expected rendered string {value!r} in stdout; "
-        f"got stdout={prompt_world['stdout']!r}"
+        f"expected rendered string {value!r} in stdout; got stdout={prompt_world['stdout']!r}"
     )
 
 
@@ -1185,11 +1097,10 @@ def then_stderr_contains_json_unknown_error(prompt_world: dict[str, Any]) -> Non
     )
 
 
-@then(
-    parsers.parse("stderr contains the prompt_id `{name}`")
-)
+@then(parsers.parse("stderr contains the prompt_id `{name}`"))
 def then_stderr_contains_prompt_id(
-    prompt_world: dict[str, Any], name: str,
+    prompt_world: dict[str, Any],
+    name: str,
 ) -> None:
     """Assert stderr JSON carries the unknown ``prompt_id`` value."""
     loaded = json.loads(prompt_world["stderr"])
