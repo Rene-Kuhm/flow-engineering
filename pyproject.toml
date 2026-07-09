@@ -25,6 +25,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "mypy>=2.2.0",
+    "pip-audit==2.10.1",
 ]
 
 # Optional ML extras for vector-semantic-search (REQ-17, REQ-19).
