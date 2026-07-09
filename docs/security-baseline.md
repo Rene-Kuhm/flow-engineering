@@ -69,10 +69,15 @@ Use this baseline before merging sensitive changes:
 ```powershell
 git status --short
 uv run ruff check .
+uv run ruff check --select S102,S105,S106,S107,S108,S301,S302,S303,S304,S305,S306,S307,S308,S310,S312,S313,S314,S315,S316,S317,S318,S319,S321,S323,S501,S502,S503,S504,S505,S506,S507,S508,S509,S601,S602,S604,S605,S606,S608,S609,S610,S611,S612 src scripts
 uv run mypy src tests
 uv run pytest -q --basetemp .pytest_tmp
 .\scripts\system_health.ps1
 ```
+
+The CI workflow runs the same focused Ruff security rule set. Full
+`ruff --select S` remains an audit tool until existing low-signal findings are
+triaged and intentionally fixed or documented.
 
 For CI or runner changes, also inspect the latest workflow run:
 
