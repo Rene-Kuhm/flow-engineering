@@ -25,17 +25,20 @@ billing gate prevents those jobs from starting. Runner-down detection can run
 outside GitHub Actions through `scripts/runner_watchdog.ps1`; the manual health
 command remains the one-minute operator dashboard.
 
-## Last verified status
+## Last verified command set
 
-Last checked: 2026-07-09.
+Last checked manually: 2026-07-09. Treat this section as the operator
+evidence shape, not as the source of truth for the latest run id. The live
+source of truth is always `scripts/system_health.ps1` plus
+`scripts/runner_watchdog.ps1 -Json`.
 
 | Check | Result | Evidence |
 |---|---|---|
 | Runner service | Healthy | `actions.runner.Rene-Kuhm-flow-engineering.TECNODESPEGUE-flow-engineering` is `Running` / `Automatic` |
 | Startup fallback | Removed | `flow-engineering-actions-runner.cmd` does not exist in Startup |
-| CI | Green | `tests` run `29002058447` passed on `main` for `74d6ce0` |
-| Scheduled monitor | Green | `health-monitor` run `29000171647` passed on `main` |
-| Out-of-band watchdog | Healthy | `scripts/runner_watchdog.ps1 -Json` reported `overall: ok` with latest tests run `29002058447` |
+| CI | Green | Latest `tests` run on `main` succeeds in `scripts/system_health.ps1` |
+| Scheduled monitor | Green | Latest `health-monitor` run succeeds when inspected with `gh run list` |
+| Out-of-band watchdog | Healthy | `scripts/runner_watchdog.ps1 -Json` reports `overall: ok` |
 
 Expected healthy state:
 
