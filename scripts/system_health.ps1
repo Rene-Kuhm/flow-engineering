@@ -2,7 +2,8 @@ param(
   [string]$Repo = "Rene-Kuhm/flow-engineering",
   [string]$RunnerNamePattern = "actions.runner.*",
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-  [int]$RunLimit = 3
+  [int]$RunLimit = 3,
+  [switch]$SkipGitHub
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,7 +38,9 @@ Write-KeyValue "path" $startupFallback
 Write-KeyValue "exists" ([string](Test-Path $startupFallback))
 
 Write-Section "Latest CI runs"
-if (Get-Command gh -ErrorAction SilentlyContinue) {
+if ($SkipGitHub) {
+  Write-KeyValue "gh" "skipped"
+} elseif (Get-Command gh -ErrorAction SilentlyContinue) {
   gh run list --repo $Repo --limit $RunLimit
 } else {
   Write-KeyValue "gh" "not found on PATH"
