@@ -11,7 +11,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALL_WATCHDOG = REPO_ROOT / "scripts" / "install_runner_watchdog_task.ps1"
+INSTALL_MONTHLY = REPO_ROOT / "scripts" / "install_monthly_maintenance_task.ps1"
 MONTHLY_MAINTENANCE = REPO_ROOT / "scripts" / "monthly_maintenance.ps1"
+SET_WEBHOOK = REPO_ROOT / "scripts" / "set_runner_watchdog_webhook.ps1"
 
 
 pytestmark = [
@@ -47,6 +49,36 @@ def test_install_runner_watchdog_task_dry_run_json() -> None:
     assert payload["dry_run"] is True
     assert "runner_watchdog.ps1" in payload["arguments"]
     assert payload["webhook_source"] == "FLOW_RUNNER_ALERT_WEBHOOK environment variable"
+
+
+def test_install_monthly_maintenance_task_dry_run_json() -> None:
+    result = _run_script(INSTALL_MONTHLY, "-DryRun", "-Json")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["task_name"] == "flow-engineering-monthly-maintenance"
+    assert payload["schedule"] == "monthly"
+    assert payload["day_of_month"] == 1
+    assert payload["dry_run"] is True
+    assert "monthly_maintenance.ps1" in payload["arguments"]
+
+
+def test_set_runner_watchdog_webhook_dry_run_does_not_echo_secret() -> None:
+    result = _run_script(
+        SET_WEBHOOK,
+        "-WebhookUrl",
+        "https://hooks.example.test/super-secret-token",
+        "-DryRun",
+        "-Json",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["variable"] == "FLOW_RUNNER_ALERT_WEBHOOK"
+    assert payload["target"] == "User"
+    assert payload["dry_run"] is True
+    assert payload["value_present"] is True
+    assert "super-secret-token" not in result.stdout
 
 
 def test_monthly_maintenance_renders_expected_sections_offline() -> None:

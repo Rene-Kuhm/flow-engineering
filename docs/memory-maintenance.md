@@ -37,6 +37,18 @@ Use offline mode when GitHub CLI/network access is unavailable:
 ./scripts/monthly_maintenance.ps1 -SkipGitHub
 ```
 
+Install it as a monthly Windows scheduled task:
+
+```powershell
+./scripts/install_monthly_maintenance_task.ps1
+```
+
+Preview the scheduled task command first:
+
+```powershell
+./scripts/install_monthly_maintenance_task.ps1 -DryRun
+```
+
 ## Monthly audit checklist
 
 - [ ] Latest `main` CI is green.
