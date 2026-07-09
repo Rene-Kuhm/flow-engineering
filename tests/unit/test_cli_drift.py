@@ -259,6 +259,41 @@ class TestExitCodeTwo:
         result = runner.invoke(main, ["drift", "run", "my-change", "--graph-json", str(graph_path)])
         assert result.exit_code == 2, result.output
 
+    def test_drift_json_includes_unable_reason(
+        self, seeded_backend, metrics_path, graph_path, monkeypatch
+    ) -> None:
+        """Machine-readable CLI output exposes the typed graph-load reason."""
+        _, _, _ = seeded_backend
+        report = DriftReport(
+            change_name="my-change",
+            scanned_at="2026-07-09T00:00:00Z",
+            graph_mtime=None,
+            decisions_total=0,
+            bindings_total=0,
+            class_counts={},
+            findings=[],
+            graph_unavailable=True,
+            unable_reason="graph_file_malformed",
+        )
+        _patch_scan(monkeypatch, report=report)
+
+        result = runner.invoke(
+            main,
+            [
+                "drift",
+                "run",
+                "my-change",
+                "--graph-json",
+                str(graph_path),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 2, result.output
+        payload = json.loads(result.output)
+        assert payload["graph_unavailable"] is True
+        assert payload["unable_reason"] == "graph_file_malformed"
+
     def test_drift_since_invalid_exits_2(
         self, seeded_backend, metrics_path, graph_path, monkeypatch
     ) -> None:

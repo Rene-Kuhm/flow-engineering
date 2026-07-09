@@ -149,6 +149,7 @@ def _serialize_drift_report(report: decision_drift.DriftReport) -> dict[str, Any
         "class_counts": {cls.value: count for cls, count in report.class_counts.items()},
         "findings": findings,
         "graph_unavailable": report.graph_unavailable,
+        "unable_reason": report.unable_reason,
     }
 
 

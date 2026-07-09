@@ -55,6 +55,18 @@ Register the watchdog to run every 15 minutes:
 
 For webhook alerts, set `FLOW_RUNNER_ALERT_WEBHOOK` as a user or machine environment variable before the task runs. Do not pass webhook secrets on the command line because Task Scheduler stores task arguments.
 
+Use the helper interactively so the secret is not stored in shell history or task arguments:
+
+```powershell
+./scripts/set_runner_watchdog_webhook.ps1
+```
+
+Preview the change without writing the environment variable:
+
+```powershell
+./scripts/set_runner_watchdog_webhook.ps1 -WebhookUrl "https://your-alert-webhook.example/path" -DryRun
+```
+
 ## Recommended schedule
 
 Use Task Scheduler or an external monitor every 15 minutes. The task should run outside GitHub Actions; otherwise it cannot detect the case where the runner is down and no job starts.
