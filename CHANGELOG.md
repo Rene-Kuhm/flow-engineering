@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Incident response guide for CI, runner, release, memory/SDD, and security incidents.
 - Change governance guide covering Definition of Done, release notes, ADR triggers, and SDD/OpenSpec hygiene.
+- Support matrix documenting Python and platform support levels.
 - Initial ADR documenting lightweight, evidence-based enterprise governance.
 - Verified health-monitor evidence in the system health guide.
 
