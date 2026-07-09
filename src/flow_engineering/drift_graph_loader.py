@@ -117,18 +117,13 @@ class LiveDiskGraphLoader:
             raise
         except json.JSONDecodeError as exc:
             raise GraphMalformed(
-                f"graph file is not valid JSON: {self._path} "
-                f"(line {exc.lineno}, col {exc.colno})"
+                f"graph file is not valid JSON: {self._path} (line {exc.lineno}, col {exc.colno})"
             ) from exc
         if not isinstance(data, dict):
-            raise GraphMalformed(
-                f"graph file top-level is not an object: {self._path}"
-            )
+            raise GraphMalformed(f"graph file top-level is not an object: {self._path}")
         nodes = data.get("nodes", [])
         if not isinstance(nodes, list):
-            raise GraphMalformed(
-                f"graph file 'nodes' field is not a list: {self._path}"
-            )
+            raise GraphMalformed(f"graph file 'nodes' field is not a list: {self._path}")
         return _index_graph_payload(nodes, mtime)
 
 
@@ -194,9 +189,7 @@ def _parse_envelope_graph(envelope: dict) -> tuple[dict | None, dict | None, flo
                 f"snap_id={envelope.get('id', '<unknown>')!r}"
             ) from exc
         if not isinstance(parsed, dict):
-            raise GraphMalformed(
-                "snapshot graph_json_content top-level is not an object"
-            )
+            raise GraphMalformed("snapshot graph_json_content top-level is not an object")
         nodes = parsed.get("nodes", [])
         return _index_graph_payload(nodes, synthetic_mtime)
 

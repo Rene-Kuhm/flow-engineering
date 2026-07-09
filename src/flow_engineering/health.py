@@ -99,9 +99,7 @@ _R9_NODE_PATTERNS: tuple[str, ...] = (
 
 # Deduplicated union (preserves insertion order; ``dist/`` is shared
 # across both tuples but emitted only once in the R9 hits list).
-_R9_ALL_PATTERNS: tuple[str, ...] = tuple(
-    dict.fromkeys(_R9_PYTHON_PATTERNS + _R9_NODE_PATTERNS)
-)
+_R9_ALL_PATTERNS: tuple[str, ...] = tuple(dict.fromkeys(_R9_PYTHON_PATTERNS + _R9_NODE_PATTERNS))
 
 
 # ---------------------------------------------------------------------------
@@ -499,9 +497,7 @@ def filter_health_by_rules(
         raw_recommendations = entry.get("recommendations", [])
         triggers = cast(list[str], raw_triggers) if isinstance(raw_triggers, list) else []
         recommendations = (
-            cast(list[str], raw_recommendations)
-            if isinstance(raw_recommendations, list)
-            else []
+            cast(list[str], raw_recommendations) if isinstance(raw_recommendations, list) else []
         )
         # Pair-trigger filter: each recommendation is 1:1 with a
         # trigger from ``_recommendations_for`` — keep both lists
@@ -585,4 +581,3 @@ def _compute_totals(records: list[dict[str, object]]) -> dict[str, int]:
         elif verdict == "CRITICAL":
             totals["critical"] += 1
     return totals
-

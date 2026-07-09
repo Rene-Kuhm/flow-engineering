@@ -44,10 +44,7 @@ class VectorSearchDisabled(RuntimeError):  # noqa: N818
 
     def __init__(self, message: str | None = None) -> None:
         if message is None:
-            message = (
-                "Vector search disabled. "
-                "Install with: pip install flow-engineering[vectors]"
-            )
+            message = "Vector search disabled. Install with: pip install flow-engineering[vectors]"
         super().__init__(message)
 
 
@@ -228,7 +225,11 @@ class InMemoryBackend(EngramBackend):
         for obs in sorted(self.observations.values(), key=lambda o: o["id"], reverse=True):
             if topic_key and obs["topic_key"] != topic_key:
                 continue
-            if query and query.lower() not in obs["content"].lower() and query.lower() not in obs["title"].lower():
+            if (
+                query
+                and query.lower() not in obs["content"].lower()
+                and query.lower() not in obs["title"].lower()
+            ):
                 continue
             results.append(obs)
             if len(results) >= limit:
@@ -353,7 +354,7 @@ class InMemoryBackend(EngramBackend):
                     # Preserve order, dedupe
                     _seen: set[str] = set()
                     projects = []
-                    for _p in (_resolved + _extra):
+                    for _p in _resolved + _extra:
                         if _p not in _seen:
                             projects.append(_p)
                             _seen.add(_p)
@@ -361,9 +362,7 @@ class InMemoryBackend(EngramBackend):
                 # Alias resolution is best-effort; never block retrieval.
                 pass
         results: list[dict[str, Any]] = []
-        for obs in sorted(
-            self.observations.values(), key=lambda o: o["id"], reverse=True
-        ):
+        for obs in sorted(self.observations.values(), key=lambda o: o["id"], reverse=True):
             if projects is not None and obs.get("project") not in projects:
                 continue
             if since is not None and str(obs.get("created_at", "")) < since:
@@ -372,7 +371,10 @@ class InMemoryBackend(EngramBackend):
                 continue
             if query:
                 q = query.lower()
-                if q not in obs.get("content", "").lower() and q not in obs.get("title", "").lower():
+                if (
+                    q not in obs.get("content", "").lower()
+                    and q not in obs.get("title", "").lower()
+                ):
                     continue
             # REQ-27 alias result rewrite: if the obs is tagged with an
             # ``old`` alias name and was matched via the canonical ``new``
@@ -614,9 +616,7 @@ class EngramClient:
         prose, _block = split_prose_and_refs(content)
         return prose
 
-    def update_observation_metadata(
-        self, observation_id: int, metadata: dict[str, Any]
-    ) -> None:
+    def update_observation_metadata(self, observation_id: int, metadata: dict[str, Any]) -> None:
         """Append/update a trailing ``<!-- metadata -->`` block.
 
         Distinct marker from ``<!-- code_refs -->``: this one carries
@@ -663,7 +663,7 @@ class EngramClient:
         if CODE_REFS_MARKER in content:
             # Existing block — validate before write. Raises ParseError on failure.
             prose, block = split_prose_and_refs(content)
-            body = block[len(CODE_REFS_MARKER):].strip()
+            body = block[len(CODE_REFS_MARKER) :].strip()
             if body:
                 validate_block(body)  # raises ParseError on bad shape
             # Preserve prose + block byte-for-byte.
@@ -689,7 +689,7 @@ class EngramClient:
         # REQ-3 path: explicit block already present — validate + preserve.
         if CODE_REFS_MARKER in content:
             prose, block = split_prose_and_refs(content)
-            body = block[len(CODE_REFS_MARKER):].strip()
+            body = block[len(CODE_REFS_MARKER) :].strip()
             if body:
                 validate_block(body)  # raises ParseError on bad shape
             return content

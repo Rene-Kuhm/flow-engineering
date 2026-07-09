@@ -16,6 +16,7 @@ a defensive guard for accidental multi-thread callers. v1 ships without
 rotation (D3); rotation is deferred alongside the metrics rotation
 follow-up (REQ-44 → v1.1).
 """
+
 from __future__ import annotations
 
 import json
@@ -26,9 +27,7 @@ from typing import Any
 
 from flow_engineering._jsonl_rotation import _rotate_jsonl_if_needed
 
-DEFAULT_DRIFT_EVENT_LOG_PATH: Path = (
-    Path.home() / ".flow-engineering" / "drift_events.jsonl"
-)
+DEFAULT_DRIFT_EVENT_LOG_PATH: Path = Path.home() / ".flow-engineering" / "drift_events.jsonl"
 
 ROTATE_BYTES_DEFAULT: int = 10 * 1024 * 1024
 """Default size threshold for ``DriftEventLog`` rotation (REQ-V1.1.1).

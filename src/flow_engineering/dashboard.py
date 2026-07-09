@@ -115,9 +115,7 @@ def _run_subprocess_json(cmd: list[str], *, timeout: int = 10) -> dict[str, Any]
             f"Install flow-engineering or activate the venv that provides it."
         ) from exc
     except subprocess.TimeoutExpired as exc:
-        raise DashboardSubprocessError(
-            f"`{' '.join(cmd)}` timed out after {timeout}s"
-        ) from exc
+        raise DashboardSubprocessError(f"`{' '.join(cmd)}` timed out after {timeout}s") from exc
 
     if completed.returncode != 0:
         stderr = (completed.stderr or "").strip()
@@ -130,8 +128,7 @@ def _run_subprocess_json(cmd: list[str], *, timeout: int = 10) -> dict[str, Any]
     except json.JSONDecodeError as exc:
         preview = (completed.stdout or "")[:200]
         raise DashboardParseError(
-            f"`{' '.join(cmd)}` returned invalid JSON: {exc}. "
-            f"stdout preview: {preview!r}"
+            f"`{' '.join(cmd)}` returned invalid JSON: {exc}. stdout preview: {preview!r}"
         ) from exc
 
     if not isinstance(payload, dict):
@@ -236,8 +233,7 @@ def filter_by_rules(
     if unknown:
         valid_list = ", ".join(sorted(_VALID_RULES))
         raise ValueError(
-            f"Unknown filter rule(s): {', '.join(unknown)}. "
-            f"Valid rules: {valid_list}."
+            f"Unknown filter rule(s): {', '.join(unknown)}. Valid rules: {valid_list}."
         )
 
     if not rules:
@@ -302,9 +298,7 @@ def sort_projects(
     """
     if field not in _VALID_SORT_FIELDS:
         valid_list = ", ".join(sorted(_VALID_SORT_FIELDS))
-        raise ValueError(
-            f"Unknown sort field: {field!r}. Valid fields: {valid_list}."
-        )
+        raise ValueError(f"Unknown sort field: {field!r}. Valid fields: {valid_list}.")
 
     if field == "name":
         return sorted(projects, key=lambda p: p.get("name", ""))
@@ -408,8 +402,7 @@ def render_header(summary: dict[str, Any], *, no_color: bool = False) -> Panel:
 
     body_lines = [
         f"[bold]Workspace[/bold] {projects_total} projects, {archived_count} archived",
-        f"Needs attention: {needs_total} "
-        f"(R1: {dirty}, R2: {no_git}, R3: {no_tests})",
+        f"Needs attention: {needs_total} (R1: {dirty}, R2: {no_git}, R3: {no_tests})",
         f"Run: {_format_timestamp()}",
     ]
     content = "\n".join(body_lines)
@@ -501,9 +494,7 @@ def render_needs_table(
         ("total", 3, 4, _OVERFLOW_CROP),
     )
     for header, min_w, max_w, overflow in _column_specs:
-        table.add_column(
-            header, min_width=min_w, max_width=max_w, overflow=overflow
-        )
+        table.add_column(header, min_width=min_w, max_width=max_w, overflow=overflow)
 
     rule_totals: dict[str, int] = dict.fromkeys(_NEEDS_RULE_COLUMNS, 0)
 
@@ -517,22 +508,16 @@ def render_needs_table(
         triggered_count = 0
         per_rule: list[str] = []
         for rule in _NEEDS_RULE_COLUMNS:
-            triggered = any(
-                isinstance(r, str) and r.startswith(rule) for r in reasons_list
-            )
+            triggered = any(isinstance(r, str) and r.startswith(rule) for r in reasons_list)
             per_rule.append(_format_rule_cell(triggered, rule))
             if triggered:
                 rule_totals[rule] += 1
                 triggered_count += 1
 
-        row_style: str | None = (
-            color_code(triggered_count) if not no_color else None
-        )
+        row_style: str | None = color_code(triggered_count) if not no_color else None
 
         total_cell = str(len(reasons_list))
-        table.add_row(
-            str(name), path, *per_rule, total_cell, style=row_style
-        )
+        table.add_row(str(name), path, *per_rule, total_cell, style=row_style)
 
     # Footer row — per-rule totals.
     footer_cells = ["[bold]total[/bold]", ""] + [
@@ -593,9 +578,7 @@ def render_archived(archived: list[dict[str, Any]]) -> Table | None:
         ("reason", 20, 40, _OVERFLOW_FOLD),
     )
     for header, min_w, max_w, overflow in _archived_column_specs:
-        table.add_column(
-            header, min_width=min_w, max_width=max_w, overflow=overflow
-        )
+        table.add_column(header, min_width=min_w, max_width=max_w, overflow=overflow)
 
     for entry in archived:
         if not isinstance(entry, dict):
@@ -650,9 +633,7 @@ def render_r1_detail(needs_attention: list[dict[str, Any]]) -> Table | None:
     collapsed by narrow terminals.
     """
     r1_entries = [
-        entry
-        for entry in needs_attention
-        if isinstance(entry, dict) and entry.get("dirty_files")
+        entry for entry in needs_attention if isinstance(entry, dict) and entry.get("dirty_files")
     ]
     if not r1_entries:
         return None

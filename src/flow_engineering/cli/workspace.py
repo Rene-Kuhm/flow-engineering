@@ -115,7 +115,10 @@ def _workspace_status_tags(project: dict[str, Any]) -> list[str]:
         tags.append("[NO-GIT]")
     if not project.get("test_commands"):
         tags.append("[NO TESTS]")
-    if project.get("has_openspec") is False and project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC:
+    if (
+        project.get("has_openspec") is False
+        and project.get("stack") in _SDD_STACKS_REQUIRING_OPENSPEC
+    ):
         tags.append("[NO OPENSPEC]")
     return tags
 
@@ -139,7 +142,7 @@ def _render_workspace_status_text(
             for item in summary["needs_attention"]
             if item["name"] == project["name"]
         ]
-        for reason in (reasons[0] if reasons else []):
+        for reason in reasons[0] if reasons else []:
             lines.append(f"  - {reason}")
     totals = summary["totals"]
     lines.extend(
@@ -213,17 +216,23 @@ def workspace_status(root: Path | None, json_flag: bool) -> None:
 
 
 @workspace_group.command(name="dashboard")
-@click.option("--filter", "filter_rules", multiple=True,
-              type=click.Choice(["R1", "R2", "R3", "R4", "R5"], case_sensitive=False),
-              help="Filter by needs-attention rules (repeatable).")
-@click.option("--sort", default="name",
-              type=click.Choice(["name", "path", "needs-count"], case_sensitive=False),
-              help="Sort projects by field (default: name).")
-@click.option("--no-color", is_flag=True, default=False,
-              help="Disable Rich colors for CI / piping.")
-def workspace_dashboard_cmd(
-    filter_rules: tuple[str, ...], sort: str, no_color: bool
-) -> None:
+@click.option(
+    "--filter",
+    "filter_rules",
+    multiple=True,
+    type=click.Choice(["R1", "R2", "R3", "R4", "R5"], case_sensitive=False),
+    help="Filter by needs-attention rules (repeatable).",
+)
+@click.option(
+    "--sort",
+    default="name",
+    type=click.Choice(["name", "path", "needs-count"], case_sensitive=False),
+    help="Sort projects by field (default: name).",
+)
+@click.option(
+    "--no-color", is_flag=True, default=False, help="Disable Rich colors for CI / piping."
+)
+def workspace_dashboard_cmd(filter_rules: tuple[str, ...], sort: str, no_color: bool) -> None:
     """Render consolidated workspace state in terminal (read-only)."""
     # Lazy import from ``flow_engineering.cli`` (NOT ``rich.console``) so
     # tests that ``monkeypatch.setattr(cli, "Console", ...)`` keep working:
@@ -283,7 +292,9 @@ def workspace_dashboard_cmd(
     width_value = probe.width if probe.width and probe.width > 0 else 120
 
     console = Console(width=width_value, soft_wrap=True, no_color=no_color)
-    console.print(render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color))
+    console.print(
+        render_dashboard(projects, status_envelope, archived, needs_attention, no_color=no_color)
+    )
 
 
 # REQ-WORKSPACE-HEALTH-* (PR4a) — `flow workspace health` (Phase 6, PR4 wiring).
@@ -476,13 +487,9 @@ def _resolve_project_path(name: str, root: Path) -> Path:
     try:
         target.relative_to(root.resolve())
     except ValueError as exc:
-        raise click.UsageError(
-            f"project `{name}` resolves outside the projects root"
-        ) from exc
+        raise click.UsageError(f"project `{name}` resolves outside the projects root") from exc
     if not target.is_dir():
-        raise click.UsageError(
-            f"project `{name}` not found at {target}"
-        )
+        raise click.UsageError(f"project `{name}` not found at {target}")
     return target
 
 
@@ -526,15 +533,11 @@ def _format_archived_text_table(entries: list[ArchivedEntry]) -> str:
     header = ("NAME", "ARCHIVED_AT", "REASON")
     rows: list[tuple[str, str, str]] = [header]
     for entry in entries:
-        rows.append(
-            (str(entry.name), str(entry.archived_at), str(entry.reason))
-        )
+        rows.append((str(entry.name), str(entry.archived_at), str(entry.reason)))
     widths = [max(len(row[i]) for row in rows) for i in range(3)]
     lines: list[str] = []
     for row in rows:
-        lines.append(
-            f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}"
-        )
+        lines.append(f"{row[0]:<{widths[0]}}  {row[1]:<{widths[1]}}  {row[2]:<{widths[2]}}")
     return "\n".join(lines)
 
 
@@ -640,10 +643,7 @@ def workspace_fix_cmd(
     # (REQ-HYGIENE-R1-EXPLICITLY-OUT). This is informational; the
     # mutation still ran (``git init`` is idempotent on existing repos).
     prefix = "[DRY-RUN] " if result.dry_run else ""
-    click.echo(
-        f"{prefix}{result.action_taken} on {result.project}: "
-        f"success={result.success}"
-    )
+    click.echo(f"{prefix}{result.action_taken} on {result.project}: success={result.success}")
     if markers["has_git"] and markers["dirty"]:
         click.echo(
             "R1 dirty-git is OUT OF SCOPE for Phase 4 MVP "
@@ -732,4 +732,3 @@ def workspace_restore_cmd(project: str, yes: bool) -> None:
         return  # pragma: no cover
 
     click.echo(f"restored: {project}")
-

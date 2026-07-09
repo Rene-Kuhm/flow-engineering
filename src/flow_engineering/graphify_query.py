@@ -158,8 +158,9 @@ def query_nodes(
     cache = _load_cache(cache_dir)
     if key in cache:
         cached_refs = cache[key].get("refs", [])
-        return _filter_by_threshold(_refs_from_cli_payload(json.dumps({"nodes": cached_refs})),
-                                    threshold, max_results)
+        return _filter_by_threshold(
+            _refs_from_cli_payload(json.dumps({"nodes": cached_refs})), threshold, max_results
+        )
     try:
         returncode, stdout, stderr = _run_graphify_cli(text)
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -172,18 +173,21 @@ def query_nodes(
         return []
     filtered = _filter_by_threshold(refs, threshold, max_results)
     # Persist for next call (filtered snapshot — same call returns this).
-    cache[key] = {"refs": [
-        {
-            "project": r.project,
-            "id": r.id,
-            "label": r.label,
-            "file": r.file,
-            "line": r.line,
-            "confidence": r.confidence,
-            "source": r.source,
-        }
-        for r in filtered
-    ], "mtime": mtime}
+    cache[key] = {
+        "refs": [
+            {
+                "project": r.project,
+                "id": r.id,
+                "label": r.label,
+                "file": r.file,
+                "line": r.line,
+                "confidence": r.confidence,
+                "source": r.source,
+            }
+            for r in filtered
+        ],
+        "mtime": mtime,
+    }
     _save_cache(cache_dir, cache)
     return filtered
 

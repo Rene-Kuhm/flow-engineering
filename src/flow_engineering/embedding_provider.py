@@ -112,10 +112,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
             return np.zeros((0, EMBEDDING_DIMS), dtype=np.float32)
         rows: list[list[float]] = []
         for t in texts:
-            row = [
-                (hash(t + str(i)) % 1000) / 1000.0
-                for i in range(EMBEDDING_DIMS)
-            ]
+            row = [(hash(t + str(i)) % 1000) / 1000.0 for i in range(EMBEDDING_DIMS)]
             rows.append(row)
         arr = np.asarray(rows, dtype=np.float32)
         # L2-normalize each row to unit length (REQ-19 unit-norm contract).

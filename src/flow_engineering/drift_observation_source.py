@@ -78,15 +78,9 @@ class BackendObservationSource:
         except Exception:
             return []
         prefix = f"sdd/{self._change_name}/"
-        observations = [
-            o for o in observations
-            if str(o.get("topic_key", "")).startswith(prefix)
-        ]
+        observations = [o for o in observations if str(o.get("topic_key", "")).startswith(prefix)]
         if self._since is not None:
-            observations = [
-                o for o in observations
-                if float(o.get("created_at", 0)) >= self._since
-            ]
+            observations = [o for o in observations if float(o.get("created_at", 0)) >= self._since]
         return observations
 
 
