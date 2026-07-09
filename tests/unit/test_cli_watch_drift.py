@@ -41,9 +41,7 @@ runner = CliRunner()
 # ---------- Fixtures ----------
 
 
-def _patch_start_watch(
-    monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]
-) -> None:
+def _patch_start_watch(monkeypatch: pytest.MonkeyPatch, captured: dict[str, Any]) -> None:
     """Stub ``flow_engineering.cli.start_watch`` so the test captures kwargs.
 
     The CLI imports ``start_watch`` at module load time, so monkey-patching
@@ -53,7 +51,9 @@ def _patch_start_watch(
     import flow_engineering.cli as cli_mod
 
     def _stub(
-        change: str, target: Path, *,
+        change: str,
+        target: Path,
+        *,
         drift: bool = False,
         graph_json_path: Path | None = None,
         backend: Any = None,
@@ -93,8 +93,13 @@ def _make_change(tmp_path: Path, change: str = "my-change") -> Path:
 
 def _make_finding(*, drift_class: DriftClass = DriftClass.STILL_VALID) -> Finding:
     binding = CodeRef(
-        project="insyd", id="n1", label="L1", file="src/x.py", line=1,
-        confidence=0.9, source="manual",
+        project="insyd",
+        id="n1",
+        label="L1",
+        file="src/x.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
     return Finding(decision_id=1, binding=binding, drift_class=drift_class, detail="")
 
@@ -110,10 +115,15 @@ def _patch_observer(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     captured: dict[str, Any] = {"scheduled": [], "started": 0, "stopped": 0}
     fake_observer = MagicMock()
     fake_observer.schedule.side_effect = lambda *a, **kw: captured["scheduled"].append((a, kw))
-    fake_observer.start.side_effect = lambda: captured.__setitem__("started", captured["started"] + 1)
-    fake_observer.stop.side_effect = lambda: captured.__setitem__("stopped", captured["stopped"] + 1)
+    fake_observer.start.side_effect = lambda: captured.__setitem__(
+        "started", captured["started"] + 1
+    )
+    fake_observer.stop.side_effect = lambda: captured.__setitem__(
+        "stopped", captured["stopped"] + 1
+    )
 
     import sys
+
     fake_module = type(sys)("fake_watchdog")
     fake_module.Observer = MagicMock(return_value=fake_observer)
     monkeypatch.setitem(sys.modules, "watchdog.observers", fake_module)
@@ -141,7 +151,8 @@ class TestDriftFlagWiring:
         _patch_start_watch(monkeypatch, captured)
 
         result = runner.invoke(
-            cli_main, ["watch", "my-change", "--in", str(tmp_path), "--drift"],
+            cli_main,
+            ["watch", "my-change", "--in", str(tmp_path), "--drift"],
         )
         assert result.exit_code == 0, result.output
         assert captured.get("change") == "my-change"
@@ -156,7 +167,8 @@ class TestDriftFlagWiring:
         _patch_start_watch(monkeypatch, captured)
 
         result = runner.invoke(
-            cli_main, ["watch", "my-change", "--in", str(tmp_path)],
+            cli_main,
+            ["watch", "my-change", "--in", str(tmp_path)],
         )
         assert result.exit_code == 0, result.output
         assert captured.get("drift") is False
@@ -173,8 +185,15 @@ class TestDriftFlagWiring:
 
         result = runner.invoke(
             cli_main,
-            ["watch", "my-change", "--in", str(tmp_path),
-             "--drift", "--graph-json", str(fake_graph)],
+            [
+                "watch",
+                "my-change",
+                "--in",
+                str(tmp_path),
+                "--drift",
+                "--graph-json",
+                str(fake_graph),
+            ],
         )
         assert result.exit_code == 0, result.output
         assert captured.get("drift") is True
@@ -197,8 +216,11 @@ class TestDriftCounters:
         _patch_observer(monkeypatch)
 
         report = DriftReport(
-            change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime="1970-01-01T00:16:39Z",
-            decisions_total=1, bindings_total=1,
+            change_name="my-change",
+            scanned_at="1970-01-01T00:00:00Z",
+            graph_mtime="1970-01-01T00:16:39Z",
+            decisions_total=1,
+            bindings_total=1,
             class_counts={DriftClass.STILL_VALID: 1},
             findings=[_make_finding(drift_class=DriftClass.STILL_VALID)],
         )
@@ -210,8 +232,13 @@ class TestDriftCounters:
         import flow_engineering.cli as cli_mod
 
         def _stub(
-            change: str, target: Path, *, drift: bool = False,
-            graph_json_path: Path | None = None, on_summary: Any = None, **kw: Any
+            change: str,
+            target: Path,
+            *,
+            drift: bool = False,
+            graph_json_path: Path | None = None,
+            on_summary: Any = None,
+            **kw: Any,
         ) -> tuple[bool, str]:
             # Simulate the daemon firing a drift event by directly invoking the seam.
             if drift and on_summary is not None:
@@ -227,8 +254,15 @@ class TestDriftCounters:
 
         result = runner.invoke(
             cli_main,
-            ["watch", "my-change", "--in", str(tmp_path),
-             "--drift", "--graph-json", str(fake_graph)],
+            [
+                "watch",
+                "my-change",
+                "--in",
+                str(tmp_path),
+                "--drift",
+                "--graph-json",
+                str(fake_graph),
+            ],
         )
         assert result.exit_code == 0, result.output
         assert len(recorded) == 1
@@ -250,8 +284,11 @@ class TestStdoutSummary:
         _patch_observer(monkeypatch)
 
         report = DriftReport(
-            change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime="1970-01-01T00:16:39Z",
-            decisions_total=2, bindings_total=3,
+            change_name="my-change",
+            scanned_at="1970-01-01T00:00:00Z",
+            graph_mtime="1970-01-01T00:16:39Z",
+            decisions_total=2,
+            bindings_total=3,
             class_counts={
                 DriftClass.STILL_VALID: 1,
                 DriftClass.STALE_ID: 2,
@@ -267,8 +304,13 @@ class TestStdoutSummary:
         import flow_engineering.cli as cli_mod
 
         def _stub(
-            change: str, target: Path, *, drift: bool = False,
-            graph_json_path: Path | None = None, on_summary: Any = None, **kw: Any
+            change: str,
+            target: Path,
+            *,
+            drift: bool = False,
+            graph_json_path: Path | None = None,
+            on_summary: Any = None,
+            **kw: Any,
         ) -> tuple[bool, str]:
             if drift and on_summary is not None:
                 daemon.handle_apply_progress_event(
@@ -283,8 +325,15 @@ class TestStdoutSummary:
 
         result = runner.invoke(
             cli_main,
-            ["watch", "my-change", "--in", str(tmp_path),
-             "--drift", "--graph-json", str(fake_graph)],
+            [
+                "watch",
+                "my-change",
+                "--in",
+                str(tmp_path),
+                "--drift",
+                "--graph-json",
+                str(fake_graph),
+            ],
         )
         assert result.exit_code == 0, result.output
         assert "drift: my-change" in result.output
@@ -330,7 +379,8 @@ class TestNonDriftRegression:
         _patch_observer(monkeypatch)
 
         result = runner.invoke(
-            cli_main, ["watch", "my-change", "--in", str(tmp_path)],
+            cli_main,
+            ["watch", "my-change", "--in", str(tmp_path)],
         )
         assert result.exit_code == 0, result.output
         # The drift suffix MUST NOT appear.
