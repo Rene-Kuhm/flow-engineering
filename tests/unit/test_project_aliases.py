@@ -62,10 +62,7 @@ class TestResolve:
                 "created_at": "2026-06-26T19:46:07Z",
             }
         ]
-        assert (
-            resolve("flow-image-generator-v2", aliases=aliases)
-            == "flow-image-generator-main"
-        )
+        assert resolve("flow-image-generator-v2", aliases=aliases) == "flow-image-generator-main"
 
     def test_resolve_empty_alias_list_is_identity(self) -> None:
         assert resolve("anything", aliases=[]) == "anything"
@@ -93,9 +90,7 @@ class TestResolve:
 class TestSave:
     """``save_aliases`` writes the canonical schema via atomic replace."""
 
-    def test_save_writes_schema_with_version_and_aliases(
-        self, tmp_path: Path
-    ) -> None:
+    def test_save_writes_schema_with_version_and_aliases(self, tmp_path: Path) -> None:
         path = tmp_path / "project-aliases.json"
         save_aliases(
             [
@@ -118,9 +113,7 @@ class TestSave:
             }
         ]
 
-    def test_save_empty_list_writes_empty_aliases_array(
-        self, tmp_path: Path
-    ) -> None:
+    def test_save_empty_list_writes_empty_aliases_array(self, tmp_path: Path) -> None:
         path = tmp_path / "project-aliases.json"
         save_aliases([], path=path)
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -136,9 +129,7 @@ class TestSave:
         # successfully AND the file is fully written (no partial bytes).
         path = tmp_path / "project-aliases.json"
         save_aliases(
-            [
-                {"old": "a", "new": "b", "created_at": "2026-06-26T19:46:07Z"}
-            ],
+            [{"old": "a", "new": "b", "created_at": "2026-06-26T19:46:07Z"}],
             path=path,
         )
         # Re-load and assert the full content (no partial writes).
@@ -158,26 +149,19 @@ class TestLoad:
         result = load_aliases(path=tmp_path / "nonexistent.json")
         assert result == []
 
-    def test_load_malformed_json_raises_with_path_and_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_malformed_json_raises_with_path_and_error(self, tmp_path: Path) -> None:
         path = tmp_path / "project-aliases.json"
         path.write_text("{ this is not valid json", encoding="utf-8")
         with pytest.raises(AliasConfigParseError) as exc_info:
             load_aliases(path=path)
         msg = str(exc_info.value)
-        assert str(path) in msg, (
-            f"Expected file path in error message, got: {msg!r}"
-        )
+        assert str(path) in msg, f"Expected file path in error message, got: {msg!r}"
         # Parser error message MUST also appear.
         assert any(
-            needle in msg.lower()
-            for needle in ("expecting", "json", "invalid", "unterminated")
+            needle in msg.lower() for needle in ("expecting", "json", "invalid", "unterminated")
         ), f"Expected JSON parser error in message, got: {msg!r}"
 
-    def test_load_non_object_root_raises_parse_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_non_object_root_raises_parse_error(self, tmp_path: Path) -> None:
         # Schema: top-level MUST be an object; ``[1, 2, 3]`` is valid JSON
         # but not the right shape. The loader MUST refuse rather than
         # silently returning ``[]`` so the user knows to fix the file.
@@ -186,9 +170,7 @@ class TestLoad:
         with pytest.raises(AliasConfigParseError):
             load_aliases(path=path)
 
-    def test_load_missing_aliases_key_treated_as_empty(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_missing_aliases_key_treated_as_empty(self, tmp_path: Path) -> None:
         # Forward-compat: a file with ``{"version": 1}`` and no ``aliases``
         # key is valid (empty alias map). Loader returns ``[]``.
         path = tmp_path / "project-aliases.json"
@@ -304,6 +286,4 @@ class TestModuleSurface:
             "AliasConfigParseError",
             "DEFAULT_ALIASES_PATH",
         ):
-            assert hasattr(_aliases, name), (
-                f"Missing public name project_aliases.{name}"
-            )
+            assert hasattr(_aliases, name), f"Missing public name project_aliases.{name}"

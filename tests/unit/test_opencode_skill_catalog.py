@@ -12,6 +12,7 @@ These tests are written BEFORE the implementation per strict TDD (RED).
 They MUST fail with ``ImportError`` or ``AttributeError`` until the
 GREEN commit lands.
 """
+
 from __future__ import annotations
 
 import re
@@ -96,7 +97,8 @@ class TestSkillEntrySchema:
         assert sample_entry.expected_path  # non-empty
 
     def test_skill_entry_last_verified_checksum_is_64_hex(
-        self, sample_entry: SkillEntry,
+        self,
+        sample_entry: SkillEntry,
     ) -> None:
         assert re.fullmatch(r"[0-9a-f]{64}", sample_entry.last_verified_checksum)
 
@@ -220,7 +222,8 @@ class TestSkillCatalog:
     def test_every_skill_entry_has_64_char_hex_checksum(self) -> None:
         for key, entry in SKILL_CATALOG.items():
             assert re.fullmatch(
-                r"[0-9a-f]{64}", entry.last_verified_checksum,
+                r"[0-9a-f]{64}",
+                entry.last_verified_checksum,
             ), f"{key}: checksum {entry.last_verified_checksum!r} is not 64-char hex"
 
     def test_every_skill_entry_has_valid_surface(self) -> None:
@@ -230,7 +233,8 @@ class TestSkillCatalog:
     def test_every_skill_entry_has_major_minor_version(self) -> None:
         for key, entry in SKILL_CATALOG.items():
             assert re.fullmatch(
-                r"\d+\.\d+", entry.expected_version,
+                r"\d+\.\d+",
+                entry.expected_version,
             ), f"{key}: version {entry.expected_version!r} is not MAJOR.MINOR"
 
 
@@ -241,7 +245,7 @@ _FRONTMATTER_TEXT = (
     "---\n"
     "name: sdd-apply\n"
     "description: test\n"
-    "version: \"3.0\"\n"
+    'version: "3.0"\n'
     "metadata:\n"
     "  author: gentleman-programming\n"
     "---\n\n"
@@ -288,7 +292,7 @@ class TestComputeFrontmatterChecksum:
         b = tmp_path / "b.md"
         a.write_text(_FRONTMATTER_TEXT, encoding="utf-8")
         b.write_text(
-            _FRONTMATTER_TEXT.replace('description: test', 'description: changed'),
+            _FRONTMATTER_TEXT.replace("description: test", "description: changed"),
             encoding="utf-8",
         )
         assert compute_frontmatter_sha256(a) != compute_frontmatter_sha256(b)
@@ -296,7 +300,7 @@ class TestComputeFrontmatterChecksum:
     def test_compute_frontmatter_checksum_preserves_unicode(self, tmp_path: Path) -> None:
         skill = tmp_path / "SKILL.md"
         skill.write_text(
-            "---\nname: sdd-apply\ndescription: \"hola mundo ñ\"\n---\n",
+            '---\nname: sdd-apply\ndescription: "hola mundo ñ"\n---\n',
             encoding="utf-8",
         )
         digest = compute_frontmatter_sha256(skill)
@@ -313,7 +317,8 @@ class TestParseFrontmatter:
         assert parsed["version"] == "3.0"
 
     def test_parse_frontmatter_raises_skill_version_error_when_missing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         no_fm = tmp_path / "no-fm.md"
         no_fm.write_text("Just body, no frontmatter.\n", encoding="utf-8")
@@ -327,7 +332,8 @@ class TestParseFrontmatter:
             parse_frontmatter(scalar_fm)
 
     def test_parse_frontmatter_raises_skill_version_error_on_missing_file(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ghost = tmp_path / "ghost.md"
         with pytest.raises(SkillVersionError):
@@ -348,10 +354,10 @@ class TestParseFrontmatter:
         skill.write_text(
             "---\n"
             "name: sdd-init\n"
-            "description: \"Trigger: sdd init\"\n"
+            'description: "Trigger: sdd init"\n'
             "metadata:\n"
             "  author: gentleman-programming\n"
-            "  version: \"3.0\"\n"
+            '  version: "3.0"\n'
             "---\n"
             "\nBody content.\n",
             encoding="utf-8",
@@ -363,20 +369,15 @@ class TestParseFrontmatter:
         )
 
     def test_top_level_version_wins_over_metadata_version(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When both top-level ``version`` and ``metadata.version`` are
         present, the top-level value wins (it is the canonical location).
         """
         skill = tmp_path / "SKILL.md"
         skill.write_text(
-            "---\n"
-            "name: sdd-test\n"
-            "version: \"4.0\"\n"
-            "metadata:\n"
-            "  version: \"3.0\"\n"
-            "---\n"
-            "\nBody.\n",
+            '---\nname: sdd-test\nversion: "4.0"\nmetadata:\n  version: "3.0"\n---\n\nBody.\n',
             encoding="utf-8",
         )
         parsed = parse_frontmatter(skill)
@@ -385,7 +386,8 @@ class TestParseFrontmatter:
         )
 
     def test_parse_frontmatter_default_version_when_missing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When no version is present at either location, the parsed
         dict exposes the ``"0.0"`` default at top-level so consumers
@@ -398,8 +400,7 @@ class TestParseFrontmatter:
         )
         parsed = parse_frontmatter(skill)
         assert parsed["version"] == "0.0", (
-            f"expected default '0.0' when no version anywhere; "
-            f"got {parsed!r}"
+            f"expected default '0.0' when no version anywhere; got {parsed!r}"
         )
 
 
@@ -416,7 +417,7 @@ def _make_mock_skill(
     """Write a SKILL.md with valid frontmatter; return the path."""
     path = tmp_path / f"{name}.md"
     path.write_text(
-        f"---\nname: {name}\ndescription: mock\nversion: \"{version}\"\n---\n\n{body}",
+        f'---\nname: {name}\ndescription: mock\nversion: "{version}"\n---\n\n{body}',
         encoding="utf-8",
     )
     return path
@@ -427,7 +428,9 @@ class TestCheckDrift:
         assert check_drift({}) == []
 
     def test_check_drift_clean_state_returns_empty(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When no sidecar exists, fallback uses catalog ``last_verified_checksum``.
 
@@ -454,7 +457,9 @@ class TestCheckDrift:
         assert check_drift(catalog) == []
 
     def test_check_drift_detects_checksum_mismatch(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
             "flow_engineering.opencode_skill_catalog._read_sidecar",
@@ -482,7 +487,9 @@ class TestCheckDrift:
         assert drift.on_disk_version == "3.0"
 
     def test_check_drift_detects_missing_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
             "flow_engineering.opencode_skill_catalog._read_sidecar",
@@ -505,7 +512,9 @@ class TestCheckDrift:
         assert drifts[0].on_disk_checksum == ""
 
     def test_check_drift_detects_frontmatter_parse_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
             "flow_engineering.opencode_skill_catalog._read_sidecar",
@@ -530,7 +539,9 @@ class TestCheckDrift:
         assert drifts[0].on_disk_checksum == ""
 
     def test_check_drift_detects_version_mismatch_when_checksum_matches(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Version mismatch fires only after checksum matches (per design)."""
         monkeypatch.setattr(
@@ -561,7 +572,8 @@ class TestCheckDrift:
 
 @pytest.fixture
 def tmp_sidecar(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     """Monkeypatch ``_sidecar_path`` to write under ``tmp_path``.
 
@@ -585,7 +597,9 @@ def tmp_sidecar(
 
 class TestSidecarPath:
     def test_sidecar_path_lazily_creates_parent_dirs(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import flow_engineering.opencode_skill_catalog as osc
 
@@ -604,12 +618,14 @@ class TestSidecarPath:
 
 class TestReadSidecar:
     def test_read_sidecar_returns_empty_when_file_missing(
-        self, tmp_sidecar: Path,
+        self,
+        tmp_sidecar: Path,
     ) -> None:
         assert _read_sidecar() == {}
 
     def test_read_sidecar_round_trips(
-        self, tmp_sidecar: Path,
+        self,
+        tmp_sidecar: Path,
     ) -> None:
         _write_sidecar({"foo/skill": {"version": "1.0", "checksum": "abc"}})
         loaded = _read_sidecar()
@@ -629,7 +645,8 @@ class TestWriteSidecarAtomic:
         assert loaded["bar/prompt"]["version"] == "2.0"
 
     def test_write_sidecar_uses_indent_for_grep(
-        self, tmp_sidecar: Path,
+        self,
+        tmp_sidecar: Path,
     ) -> None:
         _write_sidecar({"foo/skill": {"version": "1.0", "checksum": "abc"}})
         text = tmp_sidecar.read_text(encoding="utf-8")
@@ -638,7 +655,9 @@ class TestWriteSidecarAtomic:
 
 class TestInitChecksums:
     def test_init_checksums_writes_count_of_entries_returned(
-        self, tmp_sidecar: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_sidecar: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = _make_mock_skill(tmp_sidecar.parent.parent)
         catalog = {
@@ -660,7 +679,9 @@ class TestInitChecksums:
         assert "last_verified_at" in loaded["sdd-test/skill"]
 
     def test_init_checksums_last_verified_at_is_iso_8601_utc_z(
-        self, tmp_sidecar: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_sidecar: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = _make_mock_skill(tmp_sidecar.parent.parent)
         catalog = {
@@ -680,10 +701,13 @@ class TestInitChecksums:
         assert "T" in ts
         # Verify it parses as ISO 8601.
         from datetime import datetime
+
         datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
 
     def test_init_checksums_walks_full_skill_catalog(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_sidecar: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_sidecar: Path,
     ) -> None:
         """init_checksums(SKILL_CATALOG) writes all 20 entries.
 
@@ -701,7 +725,8 @@ class TestInitChecksums:
         assert "sdd-apply/prompt" in loaded
 
     def test_init_checksums_handles_missing_file_gracefully(
-        self, tmp_sidecar: Path,
+        self,
+        tmp_sidecar: Path,
     ) -> None:
         catalog = {
             "sdd-test/skill": SkillEntry(
@@ -722,7 +747,8 @@ class TestInitChecksums:
 
 class TestUpdateChecksums:
     def test_update_checksums_refreshes_stale_entry(
-        self, tmp_sidecar: Path,
+        self,
+        tmp_sidecar: Path,
     ) -> None:
         """After init_checksums writes the sidecar, update_checksums
         must overwrite with fresh on-disk values."""
@@ -756,14 +782,19 @@ class TestUpdateChecksums:
         # Frontmatter checksum is unchanged (only body changed) so the
         # 'checksum' field stays the same; but last_verified_at updates.
         assert ts_after != ts_before
-        assert loaded_after["sdd-test/skill"]["checksum"] == loaded_before["sdd-test/skill"]["checksum"]
+        assert (
+            loaded_after["sdd-test/skill"]["checksum"]
+            == loaded_before["sdd-test/skill"]["checksum"]
+        )
 
 
 # ---------- T3.1: enforce_min_skill_versions ----------
 
 
 def _mock_skill_layout(
-    tmp_path: Path, skills_root: Path, *,
+    tmp_path: Path,
+    skills_root: Path,
+    *,
     skills: dict[str, str] | None = None,
 ) -> Path:
     """Lay down ``~/.config/opencode/skills/<name>/SKILL.md`` files.
@@ -793,7 +824,7 @@ def _mock_skill_layout(
         skill_dir = skills_root / name
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(
-            f"---\nname: {name}\ndescription: mock\nversion: \"{version}\"\n---\n\n",
+            f'---\nname: {name}\ndescription: mock\nversion: "{version}"\n---\n\n',
             encoding="utf-8",
         )
     return skills_root
@@ -827,7 +858,9 @@ class TestEnforceMinSkillVersions:
     """
 
     def test_passes_when_all_skills_meet_minimum(
-        self, tmp_path: Path, patched_home: Path,
+        self,
+        tmp_path: Path,
+        patched_home: Path,
     ) -> None:
         """8 SKILL.md files with version 3.0 + min dict {*: 3.0} returns None."""
         skills_root = tmp_path / ".config" / "opencode" / "skills"
@@ -846,12 +879,15 @@ class TestEnforceMinSkillVersions:
         assert result is None
 
     def test_raises_skill_version_error_on_downgrade(
-        self, tmp_path: Path, patched_home: Path,
+        self,
+        tmp_path: Path,
+        patched_home: Path,
     ) -> None:
         """sdd-apply on disk at 2.5 + min dict {sdd-apply: 3.0} raises."""
         skills_root = tmp_path / ".config" / "opencode" / "skills"
         _mock_skill_layout(
-            tmp_path, skills_root,
+            tmp_path,
+            skills_root,
             skills={"sdd-apply": "2.5"},
         )
         with pytest.raises(SkillVersionError) as excinfo:
@@ -862,7 +898,9 @@ class TestEnforceMinSkillVersions:
         assert "2.5" in msg
 
     def test_skips_missing_skill(
-        self, tmp_path: Path, patched_home: Path,
+        self,
+        tmp_path: Path,
+        patched_home: Path,
     ) -> None:
         """min dict references nonexistent skill name -> no error."""
         skills_root = tmp_path / ".config" / "opencode" / "skills"
@@ -872,7 +910,9 @@ class TestEnforceMinSkillVersions:
         assert result is None
 
     def test_skips_non_sdd_skill(
-        self, tmp_path: Path, patched_home: Path,
+        self,
+        tmp_path: Path,
+        patched_home: Path,
     ) -> None:
         """min dict references non-sdd-prefixed key -> no error.
 
@@ -886,7 +926,9 @@ class TestEnforceMinSkillVersions:
         assert result is None
 
     def test_handles_non_numeric_version_gracefully(
-        self, tmp_path: Path, patched_home: Path,
+        self,
+        tmp_path: Path,
+        patched_home: Path,
     ) -> None:
         """SKILL.md with version '3.0-beta' parses via safe fallback.
 
@@ -897,7 +939,8 @@ class TestEnforceMinSkillVersions:
         """
         skills_root = tmp_path / ".config" / "opencode" / "skills"
         _mock_skill_layout(
-            tmp_path, skills_root,
+            tmp_path,
+            skills_root,
             skills={"sdd-apply": "3.0-beta"},
         )
         # Pass-through case: helper must not raise for a non-SDD-style
@@ -941,9 +984,7 @@ class TestPyprojectMinSkillVersionsSection:
         }
         assert set(min_versions.keys()) == expected_keys
         for skill_name, version in min_versions.items():
-            assert version == "3.0", (
-                f"{skill_name} minimum must be '3.0', got {version!r}"
-            )
+            assert version == "3.0", f"{skill_name} minimum must be '3.0', got {version!r}"
 
     def test_pyproject_section_coexists_with_prompts_section(self) -> None:
         """[tool.flow_engineering] + [tool.flow_engineering.prompts] coexist."""
