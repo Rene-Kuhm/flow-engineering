@@ -188,9 +188,7 @@ class TestHybridBackendForwarding:
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
 
-        saved = hb.mem_save(
-            title="get me", content="content", topic_key="sdd/x/spec"
-        )
+        saved = hb.mem_save(title="get me", content="content", topic_key="sdd/x/spec")
         got = hb.mem_get_observation(saved["id"])
         assert got["id"] == saved["id"]
         assert got["title"] == "get me"
@@ -212,9 +210,7 @@ class TestHybridBackendForwarding:
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
 
-        saved = hb.mem_save(
-            title="updatable", content="original", topic_key="sdd/x/spec"
-        )
+        saved = hb.mem_save(title="updatable", content="original", topic_key="sdd/x/spec")
         updated = hb.update_observation(saved["id"], content="replaced")
         assert updated["content"] == "replaced"
         # And inner sees it too.
@@ -544,8 +540,7 @@ class TestHybridSemanticDelegation:
         hb = HybridBackend(backend, provider)
         sem_ids = [r["observation_id"] for r in hb.mem_search_semantic("drift detection", k=10)]
         hyb_ids = [
-            r["observation_id"]
-            for r in hb.mem_search_hybrid("drift detection", k=10, alpha=1.0)
+            r["observation_id"] for r in hb.mem_search_hybrid("drift detection", k=10, alpha=1.0)
         ]
         assert sem_ids == hyb_ids
         # Spot-check that we did exercise all 3 (regression guard against
@@ -588,9 +583,7 @@ class TestHybridEmptyAndEdgeCases:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         for i in range(5):
-            inner.mem_save(
-                title=f"obs{i}", content=f"drift detection case {i}", topic_key="sdd/x"
-            )
+            inner.mem_save(title=f"obs{i}", content=f"drift detection case {i}", topic_key="sdd/x")
         hb = HybridBackend(inner, provider)
         results = hb.mem_search_hybrid("drift", k=2, alpha=0.5)
         assert len(results) == 2

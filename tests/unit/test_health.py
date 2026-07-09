@@ -459,9 +459,7 @@ class TestRecommendationLock:
             ):
                 recs = _recommendations_for(triggers, stack)
                 for rec in recs:
-                    assert "rm -rf" not in rec, (
-                        f"forbidden token in {stack} {triggers}: {rec!r}"
-                    )
+                    assert "rm -rf" not in rec, f"forbidden token in {stack} {triggers}: {rec!r}"
 
     def test_no_git_rm_r_cached_in_recommendations(self) -> None:
         """``git rm -r --cached`` MUST NOT appear in any recommendation string.
@@ -486,9 +484,7 @@ class TestRecommendationLock:
                     assert "git rm -r --cached" not in rec, (
                         f"forbidden token in {stack} {triggers}: {rec!r}"
                     )
-                    assert "git rm " not in rec, (
-                        f"forbidden token in {stack} {triggers}: {rec!r}"
-                    )
+                    assert "git rm " not in rec, f"forbidden token in {stack} {triggers}: {rec!r}"
 
     def test_all_recommendations_reference_flow_workspace_verbs(self) -> None:
         """Every recommendation string MUST mention ``flow workspace``."""
@@ -570,7 +566,9 @@ class TestFetchWorkspaceHealthIteration:
 
         assert sorted(p.name for p in _iter_project_subdirs(tmp_path)) == ["alpha", "bravo"]
 
-    def test_records_in_name_order_with_v1_shape_and_distinct_verdicts(self, tmp_path: Path) -> None:
+    def test_records_in_name_order_with_v1_shape_and_distinct_verdicts(
+        self, tmp_path: Path
+    ) -> None:
         from flow_engineering.health import fetch_workspace_health
         from tests.unit._workspace_fixtures import (
             add_readme,
@@ -587,7 +585,15 @@ class TestFetchWorkspaceHealthIteration:
         projects = envelope["projects"]
 
         assert [p["name"] for p in projects] == ["alpha", "bravo", "charlie"]
-        assert set(projects[0]) == {"name", "path", "stack", "verdict", "triggers", "recommendations", "suppressed"}
+        assert set(projects[0]) == {
+            "name",
+            "path",
+            "stack",
+            "verdict",
+            "triggers",
+            "recommendations",
+            "suppressed",
+        }
         assert {p["name"]: p["verdict"] for p in projects} == {
             "alpha": "HEALTHY",
             "bravo": "NEEDS-ATTENTION",
@@ -619,7 +625,13 @@ class TestComputeTotals:
     def test_mixed(self) -> None:
         from flow_engineering.health import _compute_totals
 
-        records = [{"verdict": "HEALTHY"}, {"verdict": "NEEDS-ATTENTION"}, {"verdict": "NEEDS-ATTENTION"}, {"verdict": "CRITICAL"}, {"verdict": "HEALTHY"}]
+        records = [
+            {"verdict": "HEALTHY"},
+            {"verdict": "NEEDS-ATTENTION"},
+            {"verdict": "NEEDS-ATTENTION"},
+            {"verdict": "CRITICAL"},
+            {"verdict": "HEALTHY"},
+        ]
         assert _compute_totals(records) == {"healthy": 2, "attention": 2, "critical": 1}
 
     def test_does_not_mutate_input(self) -> None:

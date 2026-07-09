@@ -30,9 +30,7 @@ _LEGACY_STRICT_TDD = (
 )
 _LEGACY_EMPTY = "No auto-suggested bindings available."
 _LEGACY_HEADER = "Auto-suggested code bindings:"
-_LEGACY_FOOTER = (
-    "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
-)
+_LEGACY_FOOTER = "Confirm: [a]ll / [n]one / comma-separated numbers (e.g., 1,3)"
 
 
 class TestStrictTddPromptAlias:
@@ -66,9 +64,7 @@ class TestAutoSuggestEmptyAlias:
         assert registry_template == EMPTY_PROMPT_TEXT
 
     def test_empty_prompt_text_is_registry_template_by_identity(self) -> None:
-        assert EMPTY_PROMPT_TEXT is prompt_registry.get_prompt_template(
-            "auto_suggest_empty"
-        )
+        assert EMPTY_PROMPT_TEXT is prompt_registry.get_prompt_template("auto_suggest_empty")
 
     def test_empty_prompt_text_byte_equal_to_legacy(self) -> None:
         assert EMPTY_PROMPT_TEXT == _LEGACY_EMPTY
