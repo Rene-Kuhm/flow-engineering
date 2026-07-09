@@ -45,7 +45,8 @@ from flow_engineering.cli import main  # noqa: F401  (parent group; see design s
 
 
 def _emit_check_observability(
-    drifts: list[Any], duration_seconds: float,
+    drifts: list[Any],
+    duration_seconds: float,
 ) -> None:
     """Emit the W2 observability counter set for one ``prompts check`` invocation.
 
@@ -137,9 +138,7 @@ def _resolve_check_action(
     catalog = full_catalog
     unknown: str | None = None
     if skill_name is not None:
-        filtered = {
-            k: v for k, v in full_catalog.items() if v.skill_name == skill_name
-        }
+        filtered = {k: v for k, v in full_catalog.items() if v.skill_name == skill_name}
         if not filtered:
             unknown = skill_name
         else:
@@ -156,9 +155,7 @@ Both are blocking and warrant the strict exit code per REQ-47 + REQ-50.
 """
 
 
-_LINT_WARNING_CODES = frozenset(
-    {"duplicate_name", "invalid_domain", "undefined_var"}
-)
+_LINT_WARNING_CODES = frozenset({"duplicate_name", "invalid_domain", "undefined_var"})
 """Validation codes that map to "warning" severity (CLI exit 1).
 
 These are quality issues that don't break rendering but signal catalog
@@ -249,15 +246,11 @@ def prompts_check(
 
     if action.init_or_update == "init":
         count = osc.init_checksums()
-        click.echo(
-            f"Initialized {count} checksums · sidecar: {osc.SIDECAR_PATH}"
-        )
+        click.echo(f"Initialized {count} checksums · sidecar: {osc.SIDECAR_PATH}")
         return
     if action.init_or_update == "update":
         count = osc.update_checksums()
-        click.echo(
-            f"Updated {count} checksums · sidecar: {osc.SIDECAR_PATH}"
-        )
+        click.echo(f"Updated {count} checksums · sidecar: {osc.SIDECAR_PATH}")
         return
 
     if action.unknown_skill is not None:
@@ -271,21 +264,15 @@ def prompts_check(
 
     for drift in drifts:
         status = _STATUS_LABELS.get(drift.drift_kind, "DRIFT")
-        click.echo(
-            f"{drift.skill_name}/{drift.surface}: "
-            f"{drift.expected_version}: {status}"
-        )
+        click.echo(f"{drift.skill_name}/{drift.surface}: {drift.expected_version}: {status}")
 
     drift_count = len(drifts)
     catalog_size = len(action.catalog)
-    click.echo(
-        f"{catalog_size} skills verified · {drift_count} drift detected"
-    )
+    click.echo(f"{catalog_size} skills verified · {drift_count} drift detected")
 
     if drift_count > 0:
         click.echo(
-            f"[WARN] flow prompts check: {drift_count} drifts detected "
-            f"— see stdout for details",
+            f"[WARN] flow prompts check: {drift_count} drifts detected — see stdout for details",
             err=True,
         )
 
@@ -317,24 +304,17 @@ def prompts_lint(json_flag: bool) -> None:
     from flow_engineering import prompt_registry
 
     report = prompt_registry.lint_prompts()
-    warning_count = sum(
-        1 for e in report.errors if e.error_code in _LINT_WARNING_CODES
-    )
-    error_count = sum(
-        1 for e in report.errors if e.error_code in _LINT_ERROR_CODES
-    )
+    warning_count = sum(1 for e in report.errors if e.error_code in _LINT_WARNING_CODES)
+    error_count = sum(1 for e in report.errors if e.error_code in _LINT_ERROR_CODES)
 
     if json_flag:
         click.echo(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
     else:
         for err in report.errors:
-            click.echo(
-                f"{err.prompt_name}: {err.error_code}: {err.message}"
-            )
+            click.echo(f"{err.prompt_name}: {err.error_code}: {err.message}")
         catalog_size = len(report.catalog)
         click.echo(
-            f"{catalog_size} prompts linted · "
-            f"{warning_count} warnings · {error_count} errors"
+            f"{catalog_size} prompts linted · {warning_count} warnings · {error_count} errors"
         )
 
     if error_count > 0:
@@ -507,10 +487,7 @@ _EXIT_GOLDEN_DRIFT: int = 3
 
 
 _GOLDEN_PROMPTS_DIR: Path = (
-    Path(__file__).resolve().parent.parent.parent
-    / "tests"
-    / "golden"
-    / "prompts"
+    Path(__file__).resolve().parent.parent.parent / "tests" / "golden" / "prompts"
 )
 """Canonical on-disk location for the 4 PROMPT_NAMES golden snapshots.
 
@@ -552,9 +529,7 @@ def _parse_var_pair(raw: str) -> tuple[str, str]:
     "--var",
     "var_pairs",
     multiple=True,
-    callback=lambda _ctx, _param, values: [
-        _parse_var_pair(v) for v in values
-    ],
+    callback=lambda _ctx, _param, values: [_parse_var_pair(v) for v in values],
     help=(
         "Variable substitution as key=value (repeatable; last-write-wins). "
         "Per spec REQ-50 S2: missing declared vars get the "
@@ -696,9 +671,7 @@ def prompts_show(
                     err=True,
                 )
                 sys.exit(_EXIT_GOLDEN_DRIFT)
-            click.echo(
-                f"snapshot updated: {snap_path} ({len(canonical_render)} bytes)"
-            )
+            click.echo(f"snapshot updated: {snap_path} ({len(canonical_render)} bytes)")
         if check_snapshot:
             if not snap_path.exists():
                 click.echo(
@@ -762,6 +735,7 @@ def prompts_show(
     # angle-brackets are not Python format placeholders).
     if "{" in rendered and "}" in rendered:
         import contextlib
+
         with contextlib.suppress(KeyError, IndexError):
             # Missing positional or named placeholder — leave the
             # Jinja2-rendered body as-is; the sentinel subs still
@@ -775,9 +749,7 @@ def prompts_show(
     click.echo("-" * 64)
     click.echo(rendered)
     click.echo("-" * 64)
-    click.echo(
-        f"(rendered via Jinja2 · autoescape=on · source: {_entry_location(entry)})"
-    )
+    click.echo(f"(rendered via Jinja2 · autoescape=on · source: {_entry_location(entry)})")
 
     # REQ-V1.1.3 S2: render-count + render-history flags surface the
     # prompt render sink content. Best-effort: a missing sink file
@@ -802,17 +774,13 @@ def prompts_show(
         matching = [e for e in events if e.prompt_id == prompt_id]
 
         if render_count:
-            last_at = (
-                max((e.rendered_at for e in matching), default=None)
-            )
+            last_at = max((e.rendered_at for e in matching), default=None)
             last_iso = (
                 datetime.fromtimestamp(last_at, tz=UTC).isoformat()
                 if last_at is not None
                 else "never"
             )
-            click.echo(
-                f"render_count: {len(matching)} (last rendered_at: {last_iso})"
-            )
+            click.echo(f"render_count: {len(matching)} (last rendered_at: {last_iso})")
 
         if history_n > 0:
             tail = matching[-history_n:]
@@ -820,14 +788,10 @@ def prompts_show(
             if not tail:
                 click.echo("  (no records)")
             else:
-                click.echo(
-                    f"  {'rendered_at':<22} {'status':<6} {'elapsed_ms':<10} error"
-                )
+                click.echo(f"  {'rendered_at':<22} {'status':<6} {'elapsed_ms':<10} error")
                 for ev in tail:
                     status = "ok" if ev.ok else "fail"
                     click.echo(
                         f"  {ev.rendered_at:<22.3f} {status:<6} "
                         f"{ev.elapsed_ms:<10.2f} {ev.error or ''}"
                     )
-
-

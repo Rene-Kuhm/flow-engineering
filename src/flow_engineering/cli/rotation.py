@@ -20,6 +20,7 @@ namespace and requires ``subprocess`` to be an attribute of this
 module. Re-exporting the stdlib bindings preserves that test seam
 without forcing the test to change.
 """
+
 import click  # noqa: F401
 import yaml  # noqa: F401
 
