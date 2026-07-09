@@ -44,7 +44,8 @@ class TestAtomicWriteCreatesAndOverwrites:
         assert leftovers == ["out.txt"]
 
     def test_atomic_write_text_overwrites_existing_file_atomically(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Second write replaces the first content; no corruption window."""
         target = tmp_path / "out.txt"
@@ -82,7 +83,8 @@ class TestAtomicWriteUsesTempfileAndRename:
     """Verify the helper uses mkstemp + os.replace (D10 atomic contract)."""
 
     def test_atomic_write_text_writes_to_tempfile_then_renames(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The helper stages in a ``.prom.tmp`` file then calls ``os.replace``.
 
@@ -127,16 +129,20 @@ class TestAtomicWriteRollsBackOnFailure:
     """When ``os.replace`` fails, the staging ``.prom.tmp`` is cleaned up."""
 
     def test_atomic_write_text_rolls_back_tmp_on_replace_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Simulated os.replace failure raises + leaves no orphan ``.prom.tmp``."""
         target = tmp_path / "out.txt"
         target.parent.mkdir(parents=True, exist_ok=True)
 
-        with patch(
-            "flow_engineering.observability.os.replace",
-            side_effect=PermissionError("simulated replace failure"),
-        ), pytest.raises(PermissionError, match="simulated replace failure"):
+        with (
+            patch(
+                "flow_engineering.observability.os.replace",
+                side_effect=PermissionError("simulated replace failure"),
+            ),
+            pytest.raises(PermissionError, match="simulated replace failure"),
+        ):
             observability.atomic_write_text(target, "x")
 
         # The target file MUST NOT exist (the rename never completed).

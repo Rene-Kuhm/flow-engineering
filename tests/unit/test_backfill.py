@@ -107,7 +107,11 @@ class TestApply:
         run(backend=backend, project="insyd", cache_dir=tmp_path, dry_run=False)
         preimage = tmp_path / PREIMAGE_FILE
         assert preimage.exists()
-        lines = [json.loads(line) for line in preimage.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [
+            json.loads(line)
+            for line in preimage.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         assert len(lines) == 2
         # Each entry records the original (pre-backfill) content + the new content.
         for entry in lines:

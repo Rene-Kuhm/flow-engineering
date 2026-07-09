@@ -47,7 +47,7 @@ def add_pyproject_pytest(project: Path) -> Path:
         existing = pyproject.read_text(encoding="utf-8")
     if "[tool.pytest]" in existing:
         return project
-    pyproject.write_text(existing + "\n[tool.pytest]\ntestpaths = [\"tests\"]\n", encoding="utf-8")
+    pyproject.write_text(existing + '\n[tool.pytest]\ntestpaths = ["tests"]\n', encoding="utf-8")
     return project
 
 
@@ -57,7 +57,14 @@ def add_tests_dir(project: Path) -> Path:
     return project
 
 
-def make_python_project(parent: Path, name: str = "py-proj", *, git: bool = True, tests: bool = True, openspec: bool = True) -> Path:
+def make_python_project(
+    parent: Path,
+    name: str = "py-proj",
+    *,
+    git: bool = True,
+    tests: bool = True,
+    openspec: bool = True,
+) -> Path:
     project = make_project(parent, name)
     (project / "pyproject.toml").write_text('[project]\nname = "fixture"\n', encoding="utf-8")
     if tests:
@@ -69,7 +76,14 @@ def make_python_project(parent: Path, name: str = "py-proj", *, git: bool = True
     return project
 
 
-def make_go_project(parent: Path, name: str = "go-proj", *, git: bool = True, tests: bool = True, openspec: bool = True) -> Path:
+def make_go_project(
+    parent: Path,
+    name: str = "go-proj",
+    *,
+    git: bool = True,
+    tests: bool = True,
+    openspec: bool = True,
+) -> Path:
     project = make_project(parent, name)
     (project / "go.mod").write_text("module example.com/fixture\n\ngo 1.21\n", encoding="utf-8")
     if git:
@@ -79,7 +93,9 @@ def make_go_project(parent: Path, name: str = "go-proj", *, git: bool = True, te
     return project
 
 
-def make_node_project(parent: Path, name: str = "node-proj", *, git: bool = True, tests: bool = True) -> Path:
+def make_node_project(
+    parent: Path, name: str = "node-proj", *, git: bool = True, tests: bool = True
+) -> Path:
     project = make_project(parent, name)
     script = '"test": "vitest"' if tests else '"build": "vite build"'
     (project / "package.json").write_text("{" + script + "}\n", encoding="utf-8")

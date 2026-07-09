@@ -61,7 +61,9 @@ def _make_needs(name: str, reasons: list[str]) -> dict:
 # =============================================================================
 
 
-def test_workspace_dashboard_cmd_default_renders_all_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_workspace_dashboard_cmd_default_renders_all_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Default ``flow workspace dashboard`` MUST render Sections A, B, D.
 
     Section C (archived) is omitted when the archived list is empty. This
@@ -99,7 +101,9 @@ def test_workspace_dashboard_cmd_default_renders_all_sections(monkeypatch: pytes
 # =============================================================================
 
 
-def test_workspace_dashboard_cmd_with_filter_r2_drops_non_matching(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_workspace_dashboard_cmd_with_filter_r2_drops_non_matching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``--filter R2`` MUST drop projects whose needs-attention has no R2 reason.
 
     The handler calls ``filter_by_rules(projects, needs, ("R2",))`` and
@@ -150,7 +154,9 @@ def test_workspace_dashboard_cmd_with_sort_needs_count_orders_descending(
     """
     projects = [
         _make_project("zeta", reasons=["R1: uncommitted work"]),
-        _make_project("yotta", reasons=["R1: uncommitted work", "R2: not a git repository", "R3: no tests"]),
+        _make_project(
+            "yotta", reasons=["R1: uncommitted work", "R2: not a git repository", "R3: no tests"]
+        ),
         _make_project("xeno", reasons=["R1: uncommitted work", "R4: no openspec"]),
     ]
     needs_attention = [
@@ -265,36 +271,46 @@ def test_workspace_dashboard_cmd_passes_needs_by_name_to_sort_projects(
     """
     captured: dict[str, object] = {}
 
-    def fake_sort(
-        projects: list, field: str, *, needs_by_name=None
-    ) -> list:
+    def fake_sort(projects: list, field: str, *, needs_by_name=None) -> list:
         captured["field"] = field
         captured["needs_by_name"] = needs_by_name
         return list(projects)
 
     projects = [
         {
-            "name": "alpha", "path": "/path/alpha",
-            "has_git": True, "has_openspec": False, "has_tests": False,
-            "has_graphify": False, "last_status_check": "",
+            "name": "alpha",
+            "path": "/path/alpha",
+            "has_git": True,
+            "has_openspec": False,
+            "has_tests": False,
+            "has_graphify": False,
+            "last_status_check": "",
         },
         {
-            "name": "beta", "path": "/path/beta",
-            "has_git": True, "has_openspec": True, "has_tests": True,
-            "has_graphify": False, "last_status_check": "",
+            "name": "beta",
+            "path": "/path/beta",
+            "has_git": True,
+            "has_openspec": True,
+            "has_tests": True,
+            "has_graphify": False,
+            "last_status_check": "",
         },
     ]
     needs_attention = [
         {
-            "name": "alpha", "path": "/path/alpha",
+            "name": "alpha",
+            "path": "/path/alpha",
             "reasons": ["R1: uncommitted work", "R2: not a git repository"],
         },
         {"name": "beta", "path": "/path/beta", "reasons": []},
     ]
     summary = {
         "totals": {
-            "projects": 2, "needs_attention": 1,
-            "dirty": 1, "no_git": 1, "no_tests": 0,
+            "projects": 2,
+            "needs_attention": 1,
+            "dirty": 1,
+            "no_git": 1,
+            "no_tests": 0,
         },
         "needs_attention": needs_attention,
         "archived_count": 0,
@@ -315,7 +331,7 @@ def test_workspace_dashboard_cmd_passes_needs_by_name_to_sort_projects(
     # a 0 baseline — count_source lookup never misses).
     expected = {
         "alpha": ["R1: uncommitted work", "R2: not a git repository"],
-        "beta":  [],
+        "beta": [],
     }
     assert captured.get("needs_by_name") == expected, (
         f"Caller did not forward needs_by_name from needs_attention; "
@@ -340,8 +356,7 @@ def test_workspace_dashboard_cmd_console_reconfigure_handles_oserror(
     """
     projects = [_make_project("alpha")]
     summary = {
-        "totals": {"projects": 1, "needs_attention": 0,
-                   "dirty": 0, "no_git": 0, "no_tests": 0},
+        "totals": {"projects": 1, "needs_attention": 0, "dirty": 0, "no_git": 0, "no_tests": 0},
         "needs_attention": [],
         "archived_count": 0,
     }
@@ -359,9 +374,7 @@ def test_workspace_dashboard_cmd_console_reconfigure_handles_oserror(
     # its own ``_NamedTextIOWrapper`` during invocation, so monkeypatching
     # ``sys.stdout`` directly is ineffective. Patching the class captures
     # every instance CliRunner creates.
-    monkeypatch.setattr(
-        click.testing._NamedTextIOWrapper, "reconfigure", fake_reconfigure
-    )
+    monkeypatch.setattr(click.testing._NamedTextIOWrapper, "reconfigure", fake_reconfigure)
 
     result = runner.invoke(main, ["workspace", "dashboard", "--no-color"])
 
@@ -399,8 +412,7 @@ def test_workspace_dashboard_cmd_console_uses_explicit_width(
 
     projects = [_make_project("alpha")]
     summary = {
-        "totals": {"projects": 1, "needs_attention": 0,
-                   "dirty": 0, "no_git": 0, "no_tests": 0},
+        "totals": {"projects": 1, "needs_attention": 0, "dirty": 0, "no_git": 0, "no_tests": 0},
         "needs_attention": [],
         "archived_count": 0,
     }
@@ -465,8 +477,7 @@ def test_workspace_dashboard_cmd_renders_section_e_when_r1_triggered(
         ),
     ]
     summary = {
-        "totals": {"projects": 1, "needs_attention": 1,
-                   "dirty": 1, "no_git": 0, "no_tests": 0},
+        "totals": {"projects": 1, "needs_attention": 1, "dirty": 1, "no_git": 0, "no_tests": 0},
         "needs_attention": needs_attention,
         "archived_count": 0,
     }
@@ -506,8 +517,7 @@ def test_workspace_dashboard_cmd_section_e_truncates_at_20_files(
         ),
     ]
     summary = {
-        "totals": {"projects": 1, "needs_attention": 1,
-                   "dirty": 1, "no_git": 0, "no_tests": 0},
+        "totals": {"projects": 1, "needs_attention": 1, "dirty": 1, "no_git": 0, "no_tests": 0},
         "needs_attention": needs_attention,
         "archived_count": 0,
     }
@@ -523,13 +533,10 @@ def test_workspace_dashboard_cmd_section_e_truncates_at_20_files(
     for i in range(19):
         assert f" M f_{i}.py" in plain, f"Missing f_{i} in output"
     for i in range(19, 25):
-        assert f" M f_{i}.py" not in plain, (
-            f"f_{i} should be truncated; found in output"
-        )
+        assert f" M f_{i}.py" not in plain, f"f_{i} should be truncated; found in output"
     # ASCII ellipsis marker present.
     assert "..." in plain
     # Footer hint substring present.
     assert "git status" in plain.lower()
     # Unicode U+2026 NEVER appears.
     assert "\u2026" not in plain
-

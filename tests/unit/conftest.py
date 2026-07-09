@@ -8,6 +8,7 @@ so the CLI flags do NOT mutate the committed artifacts. The fixture
 monkeypatches ``flow_engineering.cli._GOLDEN_PROMPTS_DIR`` so the CLI
 helper reads from the isolated dir for the test scope only.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,9 +17,7 @@ import pytest
 
 
 @pytest.fixture
-def golden_snapshot_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def golden_snapshot_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Isolated golden snapshot directory for ``--update-goldens`` / ``--check-snapshot`` tests.
 
     Returns:
@@ -31,9 +30,7 @@ def golden_snapshot_dir(
     snap_dir.mkdir(parents=True)
     from flow_engineering import cli as cli_mod
 
-    monkeypatch.setattr(
-        cli_mod, "_GOLDEN_PROMPTS_DIR", snap_dir, raising=False
-    )
+    monkeypatch.setattr(cli_mod, "_GOLDEN_PROMPTS_DIR", snap_dir, raising=False)
     return snap_dir
 
 
