@@ -27,37 +27,40 @@ jobs:
           Write-Host "Job startup proves the runner can pick up work; GitHub runner-list API requires broader repository administration permissions than GITHUB_TOKEN provides."
 
           Write-Host "Checking latest completed main push run for tests workflow"
-          $jqFilter = 'map(select(.status == "completed"))[0] | [.databaseId,.status,.conclusion,.createdAt,.url] | @tsv'
-          $latestRunFields = gh run list `
+          $runsJson = gh run list `
             --repo "$env:REPO" `
             --workflow tests `
             --branch main `
             --event push `
             --limit 10 `
-            --json databaseId,status,conclusion,createdAt,url `
-            --jq $jqFilter
+            --json databaseId,status,conclusion,createdAt,url
 
-          if ([string]::IsNullOrWhiteSpace($latestRunFields)) {
+          $runs = $runsJson | ConvertFrom-Json
+          $latestRun = $runs | Where-Object { $_.status -eq "completed" } | Select-Object -First 1
+
+          if ($null -eq $latestRun) {
             Write-Error "No completed main push run found for tests workflow."
             exit 1
           }
 
-          $fields = $latestRunFields -split "`t"
-          $databaseId = $fields[0]
-          $status = $fields[1]
-          $conclusion = $fields[2]
-          $createdAtRaw = $fields[3]
-          $url = $fields[4]
+          $databaseId = $latestRun.databaseId
+          $status = $latestRun.status
+          $conclusion = $latestRun.conclusion
+          $createdAt = [DateTimeOffset]::Parse(
+            [string]$latestRun.createdAt,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::AssumeUniversal
+          ).UtcDateTime
+          $url = $latestRun.url
 
           Write-Host "Latest completed tests run: $url"
-          Write-Host "database_id=$databaseId status=$status conclusion=$conclusion created_at=$createdAtRaw"
+          Write-Host "database_id=$databaseId status=$status conclusion=$conclusion created_at=$($createdAt.ToString('o'))"
 
           if ($conclusion -ne "success") {
             Write-Error "Latest completed main tests run is not green: conclusion=$conclusion, url=$url"
             exit 1
           }
 
-          $createdAt = [DateTimeOffset]::Parse($createdAtRaw).UtcDateTime
           $ageHours = [int](([DateTime]::UtcNow - $createdAt).TotalHours)
           Write-Host "Latest green CI age: ${ageHours}h"
 
