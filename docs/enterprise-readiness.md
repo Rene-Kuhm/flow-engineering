@@ -60,12 +60,12 @@ Goal: secrets and supply chain mistakes should be hard to miss.
 
 Goal: every change should be understandable, reversible, and auditable.
 
-- [ ] Add a project Definition of Done.
+- [x] Add a project Definition of Done. See `docs/change-governance.md`.
 - [x] Add session start/close checklist. See `docs/session-checklist.md`.
 - [x] Add release checklist. See `docs/release-recovery.md`.
-- [ ] Add changelog or release notes process.
-- [ ] Use ADRs for durable architecture decisions.
-- [ ] Keep SDD/OpenSpec active only when it guides real current work.
+- [x] Add changelog or release notes process. See `CHANGELOG.md` and `docs/change-governance.md`.
+- [x] Use ADRs for durable architecture decisions. See `docs/adr/0001-lightweight-enterprise-governance.md`.
+- [x] Keep SDD/OpenSpec active only when it guides real current work. See `docs/change-governance.md`.
 
 ## Priority 4 — quality and verification
 

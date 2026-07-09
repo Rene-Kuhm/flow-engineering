@@ -121,6 +121,7 @@ See [Security Baseline](docs/security-baseline.md) and [Security Policy](SECURIT
 See [Session Checklist](docs/session-checklist.md) for the start/close routine agents should follow.
 See [Release and Recovery](docs/release-recovery.md) for release tagging, runner rebuild, rollback, and disaster recovery.
 See [Incident Response](docs/incident-response.md) for the symptom/diagnosis/fix/prevention workflow.
+See [Change Governance](docs/change-governance.md), [Architecture Decisions](docs/adr/README.md), and [Changelog](CHANGELOG.md) for Definition of Done, release notes, and durable decisions.
 
 ## License
 
