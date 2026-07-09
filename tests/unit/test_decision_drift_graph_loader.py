@@ -29,6 +29,12 @@ the existing test files only — these are new files, not modifications.
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
 from typing import Protocol as _Protocol
 
 import pytest
@@ -713,6 +719,31 @@ class TestByteIdenticalDriftReport:
         assert DriftClass.STILL_VALID in report.class_counts
         assert report.class_counts[DriftClass.STILL_VALID] == 1
 
+    def test_success_paths_match_e50adb6_baseline(self, tmp_path) -> None:
+        """T6.2: compare current success-path reports against the real e50adb6 code.
+
+        The baseline is loaded in an isolated subprocess from ``git archive`` so this
+        test does not import stale modules into the current pytest process. The
+        expected values are produced by the baseline implementation from the same
+        fixtures; this deliberately avoids baking current output into the test.
+        """
+
+        fixed_epoch = 1_700_000_000.0
+        fixtures = _build_baseline_comparison_fixtures(tmp_path)
+
+        baseline = _run_scan_change_at_commit(
+            tmp_path=tmp_path,
+            commit="e50adb6",
+            fixtures=fixtures,
+            fixed_epoch=fixed_epoch,
+        )
+        current = _run_current_scan_change(fixtures=fixtures, fixed_epoch=fixed_epoch)
+
+        assert current == baseline
+        assert set(current) == {"live", "snapshot"}
+        assert current["live"]["graph_unavailable"] is False
+        assert current["snapshot"]["graph_unavailable"] is False
+
     def test_snapshot_path_byte_identical_happy_path(
         self,
         tmp_path,
@@ -805,3 +836,437 @@ class TestByteIdenticalDriftReport:
         assert report.bindings_total == 1
         assert DriftClass.STILL_VALID in report.class_counts
         assert report.class_counts[DriftClass.STILL_VALID] == 1
+
+
+def _build_baseline_comparison_fixtures(tmp_path: Path) -> dict[str, str]:
+    graph_path = tmp_path / "baseline-graph.json"
+    graph_path.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": "baseline-live",
+                        "label": "BaselineLive",
+                        "file": "src/live.py",
+                        "line": 11,
+                    },
+                    {
+                        "id": "baseline-snapshot",
+                        "label": "BaselineSnapshot",
+                        "file": "src/snapshot.py",
+                        "line": 22,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(graph_path, (1_650_000_000, 1_650_000_000))
+    snapshots_dir = tmp_path / "baseline-snaps"
+    snapshots_dir.mkdir()
+    return {
+        "graph_path": str(graph_path),
+        "snapshots_dir": str(snapshots_dir),
+    }
+
+
+def _run_current_scan_change(*, fixtures: dict[str, str], fixed_epoch: float) -> dict:
+    from flow_engineering import decision_drift
+    from flow_engineering.engram_io import InMemoryBackend
+
+    old_time = decision_drift.time.time
+    old_snapshots_dir = os.environ.get("FLOW_SNAPSHOTS_DIR")
+    try:
+        decision_drift.time.time = lambda: fixed_epoch
+        os.environ["FLOW_SNAPSHOTS_DIR"] = fixtures["snapshots_dir"]
+        live_backend = InMemoryBackend()
+        live_backend.mem_save(
+            title="baseline-live",
+            content=_code_ref_content(
+                node_id="baseline-live",
+                label="BaselineLive",
+                file="src/live.py",
+                line=11,
+            ),
+            topic_key="sdd/baseline-live/t62",
+        )
+        snap_id = _write_snapshot_fixture(
+            snapshots_dir=Path(fixtures["snapshots_dir"]),
+            snap_id="snap_baseline_t62",
+            node_id="baseline-snapshot",
+            label="BaselineSnapshot",
+            file="src/snapshot.py",
+            line=22,
+            topic_key="sdd/baseline-snapshot/t62",
+        )
+        return {
+            "live": _serialize_report(
+                decision_drift.scan_change(
+                    "baseline-live",
+                    graph_json_path=Path(fixtures["graph_path"]),
+                    backend=live_backend,
+                )
+            ),
+            "snapshot": _serialize_report(
+                decision_drift.scan_change("baseline-snapshot", snap_id=snap_id)
+            ),
+        }
+    finally:
+        decision_drift.time.time = old_time
+        if old_snapshots_dir is None:
+            os.environ.pop("FLOW_SNAPSHOTS_DIR", None)
+        else:
+            os.environ["FLOW_SNAPSHOTS_DIR"] = old_snapshots_dir
+
+
+def _run_scan_change_at_commit(
+    *,
+    tmp_path: Path,
+    commit: str,
+    fixtures: dict[str, str],
+    fixed_epoch: float,
+) -> dict:
+    baseline_root = tmp_path / f"baseline-{commit}"
+    archive_path = tmp_path / f"{commit}.zip"
+    subprocess.run(
+        [
+            "git",
+            "archive",
+            "--format=zip",
+            f"--output={archive_path}",
+            commit,
+            "src/flow_engineering",
+            "prompts",
+        ],
+        check=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )
+    with zipfile.ZipFile(archive_path) as archive:
+        archive.extractall(baseline_root)
+
+    script_path = tmp_path / "run_baseline_scan.py"
+    script_path.write_text(_BASELINE_SCAN_SCRIPT, encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(baseline_root / "src")
+    env["FLOW_SNAPSHOTS_DIR"] = fixtures["snapshots_dir"]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            json.dumps(fixtures),
+            str(fixed_epoch),
+        ],
+        check=True,
+        cwd=baseline_root,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    return json.loads(proc.stdout)
+
+
+def _code_ref_content(*, node_id: str, label: str, file: str, line: int) -> str:
+    return (
+        "baseline observation\n"
+        "<!-- code_refs -->\n"
+        + json.dumps(
+            {
+                "schema": 1,
+                "source": "manual",
+                "nodes": [
+                    {
+                        "project": "insyd",
+                        "id": node_id,
+                        "label": label,
+                        "file": file,
+                        "line": line,
+                        "confidence": 1.0,
+                        "source": "manual",
+                    }
+                ],
+            }
+        )
+        + "\n"
+    )
+
+
+def _write_snapshot_fixture(
+    *,
+    snapshots_dir: Path,
+    snap_id: str,
+    node_id: str,
+    label: str,
+    file: str,
+    line: int,
+    topic_key: str,
+) -> str:
+    import gzip
+
+    graph_json_content = json.dumps(
+        {"nodes": [{"id": node_id, "label": label, "file": file, "line": line}]}
+    )
+    envelope = {
+        "schema": 1,
+        "id": snap_id,
+        "created_at": "2026-07-09T00:00:00Z",
+        "trigger": "manual",
+        "description": "baseline comparison",
+        "graph_state": {
+            "observations": [
+                {
+                    "id": 1,
+                    "title": "baseline-snapshot",
+                    "topic_key": topic_key,
+                    "content": _code_ref_content(
+                        node_id=node_id,
+                        label=label,
+                        file=file,
+                        line=line,
+                    ),
+                    "created_at": 1_650_000_000,
+                }
+            ],
+            "project_tags": {"1": "insyd"},
+            "graph_json_content": graph_json_content,
+        },
+        "metadata": {
+            "obs_count": 1,
+            "project_count": 1,
+            "file_size_bytes": 0,
+            "sha256": "",
+            "include_graph": True,
+        },
+    }
+    _stamp_snapshot_hash(envelope)
+    (snapshots_dir / f"{snap_id}.json.gz").write_bytes(
+        gzip.compress(json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0)
+    )
+    return snap_id
+
+
+def _stamp_snapshot_hash(envelope: dict) -> None:
+    import hashlib
+
+    envelope["metadata"]["file_size_bytes"] = len(
+        json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+    )
+    metadata_without_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+    envelope_without_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+    envelope_without_hash["metadata"] = metadata_without_hash
+    envelope["metadata"]["sha256"] = hashlib.sha256(
+        json.dumps(
+            envelope_without_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _serialize_report(report) -> dict:  # type: ignore[no-untyped-def]
+    return {
+        "scanned_at": report.scanned_at,
+        "graph_mtime": report.graph_mtime,
+        "decisions_total": report.decisions_total,
+        "bindings_total": report.bindings_total,
+        "class_counts": {
+            getattr(k, "value", str(k)): v for k, v in sorted(report.class_counts.items())
+        },
+        "findings": [
+            {
+                "decision_id": f.decision_id,
+                "binding": {
+                    "project": f.binding.project,
+                    "id": f.binding.id,
+                    "label": f.binding.label,
+                    "file": f.binding.file,
+                    "line": f.binding.line,
+                    "confidence": f.binding.confidence,
+                    "source": f.binding.source,
+                },
+                "drift_class": getattr(f.drift_class, "value", str(f.drift_class)),
+                "detail": f.detail,
+            }
+            for f in report.findings
+        ],
+        "graph_unavailable": report.graph_unavailable,
+        "unable_reason": report.unable_reason,
+    }
+
+
+_BASELINE_SCAN_SCRIPT = r'''
+from __future__ import annotations
+
+import gzip
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+from flow_engineering import decision_drift
+from flow_engineering.engram_io import InMemoryBackend
+
+
+def code_ref_content(*, node_id: str, label: str, file: str, line: int) -> str:
+    return (
+        "baseline observation\n"
+        "<!-- code_refs -->\n"
+        + json.dumps(
+            {
+                "schema": 1,
+                "source": "manual",
+                "nodes": [
+                    {
+                        "project": "insyd",
+                        "id": node_id,
+                        "label": label,
+                        "file": file,
+                        "line": line,
+                        "confidence": 1.0,
+                        "source": "manual",
+                    }
+                ],
+            }
+        )
+        + "\n"
+    )
+
+
+def stamp_snapshot_hash(envelope: dict) -> None:
+    envelope["metadata"]["file_size_bytes"] = len(
+        json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+    )
+    metadata_without_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
+    envelope_without_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+    envelope_without_hash["metadata"] = metadata_without_hash
+    envelope["metadata"]["sha256"] = hashlib.sha256(
+        json.dumps(
+            envelope_without_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def write_snapshot_fixture(snapshots_dir: Path) -> str:
+    snap_id = "snap_baseline_t62"
+    graph_json_content = json.dumps(
+        {
+            "nodes": [
+                {
+                    "id": "baseline-snapshot",
+                    "label": "BaselineSnapshot",
+                    "file": "src/snapshot.py",
+                    "line": 22,
+                }
+            ]
+        }
+    )
+    envelope = {
+        "schema": 1,
+        "id": snap_id,
+        "created_at": "2026-07-09T00:00:00Z",
+        "trigger": "manual",
+        "description": "baseline comparison",
+        "graph_state": {
+            "observations": [
+                {
+                    "id": 1,
+                    "title": "baseline-snapshot",
+                    "topic_key": "sdd/baseline-snapshot/t62",
+                    "content": code_ref_content(
+                        node_id="baseline-snapshot",
+                        label="BaselineSnapshot",
+                        file="src/snapshot.py",
+                        line=22,
+                    ),
+                    "created_at": 1_650_000_000,
+                }
+            ],
+            "project_tags": {"1": "insyd"},
+            "graph_json_content": graph_json_content,
+        },
+        "metadata": {
+            "obs_count": 1,
+            "project_count": 1,
+            "file_size_bytes": 0,
+            "sha256": "",
+            "include_graph": True,
+        },
+    }
+    stamp_snapshot_hash(envelope)
+    (snapshots_dir / f"{snap_id}.json.gz").write_bytes(
+        gzip.compress(json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0)
+    )
+    return snap_id
+
+
+def serialize_report(report) -> dict:
+    return {
+        "scanned_at": report.scanned_at,
+        "graph_mtime": report.graph_mtime,
+        "decisions_total": report.decisions_total,
+        "bindings_total": report.bindings_total,
+        "class_counts": {
+            getattr(k, "value", str(k)): v for k, v in sorted(report.class_counts.items())
+        },
+        "findings": [
+            {
+                "decision_id": f.decision_id,
+                "binding": {
+                    "project": f.binding.project,
+                    "id": f.binding.id,
+                    "label": f.binding.label,
+                    "file": f.binding.file,
+                    "line": f.binding.line,
+                    "confidence": f.binding.confidence,
+                    "source": f.binding.source,
+                },
+                "drift_class": getattr(f.drift_class, "value", str(f.drift_class)),
+                "detail": f.detail,
+            }
+            for f in report.findings
+        ],
+        "graph_unavailable": report.graph_unavailable,
+        "unable_reason": getattr(report, "unable_reason", None),
+    }
+
+
+fixtures = json.loads(sys.argv[1])
+fixed_epoch = float(sys.argv[2])
+decision_drift.time.time = lambda: fixed_epoch
+snapshots_dir = Path(fixtures["snapshots_dir"])
+snap_id = write_snapshot_fixture(snapshots_dir)
+
+live_backend = InMemoryBackend()
+live_backend.mem_save(
+    title="baseline-live",
+    content=code_ref_content(
+        node_id="baseline-live",
+        label="BaselineLive",
+        file="src/live.py",
+        line=11,
+    ),
+    topic_key="sdd/baseline-live/t62",
+)
+
+print(
+    json.dumps(
+        {
+            "live": serialize_report(
+                decision_drift.scan_change(
+                    "baseline-live",
+                    graph_json_path=Path(fixtures["graph_path"]),
+                    backend=live_backend,
+                )
+            ),
+            "snapshot": serialize_report(
+                decision_drift.scan_change("baseline-snapshot", snap_id=snap_id)
+            ),
+        },
+        sort_keys=True,
+    )
+)
+'''

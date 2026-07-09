@@ -135,8 +135,8 @@ class SnapshotGraphLoader:
 
     Reads the frozen ``graph_state.graph_json_content`` (or legacy
     ``graph_json`` dict) from the snapshot envelope via
-    ``SnapshotManager.show()``. NO ``_DummyBackend`` is constructed
-    (REQ-DRIFT-DETECTION-5).
+    ``SnapshotManager.show()``. No legacy constructor-shim backend is
+    constructed (REQ-DRIFT-DETECTION-5).
     """
 
     def __init__(self, snap_id: str) -> None:
