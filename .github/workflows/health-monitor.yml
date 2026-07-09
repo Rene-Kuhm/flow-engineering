@@ -23,22 +23,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Checking self-hosted runner status for $env:REPO"
-          $runners = gh api "repos/$env:REPO/actions/runners" | ConvertFrom-Json
-          $onlineRunners = @(
-            $runners.runners |
-              Where-Object { $_.name -like "*flow-engineering*" -and $_.status -eq "online" }
-          )
-
-          if ($onlineRunners.Count -lt 1) {
-            Write-Error "No online flow-engineering self-hosted runner found."
-            $runners.runners |
-              Select-Object name,status,busy,@{Name="labels";Expression={($_.labels.name -join ",")}} |
-              Format-Table -AutoSize
-            exit 1
-          }
-
-          Write-Host "Online flow-engineering runner count: $($onlineRunners.Count)"
+          Write-Host "Health monitor is running on a self-hosted runner."
+          Write-Host "Job startup proves the runner can pick up work; GitHub runner-list API requires broader repository administration permissions than GITHUB_TOKEN provides."
 
           Write-Host "Checking latest completed main push run for tests workflow"
           $latestRunFields = gh run list `
