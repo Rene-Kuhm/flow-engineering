@@ -60,9 +60,7 @@ def test_workspace_status_json_envelope_and_r4(tmp_path: Path, monkeypatch) -> N
         "needs_attention",
     }
     by_name = {item["name"]: item for item in payload["needs_attention"]}
-    assert by_name["b-no-openspec"]["reasons"] == [
-        "R4: SDD-adjacent stack missing openspec"
-    ]
+    assert by_name["b-no-openspec"]["reasons"] == ["R4: SDD-adjacent stack missing openspec"]
 
 
 def test_workspace_status_r1_dirty_project(tmp_path: Path, monkeypatch) -> None:
@@ -126,9 +124,7 @@ def test_workspace_status_text_output(tmp_path: Path, monkeypatch) -> None:
     assert "SUMMARY" in result.output
 
 
-def test_workspace_status_subdir_scan_excludes_dot_prefix_dirs(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_workspace_status_subdir_scan_excludes_dot_prefix_dirs(tmp_path: Path, monkeypatch) -> None:
     """``flow workspace status --json`` MUST exclude dot-prefix entries.
 
     View-only filter per REQ-WORKSPACE-PROJECT-IDENTITY: tooling/config
@@ -396,4 +392,3 @@ def test_summarize_omits_dirty_files_when_not_r1() -> None:
 
     assert "R1: uncommitted work" not in entry["reasons"]
     assert "dirty_files" not in entry
-

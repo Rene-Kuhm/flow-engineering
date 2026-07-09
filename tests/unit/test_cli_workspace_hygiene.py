@@ -69,16 +69,12 @@ def fake_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     def _stub(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        cp = subprocess.CompletedProcess(
-            args=["git", *args], returncode=0, stdout="", stderr=""
-        )
+        cp = subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
         if args and args[0] == "init":
             target = Path(args[1]) if len(args) > 1 else None
             if target is not None:
                 (target / ".git").mkdir(exist_ok=True)
-                (target / ".git" / "HEAD").write_text(
-                    "ref: refs/heads/main\n", encoding="utf-8"
-                )
+                (target / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
                 (target / ".git" / "config").write_text(
                     "[core]\n\trepositoryformatversion = 0\n", encoding="utf-8"
                 )
@@ -87,17 +83,13 @@ def fake_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli_mod, "_git", _stub)
 
 
-def _make_project(
-    parent: Path, name: str, *, with_files: list[str] | None = None
-) -> Path:
+def _make_project(parent: Path, name: str, *, with_files: list[str] | None = None) -> Path:
     """Create a project dir under ``parent / "projects" / name``.
 
     Defaults to empty (no user files) so the project is empty per
     REQ-HYGIENE-BACKUP-GATE-NONEMPTY. ``with_files`` adds user-visible files.
     """
-    return make_fake_project(
-        name, with_files=with_files or [], parent=parent / "projects"
-    )
+    return make_fake_project(name, with_files=with_files or [], parent=parent / "projects")
 
 
 def _backup_root(tmp_path: Path) -> Path:
@@ -110,9 +102,7 @@ def _backup_root(tmp_path: Path) -> Path:
 # =============================================================================
 
 
-def test_fix_dry_run_default_does_not_mutate(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_fix_dry_run_default_does_not_mutate(workspace_home: Path, fake_git: None) -> None:
     """T-9: ``flow workspace fix <project>`` with no flags → dry-run, no mutation.
 
     REQ-HYGIENE-DRY-RUN-DEFAULT: dry-run is the default. No ``.git/``
@@ -129,9 +119,7 @@ def test_fix_dry_run_default_does_not_mutate(
     assert not registry_path().exists(), "dry-run must not write registry"
 
 
-def test_fix_missing_yes_refuses(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_fix_missing_yes_refuses(workspace_home: Path, fake_git: None) -> None:
     """T-9: ``flow workspace fix <project> --backup`` without ``--yes`` → exit != 0.
 
     REQ-HYGIENE-DRY-RUN-DEFAULT: missing ``--yes`` (and not dry-run) →
@@ -148,9 +136,7 @@ def test_fix_missing_yes_refuses(
     assert not _backup_root(workspace_home).exists()
 
 
-def test_fix_non_empty_missing_backup_refuses(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_fix_non_empty_missing_backup_refuses(workspace_home: Path, fake_git: None) -> None:
     """T-9: non-empty fix without ``--backup`` → exit != 0.
 
     REQ-HYGIENE-BACKUP-GATE-NONEMPTY: a project with user-visible files
@@ -166,9 +152,7 @@ def test_fix_non_empty_missing_backup_refuses(
     assert not (project / ".git").exists()
 
 
-def test_fix_happy_path(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_fix_happy_path(workspace_home: Path, fake_git: None) -> None:
     """T-9: ``flow workspace fix <empty> --yes`` → ``.git/`` + registry entry.
 
     REQ-HYGIENE-FIX-SURFACE: empty project + ``--yes`` (no ``--backup``
@@ -192,9 +176,7 @@ def test_fix_happy_path(
 # =============================================================================
 
 
-def test_archive_happy_path(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_archive_happy_path(workspace_home: Path, fake_git: None) -> None:
     """T-10: ``flow workspace archive <project> --reason X --yes`` → archived.
 
     REQ-HYGIENE-ARCHIVE-SURFACE: archive moves the entry from
@@ -205,9 +187,7 @@ def test_archive_happy_path(
     # registry has something for the archive to find. An empty project needs
     # only ``--yes`` (no ``--backup``) per REQ-HYGIENE-BACKUP-GATE-NONEMPTY.
     _make_project(workspace_home, "mockup-2-blog")  # empty
-    fix_result = runner.invoke(
-        main, ["workspace", "fix", "mockup-2-blog", "--yes"]
-    )
+    fix_result = runner.invoke(main, ["workspace", "fix", "mockup-2-blog", "--yes"])
     assert fix_result.exit_code == 0, fix_result.output
 
     result = runner.invoke(
@@ -276,9 +256,7 @@ def test_archived_text_output(workspace_home: Path, fake_git: None) -> None:
 # =============================================================================
 
 
-def test_restore_happy_path(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_restore_happy_path(workspace_home: Path, fake_git: None) -> None:
     """T-12: ``flow workspace restore <project> --yes`` reverses archive.
 
     REQ-HYGIENE-RESTORE-SURFACE: restore moves the entry from
@@ -304,9 +282,7 @@ def test_restore_happy_path(
     )
     save_registry_atomic(reg)
 
-    result = runner.invoke(
-        main, ["workspace", "restore", "mockup-2-blog", "--yes"]
-    )
+    result = runner.invoke(main, ["workspace", "restore", "mockup-2-blog", "--yes"])
 
     assert result.exit_code == 0, result.output
     reg_after = load_registry()
@@ -315,9 +291,7 @@ def test_restore_happy_path(
     assert "mockup-2-blog" in names
 
 
-def test_restore_missing_yes_refuses(
-    workspace_home: Path, fake_git: None
-) -> None:
+def test_restore_missing_yes_refuses(workspace_home: Path, fake_git: None) -> None:
     """T-12: ``flow workspace restore <project>`` without ``--yes`` → exit != 0.
 
     REQ-HYGIENE-RESTORE-SURFACE: missing ``--yes`` → the CLI refuses and

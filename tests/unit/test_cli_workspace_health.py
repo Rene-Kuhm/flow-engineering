@@ -65,7 +65,10 @@ def test_workspace_health_cmd_json_byte_deterministic(tmp_path: Path) -> None:
     out1 = runner.invoke(main, ["workspace", "health", "--root", str(p), "--json"]).output
     out2 = runner.invoke(main, ["workspace", "health", "--root", str(p), "--json"]).output
 
-    assert hashlib.sha256(out1.encode("utf-8")).hexdigest() == hashlib.sha256(out2.encode("utf-8")).hexdigest()
+    assert (
+        hashlib.sha256(out1.encode("utf-8")).hexdigest()
+        == hashlib.sha256(out2.encode("utf-8")).hexdigest()
+    )
 
 
 def test_workspace_health_cmd_json_flag_default_false(tmp_path: Path) -> None:
@@ -123,9 +126,7 @@ def test_workspace_health_cmd_empty_workspace_exits_zero(tmp_path: Path) -> None
     """REQ-WORKSPACE-HEALTH-JSON-4-EXIT-OK: empty workspace exits 0 with version='1'."""
     # tmp_path has NO projects subdirectory at all (truly empty root)
     runner = CliRunner()
-    result = runner.invoke(
-        workspace_health_cmd, ["--root", str(tmp_path), "--json"]
-    )
+    result = runner.invoke(workspace_health_cmd, ["--root", str(tmp_path), "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["version"] == "1"
@@ -140,9 +141,7 @@ def test_workspace_health_cmd_dotprefix_only_exits_zero(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     (tmp_path / ".cache").mkdir()
     runner = CliRunner()
-    result = runner.invoke(
-        workspace_health_cmd, ["--root", str(tmp_path), "--json"]
-    )
+    result = runner.invoke(workspace_health_cmd, ["--root", str(tmp_path), "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["projects"] == []
@@ -293,7 +292,9 @@ def test_workspace_health_cmd_filter_choice_enforced(tmp_path: Path) -> None:
 
     assert result.exit_code == 2, (result.output, result.stderr)
     assert "Invalid value" in result.stderr, result.stderr
-    assert result.stdout == "", f"stdout should be empty (parse-time rejection); got {result.stdout!r}"
+    assert result.stdout == "", (
+        f"stdout should be empty (parse-time rejection); got {result.stdout!r}"
+    )
 
 
 def test_workspace_health_cmd_filter_multi_value(tmp_path: Path) -> None:
@@ -307,14 +308,18 @@ def test_workspace_health_cmd_filter_multi_value(tmp_path: Path) -> None:
     p = tmp_path / "projects"
     _build_charlie_with_r6_r7_r8(p)
 
-    out1 = runner.invoke(main, ["workspace", "health", "--filter", "R6,R7", "--json", "--root", str(p)]).output.strip()
+    out1 = runner.invoke(
+        main, ["workspace", "health", "--filter", "R6,R7", "--json", "--root", str(p)]
+    ).output.strip()
     out2 = runner.invoke(
-        main, ["workspace", "health", "--filter", "R6", "--filter", "R7", "--json", "--root", str(p)]
+        main,
+        ["workspace", "health", "--filter", "R6", "--filter", "R7", "--json", "--root", str(p)],
     ).output.strip()
 
-    assert hashlib.sha256(out1.encode("utf-8")).hexdigest() == hashlib.sha256(out2.encode("utf-8")).hexdigest(), (
-        f"--filter R6,R7 must equal --filter R6 --filter R7.\nout1={out1!r}\nout2={out2!r}"
-    )
+    assert (
+        hashlib.sha256(out1.encode("utf-8")).hexdigest()
+        == hashlib.sha256(out2.encode("utf-8")).hexdigest()
+    ), f"--filter R6,R7 must equal --filter R6 --filter R7.\nout1={out1!r}\nout2={out2!r}"
 
 
 def test_workspace_health_cmd_filter_effect(tmp_path: Path) -> None:
@@ -328,7 +333,9 @@ def test_workspace_health_cmd_filter_effect(tmp_path: Path) -> None:
     p = tmp_path / "projects"
     _build_charlie_with_r6_r7_r8(p)
 
-    result = runner.invoke(main, ["workspace", "health", "--filter", "R6", "--json", "--root", str(p)])
+    result = runner.invoke(
+        main, ["workspace", "health", "--filter", "R6", "--json", "--root", str(p)]
+    )
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -351,8 +358,12 @@ def test_workspace_health_cmd_nocolor_console_seam(tmp_path: Path) -> None:
     result = runner.invoke(main, ["workspace", "health", "--no-color", "--root", str(p)])
 
     assert result.exit_code == 0, result.output
-    assert "\x1b[" not in result.stdout, f"ANSI escape found in --no-color output: {result.stdout!r}"
-    assert "Workspace health" in result.stdout or result.stdout.startswith("(no projects to report)")
+    assert "\x1b[" not in result.stdout, (
+        f"ANSI escape found in --no-color output: {result.stdout!r}"
+    )
+    assert "Workspace health" in result.stdout or result.stdout.startswith(
+        "(no projects to report)"
+    )
 
 
 def test_workspace_health_cmd_nocolor_byte_deterministic(tmp_path: Path) -> None:
@@ -369,4 +380,7 @@ def test_workspace_health_cmd_nocolor_byte_deterministic(tmp_path: Path) -> None
     out1 = runner.invoke(main, ["workspace", "health", "--no-color", "--root", str(p)]).output
     out2 = runner.invoke(main, ["workspace", "health", "--no-color", "--root", str(p)]).output
 
-    assert hashlib.sha256(out1.encode("utf-8")).hexdigest() == hashlib.sha256(out2.encode("utf-8")).hexdigest()
+    assert (
+        hashlib.sha256(out1.encode("utf-8")).hexdigest()
+        == hashlib.sha256(out2.encode("utf-8")).hexdigest()
+    )
