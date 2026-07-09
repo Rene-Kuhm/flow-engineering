@@ -12,6 +12,7 @@ Covers:
 Tests written BEFORE the implementation per strict TDD. They MUST fail
 until the GREEN commit wires the ``drift-events tail`` subcommand.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,9 +59,11 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
+                "--path",
+                str(tail_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -73,10 +76,13 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
-                "--limit", "3",
+                "--path",
+                str(tail_log),
+                "--limit",
+                "3",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -88,10 +94,13 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
-                "--limit", "5",
+                "--path",
+                str(tail_log),
+                "--limit",
+                "5",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -105,11 +114,15 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
-                "--change", "change-0",
-                "--limit", "10",
+                "--path",
+                str(tail_log),
+                "--change",
+                "change-0",
+                "--limit",
+                "10",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -122,11 +135,15 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
-                "--event-class", "LABEL_DRIFT",
-                "--limit", "10",
+                "--path",
+                str(tail_log),
+                "--event-class",
+                "LABEL_DRIFT",
+                "--limit",
+                "10",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -140,11 +157,15 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
-                "--limit", "3",
-                "--format", "json",
+                "--path",
+                str(tail_log),
+                "--limit",
+                "3",
+                "--format",
+                "json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -161,10 +182,13 @@ class TestTailCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tail_log),
-                "--format", "invalid",
+                "--path",
+                str(tail_log),
+                "--format",
+                "invalid",
             ],
         )
         assert result.exit_code == 2, result.output
@@ -184,9 +208,11 @@ class TestTailEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(log_path),
+                "--path",
+                str(log_path),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -196,9 +222,11 @@ class TestTailEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "tail",
-                "--path", str(tmp_path / "nope.jsonl"),
+                "--path",
+                str(tmp_path / "nope.jsonl"),
             ],
         )
         assert result.exit_code == 0, result.output

@@ -196,12 +196,16 @@ class TestSearchFederatedAllProjects:
 class TestSearchFederatedProjectsCSV:
     """``--federated --projects=flow-engineering,mockup-2-blog`` restricts the scope."""
 
-    def test_projects_csv_restricts_to_named(
-        self, multi_project_backend: InMemoryBackend
-    ) -> None:
+    def test_projects_csv_restricts_to_named(self, multi_project_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
-            ["search", "--federated", "--projects=flow-engineering,mockup-2-blog", "drift", "--json"],
+            [
+                "search",
+                "--federated",
+                "--projects=flow-engineering,mockup-2-blog",
+                "drift",
+                "--json",
+            ],
         )
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
@@ -253,9 +257,7 @@ class TestSearchFederatedProjectsCSV:
 class TestSearchFederatedSince:
     """``--federated --since=2026-06-01`` excludes observations created before that date."""
 
-    def test_since_filter_excludes_older(
-        self, multi_project_backend: InMemoryBackend
-    ) -> None:
+    def test_since_filter_excludes_older(self, multi_project_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["search", "--federated", "--since=2026-06-01", "drift", "--json"],
@@ -266,9 +268,7 @@ class TestSearchFederatedSince:
         titles = [r["title"] for r in payload["results"]]
         assert "mockup-2-blog old drift" not in titles
 
-    def test_since_filter_keeps_recent(
-        self, multi_project_backend: InMemoryBackend
-    ) -> None:
+    def test_since_filter_keeps_recent(self, multi_project_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["search", "--federated", "--since=2026-06-01", "drift", "--json"],
@@ -302,9 +302,7 @@ class TestSearchFederatedType:
         # Obs 1, 4, 5 are decision (kept).
         assert "flow-engineering drift decision" in titles
 
-    def test_type_csv_includes_listed_types(
-        self, multi_project_backend: InMemoryBackend
-    ) -> None:
+    def test_type_csv_includes_listed_types(self, multi_project_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["search", "--federated", "--type=decision,bugfix", "drift", "--json"],
