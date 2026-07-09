@@ -25,6 +25,17 @@ function New-Check {
   }
 }
 
+function New-WebhookText {
+  param(
+    [string]$Repo,
+    [string]$Overall,
+    [object[]]$Checks
+  )
+
+  $summary = ($Checks | ForEach-Object { "$($_.name)=$($_.status)" }) -join ", "
+  "flow-engineering runner watchdog: $Overall for $Repo ($summary)"
+}
+
 $checks = @()
 
 $services = @(Get-Service | Where-Object { $_.Name -like $RunnerNamePattern })
@@ -79,6 +90,7 @@ $overall = if ($criticalCount -gt 0) { "critical" } elseif ($warningCount -gt 0)
 
 $webhookConfigured = -not [string]::IsNullOrWhiteSpace($WebhookUrl)
 $payload = [pscustomobject]@{
+  text = New-WebhookText $Repo $overall $checks
   checked_at = (Get-Date).ToUniversalTime().ToString("o")
   repo = $Repo
   overall = $overall
@@ -96,6 +108,7 @@ if ($overall -ne "ok" -and $webhookConfigured -and -not $WebhookDryRun) {
   } catch {
     $checks += New-Check "webhook" "warning" "Failed to post alert webhook: $($_.Exception.Message)"
     $payload = [pscustomobject]@{
+      text = New-WebhookText $Repo $overall $checks
       checked_at = $payload.checked_at
       repo = $payload.repo
       overall = $overall
