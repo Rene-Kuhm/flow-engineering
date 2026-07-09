@@ -83,7 +83,7 @@ class TestVersionFlag:
     def test_version(self) -> None:
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "1.2.0" in result.output
+        assert "1.3.0" in result.output
 
 
 # ---------- REQ-6: `flow save` subcommand ----------
