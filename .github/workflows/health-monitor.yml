@@ -19,73 +19,64 @@ jobs:
 
     steps:
       - name: Check runner and latest CI health
-        shell: bash
+        shell: powershell
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
 
-          echo "Checking self-hosted runner status for ${REPO}"
-          runners_json="$(gh api "repos/${REPO}/actions/runners")"
-          online_runner_count="$(
-            jq '[.runners[]
-              | select(.name | contains("flow-engineering"))
-              | select(.status == "online")
-            ] | length' <<< "${runners_json}"
-          )"
+          Write-Host "Checking self-hosted runner status for $env:REPO"
+          $runners = gh api "repos/$env:REPO/actions/runners" | ConvertFrom-Json
+          $onlineRunners = @(
+            $runners.runners |
+              Where-Object { $_.name -like "*flow-engineering*" -and $_.status -eq "online" }
+          )
 
-          if [[ "${online_runner_count}" -lt 1 ]]; then
-            echo "::error::No online flow-engineering self-hosted runner found."
-            jq '.runners[] | {name, status, busy, labels: [.labels[].name]}' <<< "${runners_json}"
+          if ($onlineRunners.Count -lt 1) {
+            Write-Error "No online flow-engineering self-hosted runner found."
+            $runners.runners |
+              Select-Object name,status,busy,@{Name="labels";Expression={($_.labels.name -join ",")}} |
+              Format-Table -AutoSize
             exit 1
-          fi
+          }
 
-          echo "Online flow-engineering runner count: ${online_runner_count}"
+          Write-Host "Online flow-engineering runner count: $($onlineRunners.Count)"
 
-          echo "Checking latest main push run for tests workflow"
-          latest_run="$(
-            gh run list \
-              --repo "${REPO}" \
-              --workflow tests \
-              --branch main \
-              --event push \
-              --limit 1 \
-              --json databaseId,status,conclusion,createdAt,url \
-              --jq '.[0]'
-          )"
+          Write-Host "Checking latest completed main push run for tests workflow"
+          $latestRunFields = gh run list `
+            --repo "$env:REPO" `
+            --workflow tests `
+            --branch main `
+            --event push `
+            --limit 10 `
+            --json databaseId,status,conclusion,createdAt,url `
+            --jq 'map(select(.status == "completed"))[0] | [.databaseId,.status,.conclusion,.createdAt,.url] | @tsv'
 
-          if [[ -z "${latest_run}" || "${latest_run}" == "null" ]]; then
-            echo "::error::No main push run found for tests workflow."
+          if ([string]::IsNullOrWhiteSpace($latestRunFields)) {
+            Write-Error "No completed main push run found for tests workflow."
             exit 1
-          fi
+          }
 
-          status="$(jq -r '.status' <<< "${latest_run}")"
-          conclusion="$(jq -r '.conclusion' <<< "${latest_run}")"
-          created_at="$(jq -r '.createdAt' <<< "${latest_run}")"
-          url="$(jq -r '.url' <<< "${latest_run}")"
+          $fields = $latestRunFields -split "`t"
+          $databaseId = $fields[0]
+          $status = $fields[1]
+          $conclusion = $fields[2]
+          $createdAtRaw = $fields[3]
+          $url = $fields[4]
 
-          echo "Latest tests run: ${url}"
-          echo "status=${status} conclusion=${conclusion} created_at=${created_at}"
+          Write-Host "Latest completed tests run: $url"
+          Write-Host "database_id=$databaseId status=$status conclusion=$conclusion created_at=$createdAtRaw"
 
-          if [[ "${status}" != "completed" || "${conclusion}" != "success" ]]; then
-            echo "::error::Latest main tests run is not green: status=${status}, conclusion=${conclusion}, url=${url}"
+          if ($conclusion -ne "success") {
+            Write-Error "Latest completed main tests run is not green: conclusion=$conclusion, url=$url"
             exit 1
-          fi
+          }
 
-          age_hours="$(
-            CREATED_AT="${created_at}" python - <<'PY'
-          import datetime as dt
-          import os
+          $createdAt = [DateTimeOffset]::Parse($createdAtRaw).UtcDateTime
+          $ageHours = [int](([DateTime]::UtcNow - $createdAt).TotalHours)
+          Write-Host "Latest green CI age: ${ageHours}h"
 
-          created = dt.datetime.fromisoformat(os.environ["CREATED_AT"].replace("Z", "+00:00"))
-          now = dt.datetime.now(dt.UTC)
-          print(int((now - created).total_seconds() // 3600))
-          PY
-          )"
-
-          echo "Latest green CI age: ${age_hours}h"
-
-          if [[ "${age_hours}" -gt "${HEALTH_MAX_CI_AGE_HOURS}" ]]; then
-            echo "::error::Latest green main tests run is stale: ${age_hours}h > ${HEALTH_MAX_CI_AGE_HOURS}h"
+          if ($ageHours -gt [int]$env:HEALTH_MAX_CI_AGE_HOURS) {
+            Write-Error "Latest green main tests run is stale: ${ageHours}h > $env:HEALTH_MAX_CI_AGE_HOURS h"
             exit 1
-          fi
+          }
 
-          echo "Health monitor passed."
+          Write-Host "Health monitor passed."

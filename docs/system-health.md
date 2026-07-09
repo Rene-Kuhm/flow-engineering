@@ -36,7 +36,7 @@ Workflow: `.github/workflows/health-monitor.yml`
 The monitor checks:
 
 - at least one online runner whose name contains `flow-engineering`;
-- latest `main` push run for the `tests` workflow is `completed/success`;
+- latest completed `main` push run for the `tests` workflow is successful;
 - latest green `main` tests run is not older than `HEALTH_MAX_CI_AGE_HOURS`.
 
 This workflow currently uses the self-hosted runner because GitHub-hosted jobs
