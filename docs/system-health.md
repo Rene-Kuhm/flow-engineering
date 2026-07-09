@@ -10,10 +10,14 @@ and is memory helping instead of adding noise.
 .\scripts\system_health.ps1
 ```
 
-GitHub also runs `health-monitor` every six hours on GitHub-hosted runners. It
-fails visibly if the self-hosted runner is offline, if the latest `main` tests
-run is not green, or if the latest green run is older than the configured stale
-threshold.
+GitHub also runs `health-monitor` every six hours. It fails visibly if the
+latest `main` tests run is not green or if the latest green run is older than
+the configured stale threshold.
+
+The current repository cannot use GitHub-hosted runners because the account
+billing gate prevents those jobs from starting. Until billing or an external
+monitor is available, runner-down detection remains manual through this health
+command.
 
 Expected healthy state:
 
@@ -35,8 +39,10 @@ The monitor checks:
 - latest `main` push run for the `tests` workflow is `completed/success`;
 - latest green `main` tests run is not older than `HEALTH_MAX_CI_AGE_HOURS`.
 
-This workflow intentionally uses `ubuntu-latest`, not the self-hosted runner, so
-runner outages are still detectable.
+This workflow currently uses the self-hosted runner because GitHub-hosted jobs
+are blocked by account billing. That means it verifies CI freshness and runner
+reachability when the runner is alive, but a fully out-of-band runner-down alert
+requires GitHub-hosted billing to be fixed or an external monitor.
 
 ## Manual runner health
 
