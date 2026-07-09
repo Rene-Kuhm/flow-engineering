@@ -71,7 +71,7 @@ Goal: every change should be understandable, reversible, and auditable.
 
 Goal: prevent regressions without testing everything blindly.
 
-- [ ] Add smoke test for CLI installation and basic commands.
+- [x] Add smoke test for CLI installation and basic commands. See `tests/integration/test_cli_smoke.py`.
 - [ ] Add tests for `scripts/system_health.ps1` output expectations where practical.
 - [ ] Define minimum regression test set for drift-detection changes.
 - [ ] Keep bug fixes paired with regression tests.
