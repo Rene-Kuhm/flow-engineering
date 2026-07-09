@@ -189,6 +189,7 @@ class TestEmbeddingProviderLazyImport:
         # Within a normal pytest run, importing the module is idempotent.
         # This test ensures the side-effect scan above doesn't poison us.
         import flow_engineering.embedding_provider  # noqa: F401
+
         # torch should still not be in modules just from importing our module.
         # (We don't assert absence here because some other test in the same
         # process might have imported torch for an unrelated reason.)
@@ -278,9 +279,7 @@ class TestSentenceTransformersProviderMetadata:
 class TestSentenceTransformersProviderMissingTorch:
     """REQ-19 T2.1 — when torch is missing, construction raises the typed error."""
 
-    def test_raises_embedding_provider_unavailable_when_torch_missing(
-        self, monkeypatch
-    ) -> None:
+    def test_raises_embedding_provider_unavailable_when_torch_missing(self, monkeypatch) -> None:
         # Patch builtins.__import__ so any ``import torch`` raises ImportError,
         # even if a cached sys.modules entry exists.
         import builtins
@@ -314,9 +313,7 @@ class TestSentenceTransformersProviderMissingTorch:
         real_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
-            if name == "sentence_transformers" or name.startswith(
-                "sentence_transformers."
-            ):
+            if name == "sentence_transformers" or name.startswith("sentence_transformers."):
                 raise ImportError(f"No module named {name!r}")
             return real_import(name, *args, **kwargs)
 
@@ -338,13 +335,9 @@ class TestSentenceTransformersProviderLazyModelLoad:
         from flow_engineering.embedding_provider import SentenceTransformersProvider
 
         _ensure_torch_stub(monkeypatch)
-        construct_log, _encode_log = _install_fake_sentence_transformers(
-            monkeypatch
-        )
+        construct_log, _encode_log = _install_fake_sentence_transformers(monkeypatch)
         SentenceTransformersProvider("lazy-test-model")
-        assert construct_log == [], (
-            f"Model loaded at construction: {construct_log}"
-        )
+        assert construct_log == [], f"Model loaded at construction: {construct_log}"
 
     def test_model_loaded_on_first_embed_call(self, monkeypatch) -> None:
         from flow_engineering.embedding_provider import SentenceTransformersProvider
@@ -368,9 +361,7 @@ class TestSentenceTransformersProviderLazyModelLoad:
         provider.embed(["first"])
         provider.embed(["second", "third"])
         provider.embed([])
-        assert construct_log == ["lazy-test-model"], (
-            f"Model re-instantiated: {construct_log}"
-        )
+        assert construct_log == ["lazy-test-model"], f"Model re-instantiated: {construct_log}"
         assert encode_log == [["first"], ["second", "third"]]
 
     def test_embed_returns_n_by_384(self, monkeypatch) -> None:

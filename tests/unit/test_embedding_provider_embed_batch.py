@@ -155,9 +155,7 @@ def _install_fake_sentence_transformers(
 class TestSentenceTransformersEmbedBatch:
     """``SentenceTransformersProvider.embed_batch`` uses the inherited default."""
 
-    def test_embed_batch_chunks_via_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_embed_batch_chunks_via_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from flow_engineering.embedding_provider import SentenceTransformersProvider
 
         _ensure_torch_stub(monkeypatch)

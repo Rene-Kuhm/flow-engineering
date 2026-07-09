@@ -150,9 +150,7 @@ class TestVectorSearchDisabled:
                 backend.mem_search_semantic("drift detection")
         finally:
             after = {"torch", "sentence_transformers", "sqlite_vec"} & set(sys.modules)
-            assert before == after, (
-                f"Vector search gate leaked heavy imports: {after - before}"
-            )
+            assert before == after, f"Vector search gate leaked heavy imports: {after - before}"
 
 
 class TestFederatedSearch:
