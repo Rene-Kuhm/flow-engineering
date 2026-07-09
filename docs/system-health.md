@@ -35,14 +35,16 @@ Workflow: `.github/workflows/health-monitor.yml`
 
 The monitor checks:
 
-- at least one online runner whose name contains `flow-engineering`;
+- self-hosted runner can start the monitor job;
 - latest completed `main` push run for the `tests` workflow is successful;
 - latest green `main` tests run is not older than `HEALTH_MAX_CI_AGE_HOURS`.
 
 This workflow currently uses the self-hosted runner because GitHub-hosted jobs
 are blocked by account billing. That means it verifies CI freshness and runner
-reachability when the runner is alive, but a fully out-of-band runner-down alert
-requires GitHub-hosted billing to be fixed or an external monitor.
+reachability by successfully starting on the runner, but a fully out-of-band
+runner-down alert requires GitHub-hosted billing to be fixed or an external
+monitor. The default `GITHUB_TOKEN` cannot list repository runners through the
+runner API, so the monitor does not call that endpoint.
 
 ## Manual runner health
 
