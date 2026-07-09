@@ -4,6 +4,7 @@ Confirms that:
 - pyproject.toml has [tool.coverage.report] with fail_under = 80
 - .github/workflows/test.yml runs pytest with --cov-fail-under=80
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,9 +27,7 @@ def _read_test_workflow() -> str:
 class TestCoveragePyproject:
     def test_has_coverage_report_section(self) -> None:
         text = _read_pyproject()
-        assert "[tool.coverage.report]" in text, (
-            "pyproject.toml must define [tool.coverage.report]"
-        )
+        assert "[tool.coverage.report]" in text, "pyproject.toml must define [tool.coverage.report]"
 
     def test_fail_under_is_80(self) -> None:
         text = _read_pyproject()

@@ -1,4 +1,5 @@
 """Unit tests for daemon.py and timeline.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,10 +18,15 @@ def _make_change(tmp_path: Path, change: str, status: ChangeStatus) -> Path:
     fe.mkdir(parents=True)
     sm = StateMachine.create(change, fe)
     full_path = [
-        ChangeStatus.EXPLORED, ChangeStatus.PROPOSED, ChangeStatus.DESIGNED,
-        ChangeStatus.SPECIFIED, ChangeStatus.TASKED,
-        ChangeStatus.APPLYING, ChangeStatus.VERIFYING,
-        ChangeStatus.ARCHIVING, ChangeStatus.DONE,
+        ChangeStatus.EXPLORED,
+        ChangeStatus.PROPOSED,
+        ChangeStatus.DESIGNED,
+        ChangeStatus.SPECIFIED,
+        ChangeStatus.TASKED,
+        ChangeStatus.APPLYING,
+        ChangeStatus.VERIFYING,
+        ChangeStatus.ARCHIVING,
+        ChangeStatus.DONE,
     ]
     for to in full_path:
         sm.transition(to)

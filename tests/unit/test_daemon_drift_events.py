@@ -147,8 +147,13 @@ class TestHandleApplyProgressEvent:
         def _stub(*a: Any, **kw: Any) -> DriftReport:
             called["n"] += 1
             return DriftReport(
-                change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime=None,
-                decisions_total=0, bindings_total=0, class_counts={}, findings=[],
+                change_name="my-change",
+                scanned_at="1970-01-01T00:00:00Z",
+                graph_mtime=None,
+                decisions_total=0,
+                bindings_total=0,
+                class_counts={},
+                findings=[],
             )
 
         monkeypatch.setattr(daemon.decision_drift, "scan_change", _stub)
@@ -171,13 +176,16 @@ class TestHandleApplyProgressEvent:
         """A missing graph.json MUST log unable_to_verify once and return
         the report — watcher MUST stay alive (no exception)."""
         report = DriftReport(
-            change_name="my-change", scanned_at="1970-01-01T00:00:00Z", graph_mtime=None,
-            decisions_total=0, bindings_total=0, class_counts={},
-            findings=[], graph_unavailable=True,
+            change_name="my-change",
+            scanned_at="1970-01-01T00:00:00Z",
+            graph_mtime=None,
+            decisions_total=0,
+            bindings_total=0,
+            class_counts={},
+            findings=[],
+            graph_unavailable=True,
         )
-        monkeypatch.setattr(
-            daemon.decision_drift, "scan_change", lambda *a, **kw: report
-        )
+        monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
         summaries: list[str] = []
 
         result = daemon.handle_apply_progress_event(
@@ -207,13 +215,9 @@ class TestHandleApplyProgressEvent:
             class_counts={DriftClass.STILL_VALID: 1},
             findings=[_make_finding(obs_id=1, drift_class=DriftClass.STILL_VALID)],
         )
-        monkeypatch.setattr(
-            daemon.decision_drift, "scan_change", lambda *a, **kw: report
-        )
+        monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
         recorded: list[DriftReport] = []
-        monkeypatch.setattr(
-            observability, "record_drift_summary", lambda r: recorded.append(r)
-        )
+        monkeypatch.setattr(observability, "record_drift_summary", lambda r: recorded.append(r))
 
         daemon.handle_apply_progress_event(
             "my-change",
@@ -293,9 +297,7 @@ class TestStillValidSilence:
             findings=[],
             graph_unavailable=True,
         )
-        monkeypatch.setattr(
-            daemon.decision_drift, "scan_change", lambda *a, **kw: report
-        )
+        monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
         summaries: list[str] = []
 
         result = daemon.handle_apply_progress_event(
@@ -386,13 +388,15 @@ class TestDriftEventLogWiring:
                 self.path = path
 
             def append(self, event: object) -> None:
-                appended.append((
-                    event.change,
-                    event.decision_id,
-                    event.binding_id,
-                    event.event_class,
-                    event.detected_at,
-                ))
+                appended.append(
+                    (
+                        event.change,
+                        event.decision_id,
+                        event.binding_id,
+                        event.event_class,
+                        event.detected_at,
+                    )
+                )
 
         monkeypatch.setattr(daemon, "DriftEventLog", _FakeLog)
 
@@ -416,9 +420,7 @@ class TestDriftEventLogWiring:
                 _make_finding(obs_id=11, drift_class=DriftClass.LABEL_DRIFT),
             ],
         )
-        monkeypatch.setattr(
-            daemon.decision_drift, "scan_change", lambda *a, **kw: report
-        )
+        monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
 
         daemon.handle_apply_progress_event(
             "obs",
@@ -475,9 +477,7 @@ class TestDriftEventLogWiring:
                 _make_finding(obs_id=3, drift_class=DriftClass.STILL_VALID),
             ],
         )
-        monkeypatch.setattr(
-            daemon.decision_drift, "scan_change", lambda *a, **kw: report
-        )
+        monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
 
         daemon.handle_apply_progress_event(
             "obs",
@@ -517,9 +517,7 @@ class TestDriftEventLogWiring:
             class_counts={DriftClass.STALE_ID: 1},
             findings=[_make_finding(obs_id=42, drift_class=DriftClass.STALE_ID)],
         )
-        monkeypatch.setattr(
-            daemon.decision_drift, "scan_change", lambda *a, **kw: report
-        )
+        monkeypatch.setattr(daemon.decision_drift, "scan_change", lambda *a, **kw: report)
 
         daemon.handle_apply_progress_event(
             "obs",
@@ -552,9 +550,7 @@ class TestDriftEventLogWiring:
 class TestStartWatchDrift:
     """REQ-15: start_watch(..., drift=True) wires drift handler."""
 
-    def test_drift_mode_message_mentions_drift(
-        self, tmp_path: Path, metrics_path
-    ) -> None:
+    def test_drift_mode_message_mentions_drift(self, tmp_path: Path, metrics_path) -> None:
         """start_watch(change, target, drift=True) returns a message
         that explicitly mentions the drift mode."""
         _make_change(tmp_path, "my-change")
@@ -565,9 +561,7 @@ class TestStartWatchDrift:
         assert started is True
         assert "drift" in msg.lower()
 
-    def test_non_drift_mode_unchanged(
-        self, tmp_path: Path, metrics_path
-    ) -> None:
+    def test_non_drift_mode_unchanged(self, tmp_path: Path, metrics_path) -> None:
         """start_watch(change, target, drift=False) is byte-identical to
         the legacy message — no extra text."""
         _make_change(tmp_path, "my-change")
@@ -579,9 +573,7 @@ class TestStartWatchDrift:
         assert "exploration.md" in msg
         assert "Ctrl+C" in msg
 
-    def test_default_drift_is_false(
-        self, tmp_path: Path, metrics_path
-    ) -> None:
+    def test_default_drift_is_false(self, tmp_path: Path, metrics_path) -> None:
         """start_watch without an explicit drift kwarg defaults to False."""
         _make_change(tmp_path, "my-change")
 
@@ -607,9 +599,7 @@ class TestMaybeEmitDrift:
         event.is_directory = True
         event.src_path = str(tmp_path / "apply-progress.json")
 
-        daemon._maybe_emit_drift(
-            event, "my-change", tmp_path, None, None, lambda *a, **kw: None
-        )
+        daemon._maybe_emit_drift(event, "my-change", tmp_path, None, None, lambda *a, **kw: None)
 
         assert called == []
 
@@ -624,9 +614,7 @@ class TestMaybeEmitDrift:
         event.is_directory = False
         event.src_path = str(tmp_path / "exploration.md")
 
-        daemon._maybe_emit_drift(
-            event, "my-change", tmp_path, None, None, lambda *a, **kw: None
-        )
+        daemon._maybe_emit_drift(event, "my-change", tmp_path, None, None, lambda *a, **kw: None)
 
         assert called == []
 
@@ -642,9 +630,7 @@ class TestMaybeEmitDrift:
         event.src_path = None
 
         # Must not raise.
-        daemon._maybe_emit_drift(
-            event, "my-change", tmp_path, None, None, lambda *a, **kw: None
-        )
+        daemon._maybe_emit_drift(event, "my-change", tmp_path, None, None, lambda *a, **kw: None)
         assert called == []
 
 

@@ -113,18 +113,14 @@ def test_where_cmd_text_default_groups_by_project(tmp_path: Path) -> None:
     assert "TOTAL" in out.upper()
     # ASCII-safe: no Unicode box-drawing chars (codepoints > 0x7E).
     for ch in out:
-        assert ord(ch) < 0x80, (
-            f"non-ASCII char {ch!r} (U+{ord(ch):04X}) in text output"
-        )
+        assert ord(ch) < 0x80, f"non-ASCII char {ch!r} (U+{ord(ch):04X}) in text output"
 
 
 def test_where_cmd_json_envelope_structure(tmp_path: Path) -> None:
     """T2: --format=json envelope has version first + totals + results[] shape."""
     make_fake_workspace_with_code(tmp_path, ["proj-a"])
 
-    result = runner.invoke(
-        main, ["where", "foo", "--root", str(tmp_path), "--format", "json"]
-    )
+    result = runner.invoke(main, ["where", "foo", "--root", str(tmp_path), "--format", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     keys = list(payload.keys())
@@ -145,9 +141,7 @@ def test_where_cmd_tsv_header_and_body(tmp_path: Path) -> None:
     """T3: --format=tsv emits header + tab-separated body with newlines escaped."""
     make_fake_workspace_with_code(tmp_path, ["proj-a"])
 
-    result = runner.invoke(
-        main, ["where", "foo", "--root", str(tmp_path), "--format", "tsv"]
-    )
+    result = runner.invoke(main, ["where", "foo", "--root", str(tmp_path), "--format", "tsv"])
     assert result.exit_code == 0, result.output
     lines = result.output.splitlines()
     # First line is the locked header.
@@ -163,9 +157,7 @@ def test_where_cmd_regex_valid_and_invalid(tmp_path: Path) -> None:
     make_fake_workspace_with_code(tmp_path, ["proj-a"])
 
     # Valid regex matches def foo / def test_foo.
-    good = runner.invoke(
-        main, ["where", "^def ", "--root", str(tmp_path), "--regex"]
-    )
+    good = runner.invoke(main, ["where", "^def ", "--root", str(tmp_path), "--regex"])
     assert good.exit_code == 0, good.output
     assert "def " in good.output
 
@@ -174,9 +166,7 @@ def test_where_cmd_regex_valid_and_invalid(tmp_path: Path) -> None:
     # Sanity: pytest confirms the pattern is genuinely unparseable.
     with pytest.raises(re.error):
         re.compile(bad_pattern)
-    bad = runner.invoke(
-        main, ["where", bad_pattern, "--root", str(tmp_path), "--regex"]
-    )
+    bad = runner.invoke(main, ["where", bad_pattern, "--root", str(tmp_path), "--regex"])
     assert bad.exit_code == 2, bad.output
 
 
@@ -187,18 +177,12 @@ def test_where_cmd_limit_caps_hits(tmp_path: Path) -> None:
     # Uncapped run produces many matches.
     uncapped = runner.invoke(main, ["where", "foo", "--root", str(tmp_path)])
     assert uncapped.exit_code == 0, uncapped.output
-    uncapped_match_lines = sum(
-        1 for ln in uncapped.output.splitlines() if "foo" in ln.lower()
-    )
+    uncapped_match_lines = sum(1 for ln in uncapped.output.splitlines() if "foo" in ln.lower())
 
     # Capped run produces at most --limit matches.
-    capped = runner.invoke(
-        main, ["where", "foo", "--root", str(tmp_path), "--limit", "1"]
-    )
+    capped = runner.invoke(main, ["where", "foo", "--root", str(tmp_path), "--limit", "1"])
     assert capped.exit_code == 0, capped.output
-    capped_match_lines = sum(
-        1 for ln in capped.output.splitlines() if "foo" in ln.lower()
-    )
+    capped_match_lines = sum(1 for ln in capped.output.splitlines() if "foo" in ln.lower())
     # Capping must reduce (or keep equal) the match-line count.
     assert capped_match_lines <= uncapped_match_lines
     # The fixture has multiple matches; with limit=1 the cap is exercised.
@@ -238,9 +222,7 @@ def test_where_cmd_exit_code_trio(tmp_path: Path) -> None:
     assert on_no_match.exit_code == 1, on_no_match.output
 
     # Invalid regex → exit 2 (re.compile failure at CLI boundary).
-    on_error = runner.invoke(
-        main, ["where", "[bad", "--root", str(tmp_path), "--regex"]
-    )
+    on_error = runner.invoke(main, ["where", "[bad", "--root", str(tmp_path), "--regex"])
     assert on_error.exit_code == 2, on_error.output
 
 
@@ -249,9 +231,7 @@ def test_where_cmd_engram_noop_identity(tmp_path: Path) -> None:
     make_fake_workspace_with_code(tmp_path, ["proj-a"])
 
     without = runner.invoke(main, ["where", "foo", "--root", str(tmp_path)])
-    with_flag = runner.invoke(
-        main, ["where", "foo", "--root", str(tmp_path), "--engram"]
-    )
+    with_flag = runner.invoke(main, ["where", "foo", "--root", str(tmp_path), "--engram"])
 
     assert without.exit_code == with_flag.exit_code == 0, (
         without.output,
@@ -276,8 +256,7 @@ def test_where_cmd_byte_identical_across_invocations(tmp_path: Path) -> None:
     assert one.exit_code == 0, one.output
     assert two.exit_code == 0, two.output
     assert one.output == two.output, (
-        f"AC9 byte-identical violation:\n  first:  {one.output!r}\n"
-        f"  second: {two.output!r}"
+        f"AC9 byte-identical violation:\n  first:  {one.output!r}\n  second: {two.output!r}"
     )
 
 
@@ -293,4 +272,3 @@ def test_where_cmd_scope_discipline_excludes_node_modules(tmp_path: Path) -> Non
     assert result.exit_code == 0, result.output
     assert "node_modules" not in result.output
     assert "bar.js" not in result.output
-
