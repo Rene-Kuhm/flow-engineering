@@ -36,7 +36,12 @@ def metrics_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _make_obs(
-    *, obs_id: int, title: str, content: str, created_at: int = 1000, updated_at: int = 1000,
+    *,
+    obs_id: int,
+    title: str,
+    content: str,
+    created_at: int = 1000,
+    updated_at: int = 1000,
 ) -> dict:
     """Build an observation dict shaped like InMemoryBackend.mem_save output."""
     return {
@@ -75,9 +80,7 @@ def seeded_backend(monkeypatch: pytest.MonkeyPatch):
             backend.next_id = max(backend.next_id, o["id"] + 1)
             observations[o["id"]] = o
 
-    monkeypatch.setattr(
-        "flow_engineering.cli._default_save_backend", lambda: backend
-    )
+    monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
     return backend, _seed, observations
 
 
@@ -87,18 +90,25 @@ def seeded_backend(monkeypatch: pytest.MonkeyPatch):
 class TestInspectBasic:
     """REQ-7 scenario: render decisions with their code_refs as a table."""
 
-    def test_inspect_with_one_binding_renders_one_row(
-        self, seeded_backend, metrics_path
-    ) -> None:
+    def test_inspect_with_one_binding_renders_one_row(self, seeded_backend, metrics_path) -> None:
         from flow_engineering.binding import CodeRef
 
         _, _seed, _ = seeded_backend
-        cref = CodeRef(project="insyd", id="node_x", label="X",
-                       file="src/x.py", line=10, confidence=0.9, source="manual")
+        cref = CodeRef(
+            project="insyd",
+            id="node_x",
+            label="X",
+            file="src/x.py",
+            line=10,
+            confidence=0.9,
+            source="manual",
+        )
         content = "## Decision\n\nUse X.\n" + format_code_refs_block([cref], source="manual")
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=content),
-        ])
+        _seed(
+            [
+                _make_obs(obs_id=1, title="my-change/propose", content=content),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output
@@ -112,14 +122,23 @@ class TestInspectBasic:
 
         _, _seed, _ = seeded_backend
         refs = [
-            CodeRef(project="insyd", id=f"node_{i}", label=f"L{i}",
-                    file=f"src/{i}.py", line=i, confidence=0.9, source="manual")
+            CodeRef(
+                project="insyd",
+                id=f"node_{i}",
+                label=f"L{i}",
+                file=f"src/{i}.py",
+                line=i,
+                confidence=0.9,
+                source="manual",
+            )
             for i in range(3)
         ]
         content = "## Decision\n\nMulti.\n" + format_code_refs_block(refs, source="manual")
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=content),
-        ])
+        _seed(
+            [
+                _make_obs(obs_id=1, title="my-change/propose", content=content),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output
@@ -127,14 +146,14 @@ class TestInspectBasic:
         for i in range(3):
             assert f"node_{i}" in result.output
 
-    def test_inspect_with_no_bindings_shows_dash(
-        self, seeded_backend, metrics_path
-    ) -> None:
+    def test_inspect_with_no_bindings_shows_dash(self, seeded_backend, metrics_path) -> None:
         _, _seed, _ = seeded_backend
         content = "## Decision\n\nNo refs.\n" + format_code_refs_block([], source="unbound")
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=content),
-        ])
+        _seed(
+            [
+                _make_obs(obs_id=1, title="my-change/propose", content=content),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output
@@ -148,18 +167,16 @@ class TestInspectBasic:
 class TestInspectMalformed:
     """REQ-7 scenario: malformed block in one row does not blank the table."""
 
-    def test_inspect_isolates_malformed_block(
-        self, seeded_backend, metrics_path
-    ) -> None:
+    def test_inspect_isolates_malformed_block(self, seeded_backend, metrics_path) -> None:
         _, _seed, _ = seeded_backend
-        good_content = (
-            "## Decision\n\nGood.\n" + format_code_refs_block([], source="manual")
-        )
+        good_content = "## Decision\n\nGood.\n" + format_code_refs_block([], source="manual")
         bad_content = "## Decision\n\nBad.\n<!-- code_refs -->\n{not json}\n"
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=good_content),
-            _make_obs(obs_id=2, title="my-change/design", content=bad_content),
-        ])
+        _seed(
+            [
+                _make_obs(obs_id=1, title="my-change/propose", content=good_content),
+                _make_obs(obs_id=2, title="my-change/design", content=bad_content),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output
@@ -175,9 +192,7 @@ class TestInspectMalformed:
 class TestInspectEmpty:
     """REQ-7: change with no observations renders gracefully."""
 
-    def test_inspect_with_no_observations_succeeds(
-        self, seeded_backend, metrics_path
-    ) -> None:
+    def test_inspect_with_no_observations_succeeds(self, seeded_backend, metrics_path) -> None:
         result = runner.invoke(main, ["inspect", "no-such-change"])
         assert result.exit_code == 0, result.output
         assert "no" in result.output.lower() or "0" in result.output
@@ -189,18 +204,25 @@ class TestInspectEmpty:
 class TestInspectJson:
     """REQ-7: --json flag emits machine-readable JSON."""
 
-    def test_inspect_json_emits_valid_json(
-        self, seeded_backend, metrics_path
-    ) -> None:
+    def test_inspect_json_emits_valid_json(self, seeded_backend, metrics_path) -> None:
         from flow_engineering.binding import CodeRef
 
         _, _seed, _ = seeded_backend
-        cref = CodeRef(project="insyd", id="node_y", label="Y",
-                       file="src/y.py", line=5, confidence=0.8, source="manual")
+        cref = CodeRef(
+            project="insyd",
+            id="node_y",
+            label="Y",
+            file="src/y.py",
+            line=5,
+            confidence=0.8,
+            source="manual",
+        )
         content = "## Decision\n\nY.\n" + format_code_refs_block([cref], source="manual")
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=content),
-        ])
+        _seed(
+            [
+                _make_obs(obs_id=1, title="my-change/propose", content=content),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change", "--json"])
         assert result.exit_code == 0, result.output
@@ -218,45 +240,69 @@ class TestInspectJson:
 class TestInspectFreshness:
     """REQ-7: freshness column shows age or stale warning."""
 
-    def test_inspect_freshness_recent(
-        self, seeded_backend, metrics_path, monkeypatch
-    ) -> None:
+    def test_inspect_freshness_recent(self, seeded_backend, metrics_path, monkeypatch) -> None:
         """An observation saved recently shows 'Xd ago' (no stale warning)."""
         import time
 
         from flow_engineering.binding import CodeRef
 
         _, _seed, _ = seeded_backend
-        cref = CodeRef(project="insyd", id="n_recent", label="R",
-                       file="src/r.py", line=1, confidence=0.9, source="manual")
+        cref = CodeRef(
+            project="insyd",
+            id="n_recent",
+            label="R",
+            file="src/r.py",
+            line=1,
+            confidence=0.9,
+            source="manual",
+        )
         content = "## Decision\n\nR.\n" + format_code_refs_block([cref], source="manual")
         now_ms = int(time.time() * 1000)
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=content,
-                      created_at=now_ms - 5_000, updated_at=now_ms - 5_000),
-        ])
+        _seed(
+            [
+                _make_obs(
+                    obs_id=1,
+                    title="my-change/propose",
+                    content=content,
+                    created_at=now_ms - 5_000,
+                    updated_at=now_ms - 5_000,
+                ),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output
         # Recent should NOT contain stale warning.
         assert "stale" not in result.output.lower()
 
-    def test_inspect_freshness_stale(
-        self, seeded_backend, metrics_path, monkeypatch
-    ) -> None:
+    def test_inspect_freshness_stale(self, seeded_backend, metrics_path, monkeypatch) -> None:
         """An observation >30 days old shows a stale warning."""
         from flow_engineering.binding import CodeRef
 
         _, _seed, _ = seeded_backend
-        cref = CodeRef(project="insyd", id="n_old", label="O",
-                       file="src/o.py", line=1, confidence=0.9, source="manual")
+        cref = CodeRef(
+            project="insyd",
+            id="n_old",
+            label="O",
+            file="src/o.py",
+            line=1,
+            confidence=0.9,
+            source="manual",
+        )
         content = "## Decision\n\nO.\n" + format_code_refs_block([cref], source="manual")
         # 60 days ago in ms.
         sixty_days_ms = 60 * 24 * 60 * 60 * 1000
-        _seed([
-            _make_obs(obs_id=1, title="my-change/propose", content=content,
-                      created_at=sixty_days_ms, updated_at=sixty_days_ms),
-        ])
+        _seed(
+            [
+                _make_obs(
+                    obs_id=1,
+                    title="my-change/propose",
+                    content=content,
+                    created_at=sixty_days_ms,
+                    updated_at=sixty_days_ms,
+                ),
+            ]
+        )
 
         result = runner.invoke(main, ["inspect", "my-change"])
         assert result.exit_code == 0, result.output

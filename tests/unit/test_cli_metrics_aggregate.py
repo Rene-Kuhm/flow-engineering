@@ -60,10 +60,7 @@ def _make_events(name: str, values: list[float], ts: datetime | None = None) -> 
     """Build a list of JSONL event dicts for ``name`` with the given numeric ``values``."""
     if ts is None:
         ts = datetime.now(UTC)
-    return [
-        {"name": name, "fields": {"value": v}, "ts": _iso(ts)}
-        for v in values
-    ]
+    return [{"name": name, "fields": {"value": v}, "ts": _iso(ts)} for v in values]
 
 
 # ---------- happy-path text format ----------
@@ -73,7 +70,9 @@ class TestMetricsAggregateText:
     """``flow metrics aggregate`` default text format emits the aligned table."""
 
     def test_metrics_aggregate_default_p95_text_format(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Default invocation emits an aligned table containing the counter name + p95 value."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -93,7 +92,9 @@ class TestMetricsAggregateText:
         assert "95" in result.output
 
     def test_metrics_aggregate_multiple_percentiles(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--percentile p50 --percentile p99`` emits a table with both columns."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -102,10 +103,14 @@ class TestMetricsAggregateText:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "aggregate",
-                "--percentile", "p50",
-                "--percentile", "p99",
+            main,
+            [
+                "metrics",
+                "aggregate",
+                "--percentile",
+                "p50",
+                "--percentile",
+                "p99",
             ],
         )
 
@@ -129,24 +134,30 @@ class TestMetricsAggregateFilters:
     """``flow metrics aggregate`` honors ``--window`` / ``--domain`` filter flags."""
 
     def test_metrics_aggregate_with_window_filter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--window=1h`` filters BEFORE reservoir sampling (out-of-window events excluded)."""
         metrics_file = tmp_path / "metrics.jsonl"
         now = datetime.now(UTC)
         # 50 fresh (in-window) + 50 stale (out-of-window).
         fresh = _make_events(
-            "fresh_counter", [float(i) for i in range(1, 51)], ts=now,
+            "fresh_counter",
+            [float(i) for i in range(1, 51)],
+            ts=now,
         )
         stale = _make_events(
-            "stale_counter", [float(i) for i in range(51, 101)],
+            "stale_counter",
+            [float(i) for i in range(51, 101)],
             ts=now - timedelta(hours=2),  # outside 1h window
         )
         _write_jsonl(metrics_file, fresh + stale)
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "aggregate", "--window", "1h"],
+            main,
+            ["metrics", "aggregate", "--window", "1h"],
         )
 
         assert result.exit_code == 0, (
@@ -163,7 +174,9 @@ class TestMetricsAggregateJson:
     """``--format json`` emits the result as a flat JSON dict."""
 
     def test_metrics_aggregate_json_format(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--format json`` emits ``{counter_p{N}: value}`` JSON dict to stdout."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -172,7 +185,8 @@ class TestMetricsAggregateJson:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "aggregate", "--format", "json"],
+            main,
+            ["metrics", "aggregate", "--format", "json"],
         )
 
         assert result.exit_code == 0, (
@@ -192,7 +206,9 @@ class TestMetricsAggregateErrors:
     """``flow metrics aggregate`` maps invalid flags to exit code 2 (D9)."""
 
     def test_metrics_aggregate_invalid_percentile_exits_2(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--percentile=garbage`` is rejected by ``click.Choice`` → exit 2."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -200,7 +216,8 @@ class TestMetricsAggregateErrors:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "aggregate", "--percentile", "garbage"],
+            main,
+            ["metrics", "aggregate", "--percentile", "garbage"],
         )
 
         assert result.exit_code == 2, (
@@ -209,7 +226,9 @@ class TestMetricsAggregateErrors:
         )
 
     def test_metrics_aggregate_empty_sink_emits_no_counters(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Empty JSONL sink → empty aggregate result + exit 0 (D8 default-empty)."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -219,8 +238,7 @@ class TestMetricsAggregateErrors:
         result = runner.invoke(main, ["metrics", "aggregate"])
 
         assert result.exit_code == 0, (
-            f"expected exit 0 (default-empty); got {result.exit_code}. "
-            f"output={result.output!r}"
+            f"expected exit 0 (default-empty); got {result.exit_code}. output={result.output!r}"
         )
         # Empty result → table with header only, no counter rows.
         assert "Counter" in result.output
