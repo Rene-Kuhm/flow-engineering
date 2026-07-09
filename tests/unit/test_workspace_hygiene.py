@@ -65,7 +65,9 @@ def test_registry_model_rejects_unknown_fields() -> None:
         Registry.model_validate({"version": 1, "future_field": "x"})
 
 
-def test_registry_path_resolves_under_path_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registry_path_resolves_under_path_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """T-1: ``registry_path()`` re-evaluates ``Path.home()`` on every call.
 
     Cross-platform: tests stub ``Path.home()`` to point at ``tmp_path`` and
@@ -115,7 +117,9 @@ def test_registry_error_is_runtime_error_with_user_message() -> None:
 # =============================================================================
 
 
-def test_load_registry_missing_file_returns_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_registry_missing_file_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """T-2: missing file → ``Registry(version=1, projects=[], archived=[])``.
 
     First-run UX: the user has never run `flow workspace fix` or `flow workspace
@@ -214,7 +218,9 @@ def test_save_registry_atomic_no_partial_on_crash(
     assert leftovers == [], f"temp files left behind: {leftovers}"
 
 
-def test_load_registry_raises_on_malformed_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_registry_raises_on_malformed_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """T-2: malformed JSON → ``RegistryError`` (not bare ``JSONDecodeError``).
 
     The CLI layer catches ``RegistryError`` uniformly. If the loader leaked a
@@ -350,9 +356,7 @@ def test_is_empty_project_false_cases(tmp_path: Path, files: list[str]) -> None:
 
 def test_snapshot_project_creates_manifest_and_files(tmp_path: Path) -> None:
     """T-5: snapshot copies files + writes a manifest with the 7 spec fields."""
-    project = make_fake_project(
-        "mockup", with_files=["README.md", ".gitignore"], parent=tmp_path
-    )
+    project = make_fake_project("mockup", with_files=["README.md", ".gitignore"], parent=tmp_path)
     backup_root = tmp_path / "backups"
 
     snapshot = wh._snapshot_project(project, backup_root, rule_id="R2")
@@ -385,9 +389,7 @@ def test_snapshot_project_creates_manifest_and_files(tmp_path: Path) -> None:
 
 def test_snapshot_project_excludes_dotgit(tmp_path: Path) -> None:
     """T-5: ``.git/`` MUST NOT be copied into the snapshot (it's a new repo)."""
-    project = make_fake_project(
-        "mockup", with_files=["README.md"], with_git=False, parent=tmp_path
-    )
+    project = make_fake_project("mockup", with_files=["README.md"], with_git=False, parent=tmp_path)
     # Add a real .git/ after construction (with a sentinel file).
     git_dir = project / ".git"
     git_dir.mkdir()
@@ -452,9 +454,7 @@ def test_pollution_protocol_restore_on_verify_fail(
     triple restores from the snapshot: ``.git/`` is removed and the
     pre-mutation file content is back.
     """
-    project = make_fake_project(
-        "mockup", with_files=["README.md"], parent=tmp_path
-    )
+    project = make_fake_project("mockup", with_files=["README.md"], parent=tmp_path)
     backup_root = tmp_path / "backups"
     snapshot = wh._snapshot_project(project, backup_root, rule_id="R2")
 
@@ -491,18 +491,14 @@ def _stub_git_success(monkeypatch: pytest.MonkeyPatch) -> None:
     from flow_engineering import cli as cli_mod
 
     def fake_git(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        cp = subprocess.CompletedProcess(
-            args=["git", *args], returncode=0, stdout="", stderr=""
-        )
+        cp = subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
         if args and args[0] == "init":
             # The real git init also creates .git/. We mirror that side effect
             # so ``_verify_post_mutation`` can see a real .git/ directory.
             target = Path(args[1]) if len(args) > 1 else None
             if target is not None:
                 (target / ".git").mkdir(exist_ok=True)
-                (target / ".git" / "HEAD").write_text(
-                    "ref: refs/heads/main\n", encoding="utf-8"
-                )
+                (target / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
                 (target / ".git" / "config").write_text(
                     "[core]\n\trepositoryformatversion = 0\n", encoding="utf-8"
                 )
@@ -580,9 +576,7 @@ def test_apply_hygiene_rule_refuses_non_empty_without_backup(
     """T-7: non-empty project + no ``--backup`` → ``EmptyProjectError``."""
     stub_home(monkeypatch, tmp_path)
     # Make the project NON-empty (a README + .gitignore).
-    project = make_fake_project(
-        "mockup", with_files=["README.md", ".gitignore"], parent=tmp_path
-    )
+    project = make_fake_project("mockup", with_files=["README.md", ".gitignore"], parent=tmp_path)
     entry = ProjectEntry(
         name="mockup",
         path=project,
@@ -618,9 +612,7 @@ def test_apply_hygiene_rule_happy_path_creates_git_and_registry_entry(
     """
     stub_home(monkeypatch, tmp_path)
     _stub_git_success(monkeypatch)
-    project = make_fake_project(
-        "mockup", with_files=["README.md", ".gitignore"], parent=tmp_path
-    )
+    project = make_fake_project("mockup", with_files=["README.md", ".gitignore"], parent=tmp_path)
     entry = ProjectEntry(
         name="mockup",
         path=project,
@@ -748,9 +740,7 @@ def test_apply_hygiene_rule_empty_git_init_success_verify_false_no_registry_upda
     stub_home(monkeypatch, tmp_path)
     # rc=0 (git init "succeeded" from subprocess perspective) but verify
     # will return False (corrupt .git/ — simulate by mocking).
-    _stub_git_failure(
-        monkeypatch, returncode=0, stderr=b""
-    )  # rc=0 with no .git/ side effect
+    _stub_git_failure(monkeypatch, returncode=0, stderr=b"")  # rc=0 with no .git/ side effect
     monkeypatch.setattr(wh, "_verify_post_mutation", lambda *_a, **_kw: False)
     # Spy on _restore_from_snapshot: must NOT be called (no snapshot to
     # restore from for an empty project with backup=False).
@@ -861,9 +851,7 @@ def test_apply_hygiene_rule_non_empty_backup_verify_false_restores(
 
     # Filesystem state is restored: pre-mutation files intact, .git/ gone.
     assert (project / "README.md").read_text(encoding="utf-8") == "hello world"
-    assert (project / "src" / "main.py").read_text(encoding="utf-8") == (
-        "print('ok')\n"
-    )
+    assert (project / "src" / "main.py").read_text(encoding="utf-8") == ("print('ok')\n")
     assert not (project / ".git").exists(), (
         "restore must remove the .git/ created by the failed init"
     )
@@ -922,9 +910,7 @@ def test_apply_hygiene_rule_git_init_failure_with_str_stderr_returns_clean_error
     # ``_apply_hygiene_rule`` does ``from flow_engineering.cli import _git``
     # which resolves via the cli module's namespace at call time.
     class _StubGit:
-        def __call__(
-            self, *args: str, **kwargs: object
-        ) -> subprocess.CompletedProcess[str]:
+        def __call__(self, *args: str, **kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
                 args=args,
                 returncode=1,
@@ -1057,9 +1043,7 @@ def test_restore_archived_project_raises_for_missing_name() -> None:
         pytest.param(Path("/Users/insyd"), id="macos_home"),
     ],
 )
-def test_registry_path_cross_platform(
-    monkeypatch: pytest.MonkeyPatch, fake_home: Path
-) -> None:
+def test_registry_path_cross_platform(monkeypatch: pytest.MonkeyPatch, fake_home: Path) -> None:
     """T-1 cross-platform: ``registry_path()`` resolves under any home prefix.
 
     The registry namespace ``~/.flow-engineering/`` is platform-agnostic.
