@@ -75,7 +75,7 @@ Goal: prevent regressions without testing everything blindly.
 - [ ] Add tests for `scripts/system_health.ps1` output expectations where practical.
 - [ ] Define minimum regression test set for drift-detection changes.
 - [ ] Keep bug fixes paired with regression tests.
-- [ ] Document supported platforms and Python versions.
+- [x] Document supported platforms and Python versions. See `docs/support-matrix.md`.
 
 ## Priority 5 — observability
 

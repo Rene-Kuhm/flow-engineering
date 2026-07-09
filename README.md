@@ -98,7 +98,7 @@ The orchestrator enforces **strict TDD per Constitution Article III**: `sdd-appl
 | Component | Supported |
 |---|---|
 | Python | 3.12, 3.13 |
-| OS | Linux, macOS, Windows |
+| OS | Windows CI-gated; Linux/macOS supported but not CI-gated |
 | OpenCode runtime | >= `gentle-ai` 4.x with skill bundles ≥3.0 |
 | engram-mcp | optional; needed for `flow search --semantic` |
 | torch + sentence-transformers | optional via `[vectors]` extra + `FLOW_VECTOR_SEARCH=1` |
@@ -122,6 +122,7 @@ See [Session Checklist](docs/session-checklist.md) for the start/close routine a
 See [Release and Recovery](docs/release-recovery.md) for release tagging, runner rebuild, rollback, and disaster recovery.
 See [Incident Response](docs/incident-response.md) for the symptom/diagnosis/fix/prevention workflow.
 See [Change Governance](docs/change-governance.md), [Architecture Decisions](docs/adr/README.md), and [Changelog](CHANGELOG.md) for Definition of Done, release notes, and durable decisions.
+See [Support Matrix](docs/support-matrix.md) for Python and platform support levels.
 
 ## License
 
