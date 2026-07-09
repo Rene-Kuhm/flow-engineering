@@ -11,6 +11,7 @@ They MUST fail with ``ModuleNotFoundError: No module named
 'flow_engineering.prompt_render_log'`` until the impl lands in
 ``src/flow_engineering/prompt_render_log.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -131,8 +132,7 @@ class TestPromptRenderLogAppendAndRead:
     def test_read_all_skips_malformed_lines(self, tmp_path: Path) -> None:
         log_path = tmp_path / "prompt_renders.jsonl"
         log_path.write_text(
-            "not json at all\n"
-            + json.dumps({"prompt_id": "ok", "rendered_at": 1.0}) + "\n",
+            "not json at all\n" + json.dumps({"prompt_id": "ok", "rendered_at": 1.0}) + "\n",
             encoding="utf-8",
         )
         log = PromptRenderLog(path=log_path)

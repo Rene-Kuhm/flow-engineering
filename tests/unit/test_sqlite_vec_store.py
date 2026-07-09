@@ -113,9 +113,7 @@ class TestSqliteVecStoreRoundTrip:
 class TestSqliteVecStoreDelete:
     """REQ-20 scenario 2: delete removes observation from search results."""
 
-    def test_delete_removes_obs_from_search(
-        self, unit_vector: np.ndarray
-    ) -> None:
+    def test_delete_removes_obs_from_search(self, unit_vector: np.ndarray) -> None:
         from flow_engineering.vectors.sqlite_vec_store import SqliteVecStore
 
         store = SqliteVecStore(Path(":memory:"))
@@ -135,9 +133,7 @@ class TestSqliteVecStoreDelete:
         store.delete("does-not-exist")  # MUST NOT raise
         assert store.count() == 1
 
-    def test_delete_removes_both_audit_row_and_vec_row(
-        self, unit_vector: np.ndarray
-    ) -> None:
+    def test_delete_removes_both_audit_row_and_vec_row(self, unit_vector: np.ndarray) -> None:
         from flow_engineering.vectors.sqlite_vec_store import SqliteVecStore
 
         store = SqliteVecStore(Path(":memory:"))
@@ -206,9 +202,7 @@ class TestSqliteVecStoreCount:
 class TestSqliteVecStoreBlobSize:
     """REQ-20 scenario 4: vector BLOB byte length is exactly 1536."""
 
-    def test_observation_embeddings_blob_is_1536_bytes(
-        self, unit_vector: np.ndarray
-    ) -> None:
+    def test_observation_embeddings_blob_is_1536_bytes(self, unit_vector: np.ndarray) -> None:
         from flow_engineering.vectors.sqlite_vec_store import SqliteVecStore
 
         store = SqliteVecStore(Path(":memory:"))
@@ -227,9 +221,7 @@ class TestSqliteVecStoreBlobSize:
         assert isinstance(blob, bytes)
         assert len(blob) == 384 * 4  # float32 = 4 bytes
 
-    def test_blob_roundtrips_to_identical_vector(
-        self, unit_vector: np.ndarray
-    ) -> None:
+    def test_blob_roundtrips_to_identical_vector(self, unit_vector: np.ndarray) -> None:
         from flow_engineering.vectors.sqlite_vec_store import SqliteVecStore
 
         store = SqliteVecStore(Path(":memory:"))
@@ -249,9 +241,7 @@ class TestSqliteVecStoreBlobSize:
         assert decoded.dtype == np.float32
         np.testing.assert_allclose(decoded, original, atol=1e-6)
 
-    def test_model_version_and_created_at_persisted(
-        self, unit_vector: np.ndarray
-    ) -> None:
+    def test_model_version_and_created_at_persisted(self, unit_vector: np.ndarray) -> None:
         from flow_engineering.vectors.sqlite_vec_store import SqliteVecStore
 
         store = SqliteVecStore(Path(":memory:"))
@@ -260,8 +250,7 @@ class TestSqliteVecStoreBlobSize:
         conn = store._conn
         assert conn is not None
         row = conn.execute(
-            "SELECT model_version, created_at FROM observation_embeddings "
-            "WHERE observation_id = ?",
+            "SELECT model_version, created_at FROM observation_embeddings WHERE observation_id = ?",
             ("obs1",),
         ).fetchone()
         assert row[0] == "all-MiniLM-L6-v2"

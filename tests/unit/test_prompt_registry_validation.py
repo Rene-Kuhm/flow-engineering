@@ -74,9 +74,7 @@ class TestLintErrorDataclass:
     def test_lint_error_line_is_optional(self) -> None:
         err = LintError(prompt_name="x", error_code="jinja_syntax", message="m")
         assert err.line is None
-        err_with_line = LintError(
-            prompt_name="x", error_code="jinja_syntax", message="m", line=7
-        )
+        err_with_line = LintError(prompt_name="x", error_code="jinja_syntax", message="m", line=7)
         assert err_with_line.line == 7
 
 
