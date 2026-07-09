@@ -253,8 +253,8 @@ def load_graph(
 
 
 def _index_graph_payload(
-    nodes: list,
-    mtime: float | None,  # type: ignore[type-arg]
+    nodes: list[object],
+    mtime: float | None,
 ) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
     """Convert a raw ``graph.json`` ``nodes`` list into the index tuple.
 
