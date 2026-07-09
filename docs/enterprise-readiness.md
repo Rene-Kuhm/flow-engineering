@@ -39,9 +39,9 @@ These are required before calling a change done.
 
 Goal: failures should find us before users do.
 
-- [ ] Add a scheduled runner health check.
-- [ ] Add CI failure notification path.
-- [ ] Add stale-green alert when no successful CI run exists after a threshold.
+- [x] Add a scheduled runner health check. See `.github/workflows/health-monitor.yml`.
+- [x] Add CI failure notification path. `health-monitor` fails visibly through GitHub Actions notifications.
+- [x] Add stale-green alert when no successful CI run exists after a threshold. `health-monitor` uses `HEALTH_MAX_CI_AGE_HOURS`.
 - [ ] Document incident response: symptom, diagnosis, fix, prevention.
 - [ ] Record recent health-check result history.
 
