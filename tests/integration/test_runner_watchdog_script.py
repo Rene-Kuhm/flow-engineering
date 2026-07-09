@@ -68,3 +68,28 @@ def test_runner_watchdog_text_output_is_operator_readable() -> None:
     assert "runner-watchdog: critical" in result.stdout
     assert "runner_service: critical" in result.stdout
     assert "github_ci: skipped" in result.stdout
+
+
+def test_runner_watchdog_webhook_test_dry_run_is_machine_readable() -> None:
+    result = _run_watchdog(
+        "-RunnerNamePattern",
+        "definitely-not-a-real-runner-service-*",
+        "-SkipGitHub",
+        "-WebhookUrl",
+        "https://hooks.example.test/super-secret-token",
+        "-WebhookTest",
+        "-WebhookDryRun",
+        "-Json",
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["overall"] == "critical"
+    assert payload["webhook"]["configured"] is True
+    assert payload["webhook"]["dry_run"] is True
+    assert payload["webhook"]["test"] is True
+    assert "super-secret-token" not in result.stdout
+    assert any(
+        check["name"] == "webhook_test" and check["status"] == "warning"
+        for check in payload["checks"]
+    )

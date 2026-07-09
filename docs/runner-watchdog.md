@@ -67,6 +67,18 @@ Preview the change without writing the environment variable:
 ./scripts/set_runner_watchdog_webhook.ps1 -WebhookUrl "https://your-alert-webhook.example/path" -DryRun
 ```
 
+After setting the real webhook, send a controlled test payload:
+
+```powershell
+./scripts/runner_watchdog.ps1 -WebhookTest
+```
+
+Preview the payload without posting:
+
+```powershell
+./scripts/runner_watchdog.ps1 -WebhookTest -WebhookDryRun -Json
+```
+
 ## Recommended schedule
 
 Use Task Scheduler or an external monitor every 15 minutes. The task should run outside GitHub Actions; otherwise it cannot detect the case where the runner is down and no job starts.

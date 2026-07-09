@@ -5,6 +5,8 @@ param(
   [int]$MaxCiAgeHours = 24,
   [string]$WebhookUrl = $env:FLOW_RUNNER_ALERT_WEBHOOK,
   [switch]$SkipGitHub,
+  [switch]$WebhookTest,
+  [switch]$WebhookDryRun,
   [switch]$Json
 )
 
@@ -67,18 +69,28 @@ if ($SkipGitHub) {
   }
 }
 
+if ($WebhookTest) {
+  $checks += New-Check "webhook_test" "warning" "Controlled webhook test payload requested."
+}
+
 $criticalCount = @($checks | Where-Object { $_.status -eq "critical" }).Count
 $warningCount = @($checks | Where-Object { $_.status -eq "warning" }).Count
 $overall = if ($criticalCount -gt 0) { "critical" } elseif ($warningCount -gt 0) { "warning" } else { "ok" }
 
+$webhookConfigured = -not [string]::IsNullOrWhiteSpace($WebhookUrl)
 $payload = [pscustomobject]@{
   checked_at = (Get-Date).ToUniversalTime().ToString("o")
   repo = $Repo
   overall = $overall
   checks = $checks
+  webhook = [pscustomobject]@{
+    configured = $webhookConfigured
+    dry_run = [bool]$WebhookDryRun
+    test = [bool]$WebhookTest
+  }
 }
 
-if ($overall -ne "ok" -and -not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
+if ($overall -ne "ok" -and $webhookConfigured -and -not $WebhookDryRun) {
   try {
     Invoke-RestMethod -Method Post -Uri $WebhookUrl -ContentType "application/json" -Body ($payload | ConvertTo-Json -Depth 5) | Out-Null
   } catch {
@@ -88,6 +100,7 @@ if ($overall -ne "ok" -and -not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
       repo = $payload.repo
       overall = $overall
       checks = $checks
+      webhook = $payload.webhook
     }
   }
 }
@@ -101,6 +114,7 @@ if ($Json) {
   }
 }
 
+if ($WebhookDryRun) { exit 0 }
 if ($overall -eq "critical") { exit 2 }
 if ($overall -eq "warning") { exit 1 }
 exit 0
