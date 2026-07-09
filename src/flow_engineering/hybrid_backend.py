@@ -171,7 +171,9 @@ class HybridBackend(EngramBackend):
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         with contextlib.suppress(Exception):
             # Observability MUST be fail-open — never let metrics break retrieval.
-            safe_trigger = trigger if trigger in observability.VECTOR_TRIGGER_VALUES else "programmatic"
+            safe_trigger = (
+                trigger if trigger in observability.VECTOR_TRIGGER_VALUES else "programmatic"
+            )
             observability.record_vector_summary(
                 invoked=1,
                 results_returned=len(results),
@@ -209,8 +211,7 @@ class HybridBackend(EngramBackend):
         cos_sims = [self._cosine_sim(q_vec, embeds[i + 1]) for i in range(len(candidates))]
 
         hybrid_scores = [
-            alpha * cos + (1.0 - alpha) * nf
-            for cos, nf in zip(cos_sims, norm_fts, strict=True)
+            alpha * cos + (1.0 - alpha) * nf for cos, nf in zip(cos_sims, norm_fts, strict=True)
         ]
 
         # Stable sort: hybrid score desc, then insertion order (candidates

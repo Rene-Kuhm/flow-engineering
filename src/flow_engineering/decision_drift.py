@@ -45,6 +45,7 @@ from flow_engineering.snapshot_manager import (
 
 if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
+
     # Static-only declaration for the PEP 562 re-export below. Keeping this
     # inside TYPE_CHECKING satisfies mypy's ``except SnapshotGraphMissing``
     # contract without creating a real module attribute that would bypass the
@@ -91,9 +92,7 @@ class Finding:
     detail: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.decision_id, int) or isinstance(
-            self.decision_id, bool
-        ):
+        if not isinstance(self.decision_id, int) or isinstance(self.decision_id, bool):
             raise TypeError(
                 f"Finding.decision_id must be int, got {type(self.decision_id).__name__}"
             )
@@ -126,9 +125,7 @@ def _epoch_to_iso(epoch: float | int) -> str:
     sites to coerce legacy ``float`` epoch inputs into the v0.8.0
     ``str`` ISO 8601 contract.
     """
-    return datetime.fromtimestamp(float(epoch), tz=UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    return datetime.fromtimestamp(float(epoch), tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def classify_binding(
@@ -256,7 +253,8 @@ def load_graph(
 
 
 def _index_graph_payload(
-    nodes: list, mtime: float | None,  # type: ignore[type-arg]
+    nodes: list,
+    mtime: float | None,  # type: ignore[type-arg]
 ) -> tuple[dict | None, dict | None, float | None]:  # type: ignore[type-arg]
     """Convert a raw ``graph.json`` ``nodes`` list into the index tuple.
 
@@ -407,6 +405,7 @@ def _snapshot_has_graph(snap_id: str) -> bool:
         SnapshotEnvelopeError,
         SnapshotManager,
     )
+
     manager = SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
         backend=None,  # type: ignore[arg-type]  # show() never touches backend
@@ -645,10 +644,7 @@ def _scan_with_protocols(
     observations = list(source.iter_observations())  # type: ignore[attr-defined]
 
     if since is not None:
-        observations = [
-            o for o in observations
-            if float(o.get("created_at", 0)) >= since
-        ]
+        observations = [o for o in observations if float(o.get("created_at", 0)) >= since]
 
     findings: list[Finding] = []
     bindings_total = 0
@@ -743,9 +739,7 @@ def _scan_with_protocols(
         change_name=change_name,
         scanned_at=scanned_at,
         graph_mtime=(
-            _epoch_to_iso(graph_mtime)
-            if isinstance(graph_mtime, (int, float))
-            else graph_mtime
+            _epoch_to_iso(graph_mtime) if isinstance(graph_mtime, (int, float)) else graph_mtime
         ),
         decisions_total=len(observations),
         bindings_total=bindings_total,
@@ -787,7 +781,8 @@ def _legacy_scan_change_body(  # noqa: C901  # pragma: no cover
         # behavior — load from disk.
         if snap_id is not None:
             current_nodes, current_id_map, graph_mtime = load_graph(
-                graph_json_path=None, snap_id=snap_id,
+                graph_json_path=None,
+                snap_id=snap_id,
             )
             if current_nodes is None:
                 # Either the envelope is corrupt or ``--no-include-graph``
@@ -835,6 +830,7 @@ def _legacy_scan_change_body(  # noqa: C901  # pragma: no cover
 
             if backend is None:
                 from flow_engineering.engram_io import InMemoryBackend
+
                 backend = InMemoryBackend()
 
         try:
@@ -843,16 +839,10 @@ def _legacy_scan_change_body(  # noqa: C901  # pragma: no cover
             observations = []
 
         prefix = f"sdd/{change_name}/"
-        observations = [
-            o for o in observations
-            if str(o.get("topic_key", "")).startswith(prefix)
-        ]
+        observations = [o for o in observations if str(o.get("topic_key", "")).startswith(prefix)]
 
         if since is not None:
-            observations = [
-                o for o in observations
-                if float(o.get("created_at", 0)) >= since
-            ]
+            observations = [o for o in observations if float(o.get("created_at", 0)) >= since]
 
         findings: list[Finding] = []
         bindings_total = 0
@@ -947,9 +937,7 @@ def _legacy_scan_change_body(  # noqa: C901  # pragma: no cover
             change_name=change_name,
             scanned_at=scanned_at,
             graph_mtime=(
-                _epoch_to_iso(graph_mtime)
-                if isinstance(graph_mtime, (int, float))
-                else graph_mtime
+                _epoch_to_iso(graph_mtime) if isinstance(graph_mtime, (int, float)) else graph_mtime
             ),
             decisions_total=len(observations),
             bindings_total=bindings_total,

@@ -12,6 +12,7 @@ runs and a single-line summary is emitted (counters via
 an ``unable_to_verify`` line and the watcher stays alive — no exception
 escapes the handler.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,9 +34,7 @@ if TYPE_CHECKING:
 DEFAULT_DRIFT_GRAPH_PATH: Path = Path.home() / ".flow-engineering" / "graph.json"
 
 
-def _append_drift_events(
-    report: DriftReport, *, path: Path | None = None
-) -> None:
+def _append_drift_events(report: DriftReport, *, path: Path | None = None) -> None:
     """Append one JSONL line per NON-STILL_VALID finding to the drift event log (REQ-55 W5).
 
     STILL_VALID findings are intentionally skipped — the still-valid silence
@@ -89,8 +88,7 @@ def handle_apply_progress_event(
 
     tasks = apply_progress.get("tasks", {}) if isinstance(apply_progress, dict) else {}
     merged_present = any(
-        isinstance(info, dict) and info.get("status") == "merged"
-        for info in tasks.values()
+        isinstance(info, dict) and info.get("status") == "merged" for info in tasks.values()
     )
     if not merged_present:
         return None
@@ -111,9 +109,7 @@ def handle_apply_progress_event(
     _append_drift_events(report)
 
     if report.graph_unavailable:
-        on_summary(
-            f"unable_to_verify: graph.json unavailable at {graph_path}"
-        )
+        on_summary(f"unable_to_verify: graph.json unavailable at {graph_path}")
         return report
 
     counts = report.class_counts
@@ -134,13 +130,9 @@ def handle_apply_progress_event(
     # when every binding classifies as STILL_VALID (no drift detected).
     # The JSONL append via ``record_drift_event`` (wired in T2.1) is
     # unconditional so audit trail completeness is preserved.
-    non_still_valid_total = total - counts.get(
-        decision_drift.DriftClass.STILL_VALID, 0
-    )
+    non_still_valid_total = total - counts.get(decision_drift.DriftClass.STILL_VALID, 0)
     if non_still_valid_total > 0:
-        on_summary(
-            f"drift: {change} {total} findings ({', '.join(parts)})"
-        )
+        on_summary(f"drift: {change} {total} findings ({', '.join(parts)})")
     return report
 
 
@@ -233,28 +225,19 @@ def start_watch(
         def on_modified(self, event: object) -> None:
             handler.on_modified(event)
             if drift:
-                _maybe_emit_drift(
-                    event, change, change_dir, graph_json_path, backend, on_summary
-                )
+                _maybe_emit_drift(event, change, change_dir, graph_json_path, backend, on_summary)
 
         def on_created(self, event: object) -> None:
             handler.on_modified(event)
             if drift:
-                _maybe_emit_drift(
-                    event, change, change_dir, graph_json_path, backend, on_summary
-                )
+                _maybe_emit_drift(event, change, change_dir, graph_json_path, backend, on_summary)
 
     observer = Observer()
     observer.schedule(_HandlerAdapter(), str(change_dir), recursive=False)
     observer.start()
-    suffix = (
-        " (drift mode: watching apply-progress for merged tasks)"
-        if drift
-        else ""
-    )
+    suffix = " (drift mode: watching apply-progress for merged tasks)" if drift else ""
     return True, (
-        f"Watching {change_dir}/explore/exploration.md for changes. "
-        f"Press Ctrl+C to stop.{suffix}"
+        f"Watching {change_dir}/explore/exploration.md for changes. Press Ctrl+C to stop.{suffix}"
     )
 
 

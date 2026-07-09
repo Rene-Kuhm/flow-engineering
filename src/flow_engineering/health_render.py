@@ -18,7 +18,11 @@ from rich.table import Table
 _OVERFLOW_FOLD: Literal["fold", "crop", "ellipsis", "ignore"] = "fold"
 _OVERFLOW_CROP: Literal["fold", "crop", "ellipsis", "ignore"] = "crop"
 _HEALTH_PATH_TRUNCATE_LEN: int = 60
-_VERDICT_STYLE: dict[str, str] = {"HEALTHY": "green", "NEEDS-ATTENTION": "yellow", "CRITICAL": "red"}
+_VERDICT_STYLE: dict[str, str] = {
+    "HEALTHY": "green",
+    "NEEDS-ATTENTION": "yellow",
+    "CRITICAL": "red",
+}
 
 
 def _truncate_path(path: str, max_len: int = _HEALTH_PATH_TRUNCATE_LEN) -> str:
@@ -57,14 +61,18 @@ def _build_table(projects: list[dict[str, object]]) -> Table:
     return table
 
 
-def _render_into_console(envelope: dict[str, object], projects: list[dict[str, object]], console: Console) -> None:
+def _render_into_console(
+    envelope: dict[str, object], projects: list[dict[str, object]], console: Console
+) -> None:
     raw_totals = envelope.get("totals", {})
     totals_dict: dict[str, object] = raw_totals if isinstance(raw_totals, dict) else {}
     header = _format_header(str(envelope.get("root", "")), totals_dict)
     console.print(Panel(Group(header, _build_table(projects)), title="Workspace health"))
 
 
-def render_workspace_health_text(envelope: dict[str, object], *, console: Console | None = None) -> str:
+def render_workspace_health_text(
+    envelope: dict[str, object], *, console: Console | None = None
+) -> str:
     """Render a workspace-health envelope as a Rich Panel + Table.
 
     Empty envelope returns ``"(no projects to report)"``. If ``console``
@@ -84,6 +92,7 @@ def render_workspace_health_text(envelope: dict[str, object], *, console: Consol
     if file_obj is not None and hasattr(file_obj, "getvalue"):
         return str(file_obj.getvalue())
     return ""
+
 
 def render_workspace_health_json(envelope: dict[str, object]) -> str:
     return json.dumps(envelope, ensure_ascii=False, sort_keys=True, indent=2)

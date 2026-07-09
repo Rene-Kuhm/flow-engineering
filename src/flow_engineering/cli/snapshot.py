@@ -55,6 +55,7 @@ def _build_snapshot_manager() -> SnapshotManager:
     from flow_engineering.cli.drift import (
         _resolve_snapshots_dir,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
     )
+
     return SnapshotManager(
         snapshots_dir=_resolve_snapshots_dir(),
         backend=_default_save_backend(),
@@ -117,14 +118,14 @@ def snapshot_group() -> None:
     is_flag=True,
     default=False,
     help="Exclude graph_state.graph_json_content from the envelope. "
-         "Drift-pinned scans of such snapshots will refuse.",
+    "Drift-pinned scans of such snapshots will refuse.",
 )
 @click.option(
     "--project",
     "project_key",
     default=None,
     help="Restrict to a single project at READ time only (D5). "
-         "v1 snapshots always capture the full DB.",
+    "v1 snapshots always capture the full DB.",
 )
 def snapshot_create(
     description_text: str,
@@ -213,9 +214,7 @@ def snapshot_show(snap_id: str) -> None:
     default=False,
     help="Emit the diff as a structured JSON object (REQ-31 spec mandate; default output is also JSON).",
 )
-def snapshot_diff(
-    snap_id_a: str, snap_id_b: str | None, json_flag: bool
-) -> None:
+def snapshot_diff(snap_id_a: str, snap_id_b: str | None, json_flag: bool) -> None:
     """Diff two snapshots OR a snapshot against LIVE state (REQ-31).
 
     Two calling forms:
@@ -239,9 +238,7 @@ def snapshot_diff(
             err=True,
         )
         sys.exit(2)
-    click.echo(
-        json.dumps(_snapshot_diff_to_dict(diff), ensure_ascii=False, indent=2)
-    )
+    click.echo(json.dumps(_snapshot_diff_to_dict(diff), ensure_ascii=False, indent=2))
 
 
 @snapshot_group.command(name="rollback")
@@ -260,9 +257,7 @@ def snapshot_diff(
     default=False,
     help="Override conflict detection (DANGEROUS).",
 )
-def snapshot_rollback(
-    snap_id: str, confirm_flag: bool, force_flag: bool
-) -> None:
+def snapshot_rollback(snap_id: str, confirm_flag: bool, force_flag: bool) -> None:
     """Restore the Engram state to match ``snap_id`` (REQ-32).
 
     Two-phase commit (D11):
@@ -277,9 +272,7 @@ def snapshot_rollback(
     """
     manager = _build_snapshot_manager()
     try:
-        result = manager.rollback(
-            snap_id, confirm=confirm_flag, force=force_flag
-        )
+        result = manager.rollback(snap_id, confirm=confirm_flag, force=force_flag)
     except RollbackRefusedError as exc:
         click.echo(
             json.dumps(exc.payload, ensure_ascii=False),
@@ -332,7 +325,7 @@ def snapshot_rollback(
     is_flag=True,
     default=False,
     help="REQUIRED to actually delete. Without --confirm the command is "
-         "dry-run and prints the would-delete list.",
+    "dry-run and prints the would-delete list.",
 )
 @click.option(
     "--force",
@@ -419,5 +412,3 @@ def snapshot_prune(
         click.echo(f"  - {sid}")
     click.echo(f"freed_bytes: {result.freed_bytes}")
     click.echo(f"kept: {len(result.would_keep)}")
-
-
