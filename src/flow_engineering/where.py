@@ -236,13 +236,16 @@ def split_code_vs_tests(
 ) -> tuple[list[WhereHit], list[WhereHit]]:
     """Partition ``hits`` by ``path.startswith("tests/")`` (D1 helper).
 
-    Pure function — no I/O, no mutation of ``hits``. Order is preserved
-    within each bucket (rg's natural ``path`` / ``line`` ascending order
-    carries over).
+    Pure function — no I/O, no mutation of ``hits``. Each bucket is sorted
+    deterministically by path, line, and snippet before callers apply limits.
     """
     code = [h for h in hits if not h.path.startswith("tests/")]
     tests = [h for h in hits if h.path.startswith("tests/")]
-    return (code, tests)
+
+    def sort_key(hit: WhereHit) -> tuple[str, int, str]:
+        return (hit.path, hit.line, hit.snippet or "")
+
+    return (sorted(code, key=sort_key), sorted(tests, key=sort_key))
 
 
 # ---------- D2: SDD archive grep backend ----------

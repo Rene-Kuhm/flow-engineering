@@ -243,8 +243,8 @@ class TestSplitCodeVsTests:
         assert code == []
         assert tests == hits
 
-    def test_mixed_preserves_order_per_bucket(self) -> None:
-        """Mixed hits: each bucket preserves the input order (path-asc, line-asc)."""
+    def test_mixed_sorts_each_bucket_deterministically(self) -> None:
+        """Mixed hits: each bucket is returned in deterministic path/line order."""
         hits = [
             where.WhereHit(path="src/a.py", line=1, snippet=None),
             where.WhereHit(path="tests/test_a.py", line=1, snippet=None),
@@ -254,6 +254,30 @@ class TestSplitCodeVsTests:
         code, tests = where.split_code_vs_tests(hits)
         assert [h.path for h in code] == ["src/a.py", "src/b.py"]
         assert [h.path for h in tests] == ["tests/test_a.py", "tests/test_b.py"]
+
+    def test_mixed_hits_are_sorted_within_each_bucket(self) -> None:
+        """Out-of-order hits are returned deterministically by path, line, and snippet."""
+        hits = [
+            where.WhereHit(path="tests/test_b.py", line=2, snippet="second"),
+            where.WhereHit(path="src/b.py", line=2, snippet="second"),
+            where.WhereHit(path="tests/test_a.py", line=3, snippet="later"),
+            where.WhereHit(path="src/a.py", line=4, snippet="later"),
+            where.WhereHit(path="src/a.py", line=1, snippet="earlier"),
+            where.WhereHit(path="tests/test_a.py", line=1, snippet="first"),
+        ]
+
+        code, tests = where.split_code_vs_tests(hits)
+
+        assert code == [
+            where.WhereHit(path="src/a.py", line=1, snippet="earlier"),
+            where.WhereHit(path="src/a.py", line=4, snippet="later"),
+            where.WhereHit(path="src/b.py", line=2, snippet="second"),
+        ]
+        assert tests == [
+            where.WhereHit(path="tests/test_a.py", line=1, snippet="first"),
+            where.WhereHit(path="tests/test_a.py", line=3, snippet="later"),
+            where.WhereHit(path="tests/test_b.py", line=2, snippet="second"),
+        ]
 
 
 # ---------- T1.5 — REQ-V1.0.2: grep_sdd_archive ----------
