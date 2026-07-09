@@ -4,6 +4,7 @@ These tests exercise the public ``flow`` console script instead of importing the
 Click command directly. They catch packaging/entry-point regressions that unit
 tests can miss.
 """
+
 from __future__ import annotations
 
 import subprocess

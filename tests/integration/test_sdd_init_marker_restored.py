@@ -8,6 +8,7 @@ Article III (Strict TDD) enforcement is dormant on ``main`` until this
 passes. See ``openspec/changes/v1.3-platform-hardening/spec.md`` REQ-V1.3.1
 for the BDD scenarios this test codifies.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -43,9 +44,7 @@ class TestSddInitMarkerRestored:
         assert tracked == ["sdd-init/flow-engineering.md"]
 
     def test_marker_body_matches_on_markers_pattern(self) -> None:
-        content = (REPO_ROOT / "sdd-init" / "flow-engineering.md").read_text(
-            encoding="utf-8"
-        )
+        content = (REPO_ROOT / "sdd-init" / "flow-engineering.md").read_text(encoding="utf-8")
         assert any(m in content for m in ON_MARKERS), (
             f"marker body must contain one of {ON_MARKERS}"
         )

@@ -1,4 +1,5 @@
 """Smoke tests for the PowerShell system health dashboard."""
+
 from __future__ import annotations
 
 import platform
@@ -12,7 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "system_health.ps1"
 
 
-@pytest.mark.skipif(platform.system() != "Windows", reason="PowerShell health script is Windows-runner focused")
+@pytest.mark.skipif(
+    platform.system() != "Windows", reason="PowerShell health script is Windows-runner focused"
+)
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh is required for the health script")
 def test_system_health_script_renders_expected_sections_offline(tmp_path: Path) -> None:
     changes_root = tmp_path / "openspec" / "changes" / "demo-change"

@@ -72,7 +72,8 @@ class TestIntegrationEndToEndNoWindowNoDomain:
     """24 events across 4 active domains → all 4 domain headers present."""
 
     def test_integration_end_to_end_no_window_no_domain(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         # 24 events: 6 each across binding, drift, vector, snapshot.
@@ -106,21 +107,20 @@ class TestIntegrationEndToEndWithWindowFilter:
     """30 events spanning 3 days → --window 24h keeps only the last 24h."""
 
     def test_integration_end_to_end_with_window_filter(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
         # 10 events at 3 days ago — outside the 24h window.
         for _ in range(10):
             events.append(
-                _event("suggest_invoked_total", {"count": 1},
-                       _iso(now - timedelta(days=3))),
+                _event("suggest_invoked_total", {"count": 1}, _iso(now - timedelta(days=3))),
             )
         # 10 events at 36 hours ago — outside the 24h window.
         for _ in range(10):
             events.append(
-                _event("drift_invoked_total", {"count": 1},
-                       _iso(now - timedelta(hours=36))),
+                _event("drift_invoked_total", {"count": 1}, _iso(now - timedelta(hours=36))),
             )
         # 10 events at "now" — inside the 24h window.
         for _ in range(10):
@@ -142,7 +142,8 @@ class TestIntegrationEndToEndWithDomainFilter:
     """24 events across 4 domains → --domain snapshot returns only snapshot."""
 
     def test_integration_end_to_end_with_domain_filter(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -171,7 +172,9 @@ class TestIntegrationEndToEndEmptyMetricsFile:
     """Empty sink → exit 0 + "No metrics recorded yet." (D8 default-empty contract)."""
 
     def test_integration_end_to_end_empty_metrics_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "missing_metrics.jsonl"
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
@@ -186,7 +189,8 @@ class TestIntegrationEndToEndJsonFormatRoundtrip:
     """12 events → --format json → parses back to a dict matching summarize()."""
 
     def test_integration_end_to_end_json_format_roundtrip(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -218,7 +222,8 @@ class TestIntegrationEndToEndInvalidWindowExits2:
     """--window invalid → exit code 2 (D9 usage error contract)."""
 
     def test_integration_end_to_end_invalid_window_exits_2(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         result = runner.invoke(main, ["metrics", "summary", "--window", "invalid"])
 
@@ -236,7 +241,8 @@ class TestIntegrationEndToEndExportPrometheusToStdout:
     """12 events → `flow metrics export --format prometheus` renders textfile format."""
 
     def test_integration_end_to_end_export_prometheus_to_stdout(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -271,7 +277,9 @@ class TestIntegrationEndToEndExportToFileAtomic:
     """5 events → `flow metrics export --format prometheus --out PATH` writes atomically."""
 
     def test_integration_end_to_end_export_to_file_atomic(
-        self, metrics_path: Path, tmp_path: Path,
+        self,
+        metrics_path: Path,
+        tmp_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -299,8 +307,7 @@ class TestIntegrationEndToEndExportToFileAtomic:
         assert "flow_vector_search_invoked_total" in content
         # 3 distinct counters → 3 metric lines (one per counter in the sorted output).
         metric_line_count = sum(
-            1 for line in content.splitlines()
-            if line and not line.startswith("#")
+            1 for line in content.splitlines() if line and not line.startswith("#")
         )
         assert metric_line_count == 3
 
@@ -309,7 +316,8 @@ class TestIntegrationEndToEndAggregateDefaultP95:
     """100 events → `flow metrics aggregate --percentile p95` emits p95 column."""
 
     def test_integration_end_to_end_aggregate_default_p95(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -340,7 +348,8 @@ class TestIntegrationEndToEndAggregateMultiplePercentiles:
     """100 events → 3 percentile columns in the aggregate table."""
 
     def test_integration_end_to_end_aggregate_multiple_percentiles(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -358,10 +367,14 @@ class TestIntegrationEndToEndAggregateMultiplePercentiles:
         result = runner.invoke(
             main,
             [
-                "metrics", "aggregate",
-                "--percentile", "p50",
-                "--percentile", "p95",
-                "--percentile", "p99",
+                "metrics",
+                "aggregate",
+                "--percentile",
+                "p50",
+                "--percentile",
+                "p95",
+                "--percentile",
+                "p99",
             ],
         )
 
@@ -381,7 +394,8 @@ class TestIntegrationEndToEndExportWithWindowFilter:
     """30 events spanning 3 days → --window 1h keeps only the last 60 minutes."""
 
     def test_integration_end_to_end_export_with_window_filter(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         events: list[dict] = []
@@ -429,7 +443,8 @@ class TestIntegrationEndToEndExportWithWindowFilter:
         # No labels are emitted for events whose fields dict has only "count"
         # (excluded by _LABEL_VALUE_KEYS), so the line shape is "<name> <value>".
         metric_line = next(
-            line for line in result.output.splitlines()
+            line
+            for line in result.output.splitlines()
             if line.startswith("flow_drift_invoked_total") and not line.startswith("#")
         )
         value_str = metric_line.rsplit(" ", 1)[-1]
@@ -443,7 +458,8 @@ class TestIntegrationEndToEndAggregateWithInsufficientData:
     """1 event → 'not enough data points' inline + exit 0 (REQ-39 graceful path)."""
 
     def test_integration_end_to_end_aggregate_with_insufficient_data(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         # Exactly 1 event → reservoir cannot produce ≥2 samples → "insufficient data".
@@ -453,7 +469,8 @@ class TestIntegrationEndToEndAggregateWithInsufficientData:
         )
 
         result = runner.invoke(
-            main, ["metrics", "aggregate", "--percentile", "p99"],
+            main,
+            ["metrics", "aggregate", "--percentile", "p99"],
         )
 
         # Graceful path: warning, not error → exit 0 (REQ-39 scenario 2).

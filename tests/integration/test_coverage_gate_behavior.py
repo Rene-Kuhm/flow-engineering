@@ -4,6 +4,7 @@ Builds a synthetic stub module that produces 0% coverage and asserts
 that pytest with `--cov-fail-under=80` exits non-zero with a clear
 "Coverage failure" message.
 """
+
 from __future__ import annotations
 
 import shutil

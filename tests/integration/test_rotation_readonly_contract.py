@@ -23,11 +23,7 @@ from pathlib import Path
 import pytest
 
 ROTATION_MODULE = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "flow_engineering"
-    / "cli"
-    / "rotation.py"
+    Path(__file__).resolve().parents[2] / "src" / "flow_engineering" / "cli" / "rotation.py"
 )
 
 FORBIDDEN_FUNCTIONS: frozenset[str] = frozenset(
@@ -105,8 +101,7 @@ def _violations(tree: ast.AST) -> list[str]:
         for module, fns in FORBIDDEN_MODULES.items():
             if (resolved == module or resolved.startswith(f"{module}.")) and attr in fns:
                 violations.append(
-                    f"{resolved}.{attr}() at line {node.lineno} "
-                    f"(forbidden read-only call)",
+                    f"{resolved}.{attr}() at line {node.lineno} (forbidden read-only call)",
                 )
     return violations
 
