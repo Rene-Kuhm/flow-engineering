@@ -63,14 +63,18 @@ class TestSummaryTextFormat:
     """`flow metrics summary` (no flags) renders per-domain text dashboard."""
 
     def test_metrics_summary_text_format_default(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 2}, _iso(now)),
-            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
-            _event("drift_invoked_total", {"count": 1}, _iso(now)),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 2}, _iso(now)),
+                _event("suggest_invoked_total", {"count": 1}, _iso(now)),
+                _event("drift_invoked_total", {"count": 1}, _iso(now)),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary"])
 
@@ -90,13 +94,17 @@ class TestSummaryJsonFormat:
     """`flow metrics summary --format json` emits machine-readable dict."""
 
     def test_metrics_summary_json_format(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 2}, _iso(now)),
-            _event("vector_search_invoked_total", {"count": 3}, _iso(now)),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 2}, _iso(now)),
+                _event("vector_search_invoked_total", {"count": 3}, _iso(now)),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary", "--format", "json"])
 
@@ -116,15 +124,18 @@ class TestSummaryWindowFilter:
     """`--window 1h|24h|7d` filters events to the rolling window."""
 
     def test_metrics_summary_with_window_filter(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
         # 3h ago (outside 1h window) and now (inside 1h window).
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 1},
-                   _iso(now - timedelta(hours=3))),
-            _event("suggest_invoked_total", {"count": 5}, _iso(now)),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 1}, _iso(now - timedelta(hours=3))),
+                _event("suggest_invoked_total", {"count": 5}, _iso(now)),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary", "--window", "1h"])
 
@@ -141,10 +152,7 @@ class TestSummaryWindowFilter:
         # At minimum, the rendered dashboard must NOT contain the lone
         # "suggest_invoked_total  1" line (which would be the
         # 3h-old event alone).
-        assert not any(
-            line.startswith("suggest_invoked_total") and "  1" in line
-            for line in lines
-        )
+        assert not any(line.startswith("suggest_invoked_total") and "  1" in line for line in lines)
 
 
 # ---------- --domain filter ----------
@@ -154,14 +162,18 @@ class TestSummaryDomainFilter:
     """`--domain <binding|drift|vector|snapshot>` filters by counter prefix."""
 
     def test_metrics_summary_with_domain_filter(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         now = datetime.now(UTC)
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
-            _event("drift_invoked_total", {"count": 1}, _iso(now)),
-            _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 1}, _iso(now)),
+                _event("drift_invoked_total", {"count": 1}, _iso(now)),
+                _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary", "--domain", "drift"])
 
@@ -179,7 +191,9 @@ class TestSummaryEmptySink:
     """Empty / missing JSONL sink emits "No metrics recorded yet." + exits 0."""
 
     def test_metrics_summary_empty_metrics_file_exits_zero(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "missing.jsonl"
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
@@ -197,14 +211,16 @@ class TestSummaryInvalidFlags:
     """Invalid --domain / --window values exit with code 2 (D9 usage error)."""
 
     def test_metrics_summary_invalid_domain_exits_2(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         result = runner.invoke(main, ["metrics", "summary", "--domain", "garbage"])
 
         assert result.exit_code == 2
 
     def test_metrics_summary_invalid_window_exits_2(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         result = runner.invoke(main, ["metrics", "summary", "--window", "garbage"])
 
@@ -225,18 +241,20 @@ class TestSummaryWindowAndSinceUntil:
     """
 
     def test_metrics_summary_with_window_filter_filters_correctly(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         """30d window keeps events spanning 3 weeks (rolling semantics)."""
         now = datetime.now(UTC)
         # 25 days ago: inside 30d window
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 7},
-                   _iso(now - timedelta(days=25))),
-            # 40 days ago: outside 30d window
-            _event("drift_invoked_total", {"count": 3},
-                   _iso(now - timedelta(days=40))),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 7}, _iso(now - timedelta(days=25))),
+                # 40 days ago: outside 30d window
+                _event("drift_invoked_total", {"count": 3}, _iso(now - timedelta(days=40))),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary", "--window", "30d"])
 
@@ -247,7 +265,8 @@ class TestSummaryWindowAndSinceUntil:
         assert "7" in result.output
 
     def test_metrics_summary_with_invalid_window_exits_2(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         """Invalid custom window value (e.g. ``5x``) exits with code 2 (D9)."""
         result = runner.invoke(main, ["metrics", "summary", "--window", "5x"])
@@ -255,25 +274,30 @@ class TestSummaryWindowAndSinceUntil:
         assert result.exit_code == 2
 
     def test_metrics_summary_with_since_until_iso_filters(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         """--since/--until ISO 8601 absolute timestamps filter events correctly."""
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 1},
-                   "2026-06-26T10:00:00Z"),
-            _event("suggest_invoked_total", {"count": 1},
-                   "2026-06-26T15:00:00Z"),
-            _event("suggest_invoked_total", {"count": 1},
-                   "2026-06-26T19:00:00Z"),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 1}, "2026-06-26T10:00:00Z"),
+                _event("suggest_invoked_total", {"count": 1}, "2026-06-26T15:00:00Z"),
+                _event("suggest_invoked_total", {"count": 1}, "2026-06-26T19:00:00Z"),
+            ],
+        )
 
         result = runner.invoke(
             main,
             [
-                "metrics", "summary",
-                "--since", "2026-06-26T15:00:00Z",
-                "--until", "2026-06-26T19:00:00Z",
-                "--format", "json",
+                "metrics",
+                "summary",
+                "--since",
+                "2026-06-26T15:00:00Z",
+                "--until",
+                "2026-06-26T19:00:00Z",
+                "--format",
+                "json",
             ],
         )
 
@@ -299,7 +323,8 @@ class TestSummaryDomainFilterWidening:
     """
 
     def test_metrics_summary_with_domain_filter_backfill(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         """`--domain=backfill` returns ONLY ``backfill_*`` events.
 
@@ -308,13 +333,16 @@ class TestSummaryDomainFilterWidening:
         :func:`observability.read_events_by_domain`.
         """
         now = datetime.now(UTC)
-        _write_jsonl(metrics_path, [
-            _event("backfill_observations_total", {"count": 3}, _iso(now)),
-            _event("backfill_with_refs_total", {"count": 2}, _iso(now)),
-            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
-            _event("drift_invoked_total", {"count": 1}, _iso(now)),
-            _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("backfill_observations_total", {"count": 3}, _iso(now)),
+                _event("backfill_with_refs_total", {"count": 2}, _iso(now)),
+                _event("suggest_invoked_total", {"count": 1}, _iso(now)),
+                _event("drift_invoked_total", {"count": 1}, _iso(now)),
+                _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary", "--domain", "backfill"])
 
@@ -328,7 +356,8 @@ class TestSummaryDomainFilterWidening:
         assert "vector_search_invoked_total" not in result.output
 
     def test_metrics_summary_with_domain_filter_engine(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         """`--domain=engine` succeeds with empty filter result (RESERVED slot).
 
@@ -338,11 +367,14 @@ class TestSummaryDomainFilterWidening:
         contract text per T1.8 (D8/D9 case 4).
         """
         now = datetime.now(UTC)
-        _write_jsonl(metrics_path, [
-            _event("suggest_invoked_total", {"count": 1}, _iso(now)),
-            _event("drift_invoked_total", {"count": 1}, _iso(now)),
-            _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
-        ])
+        _write_jsonl(
+            metrics_path,
+            [
+                _event("suggest_invoked_total", {"count": 1}, _iso(now)),
+                _event("drift_invoked_total", {"count": 1}, _iso(now)),
+                _event("vector_search_invoked_total", {"count": 1}, _iso(now)),
+            ],
+        )
 
         result = runner.invoke(main, ["metrics", "summary", "--domain", "engine"])
 
@@ -354,7 +386,8 @@ class TestSummaryDomainFilterWidening:
         assert "No metrics in window/domain." in result.output
 
     def test_metrics_summary_with_invalid_domain_exits_2_with_helpful_message(
-        self, metrics_path: Path,
+        self,
+        metrics_path: Path,
     ) -> None:
         """Invalid --domain exits 2 with a helpful error message.
 
@@ -362,7 +395,8 @@ class TestSummaryDomainFilterWidening:
         handler runs (no fallback through validate_domain needed).
         """
         result = runner.invoke(
-            main, ["metrics", "summary", "--domain", "garbage"],
+            main,
+            ["metrics", "summary", "--domain", "garbage"],
         )
 
         assert result.exit_code == 2, result.output

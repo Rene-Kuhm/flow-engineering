@@ -69,18 +69,24 @@ class TestMetricsExportPrometheus:
     """``flow metrics export --format prometheus`` emits textfile exposition."""
 
     def test_metrics_export_prometheus_to_stdout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Stdout receives Prometheus textfile format with HELP + TYPE + lines."""
         metrics_file = tmp_path / "metrics.jsonl"
-        _write_jsonl(metrics_file, [
-            _event("suggest_invoked_total", {"count": 1}),
-            _event("snapshot_create_total", {"count": 3}),
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                _event("suggest_invoked_total", {"count": 1}),
+                _event("snapshot_create_total", {"count": 3}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "prometheus"],
+            main,
+            ["metrics", "export", "--format", "prometheus"],
         )
 
         assert result.exit_code == 0, (
@@ -94,21 +100,31 @@ class TestMetricsExportPrometheus:
         assert "flow_snapshot_create_total 3.0" in result.output
 
     def test_metrics_export_prometheus_to_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--out=<path>`` writes the textfile atomically to disk."""
         metrics_file = tmp_path / "metrics.jsonl"
         out_file = tmp_path / "out.prom"
-        _write_jsonl(metrics_file, [
-            _event("suggest_invoked_total", {"count": 1}),
-            _event("drift_invoked_total", {"count": 1, "change": "obs"}),
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                _event("suggest_invoked_total", {"count": 1}),
+                _event("drift_invoked_total", {"count": 1, "change": "obs"}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--out", str(out_file),
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--out",
+                str(out_file),
             ],
         )
 
@@ -118,10 +134,12 @@ class TestMetricsExportPrometheus:
         assert out_file.exists()
         content = out_file.read_text(encoding="utf-8")
         assert "# HELP flow_suggest_invoked_total" in content
-        assert "flow_drift_invoked_total{change=\"obs\"}" in content
+        assert 'flow_drift_invoked_total{change="obs"}' in content
 
     def test_metrics_export_prometheus_empty_sink_emits_eof(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Empty JSONL sink → ``# EOF\n`` per Prometheus convention (D8)."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -129,7 +147,8 @@ class TestMetricsExportPrometheus:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "prometheus"],
+            main,
+            ["metrics", "export", "--format", "prometheus"],
         )
 
         assert result.exit_code == 0
@@ -143,18 +162,24 @@ class TestMetricsExportJson:
     """``flow metrics export --format json`` emits JSON list of event dicts."""
 
     def test_metrics_export_json_format(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """JSON format emits a parseable JSON list of MetricEvent-shaped dicts."""
         metrics_file = tmp_path / "metrics.jsonl"
-        _write_jsonl(metrics_file, [
-            _event("suggest_invoked_total", {"count": 1}),
-            _event("drift_invoked_total", {"count": 1, "change": "obs"}),
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                _event("suggest_invoked_total", {"count": 1}),
+                _event("drift_invoked_total", {"count": 1, "change": "obs"}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "json"],
+            main,
+            ["metrics", "export", "--format", "json"],
         )
 
         assert result.exit_code == 0, (
@@ -167,7 +192,9 @@ class TestMetricsExportJson:
         assert names == {"suggest_invoked_total", "drift_invoked_total"}
 
     def test_metrics_export_json_to_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """JSON format also honors ``--out`` for atomic write."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -176,9 +203,14 @@ class TestMetricsExportJson:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "json",
-                "--out", str(out_file),
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "json",
+                "--out",
+                str(out_file),
             ],
         )
 
@@ -197,18 +229,24 @@ class TestMetricsExportText:
     """``flow metrics export --format text`` emits human-readable table."""
 
     def test_metrics_export_text_format(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Text format emits a readable ``name  count`` table (mirrors REQ-8)."""
         metrics_file = tmp_path / "metrics.jsonl"
-        _write_jsonl(metrics_file, [
-            _event("suggest_invoked_total", {"count": 1}),
-            _event("snapshot_create_total", {"count": 3}),
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                _event("suggest_invoked_total", {"count": 1}),
+                _event("snapshot_create_total", {"count": 3}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "text"],
+            main,
+            ["metrics", "export", "--format", "text"],
         )
 
         assert result.exit_code == 0, (
@@ -228,21 +266,31 @@ class TestMetricsExportFilters:
     """``flow metrics export`` honors ``--window`` / ``--since`` / ``--domain``."""
 
     def test_metrics_export_with_window_filter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--window=1h`` rolling filter excludes events older than 60 minutes."""
         metrics_file = tmp_path / "metrics.jsonl"
         now = datetime.now(UTC)
-        _write_jsonl(metrics_file, [
-            _event("old_counter", {"count": 1}, ts=_iso(now - timedelta(hours=2))),
-            _event("fresh_counter", {"count": 1}, ts=_iso(now)),
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                _event("old_counter", {"count": 1}, ts=_iso(now - timedelta(hours=2))),
+                _event("fresh_counter", {"count": 1}, ts=_iso(now)),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--window", "1h",
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--window",
+                "1h",
             ],
         )
 
@@ -253,21 +301,31 @@ class TestMetricsExportFilters:
         assert "old_counter" not in result.output
 
     def test_metrics_export_with_domain_filter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--domain=snapshot`` narrows output to snapshot_* counters."""
         metrics_file = tmp_path / "metrics.jsonl"
-        _write_jsonl(metrics_file, [
-            _event("suggest_invoked_total", {"count": 1}),
-            _event("snapshot_create_total", {"count": 1}),
-            _event("snapshot_prune_total", {"count": 2}),
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                _event("suggest_invoked_total", {"count": 1}),
+                _event("snapshot_create_total", {"count": 1}),
+                _event("snapshot_prune_total", {"count": 2}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--domain", "snapshot",
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--domain",
+                "snapshot",
             ],
         )
 
@@ -287,7 +345,9 @@ class TestMetricsExportErrors:
     """``flow metrics export`` exit-code contract per D9."""
 
     def test_metrics_export_invalid_format_exits_2(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--format=garbage`` exits 2 (Click ``click.Choice`` validation)."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -295,7 +355,8 @@ class TestMetricsExportErrors:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "garbage"],
+            main,
+            ["metrics", "export", "--format", "garbage"],
         )
 
         assert result.exit_code == observability.EXIT_INVALID_VALUE, (
@@ -303,7 +364,9 @@ class TestMetricsExportErrors:
         )
 
     def test_metrics_export_unwritable_out_exits_4(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--out`` write failure exits 4 (D9 I/O error)."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -316,9 +379,14 @@ class TestMetricsExportErrors:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--out", str(unwritable_out),
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--out",
+                str(unwritable_out),
             ],
         )
 
@@ -336,7 +404,9 @@ class TestMetricsExportEmptySink:
     """``flow metrics export`` honors D8 default-empty across formats."""
 
     def test_metrics_export_empty_sink_text_emits_no_metrics_recorded(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Empty sink + text format → ``(no metrics recorded)`` (REQ-8 close)."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -344,14 +414,17 @@ class TestMetricsExportEmptySink:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "text"],
+            main,
+            ["metrics", "export", "--format", "text"],
         )
 
         assert result.exit_code == 0
         assert "no metrics recorded" in result.output
 
     def test_metrics_export_empty_sink_json_emits_empty_list(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Empty sink + json format → ``[]``."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -359,7 +432,8 @@ class TestMetricsExportEmptySink:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, ["metrics", "export", "--format", "json"],
+            main,
+            ["metrics", "export", "--format", "json"],
         )
 
         assert result.exit_code == 0
@@ -373,7 +447,9 @@ class TestMetricsExportAtomicWrite:
     """``--out`` uses the atomic-write pattern (D10)."""
 
     def test_metrics_export_out_does_not_leave_tmp_orphans(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After ``--out`` success, no ``.tmp`` or ``.metrics-*`` leftovers."""
         metrics_file = tmp_path / "metrics.jsonl"
@@ -382,9 +458,14 @@ class TestMetricsExportAtomicWrite:
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--out", str(out_file),
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--out",
+                str(out_file),
             ],
         )
 
