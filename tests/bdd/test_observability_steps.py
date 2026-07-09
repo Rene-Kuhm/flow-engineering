@@ -14,6 +14,7 @@ Test isolation:
 - The ``metrics_world`` fixture holds the CliRunner invocation result so
   Then steps can assert on ``result.exit_code`` / ``result.output``.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,7 +75,7 @@ def test_req35_summary_per_domain(metrics_world: dict[str, Any]) -> None:
 
 @scenario(
     "../bdd/req35_metrics_summary.feature",
-    "Summary with empty metrics file emits \"no metrics yet\" message",
+    'Summary with empty metrics file emits "no metrics yet" message',
 )
 def test_req35_summary_empty_sink(metrics_world: dict[str, Any]) -> None:
     pass
@@ -158,7 +159,7 @@ def test_req39_aggregate_p95_window(metrics_world: dict[str, Any]) -> None:
 
 @scenario(
     "../bdd/req39_metrics_aggregate.feature",
-    "--percentile with insufficient data emits \"not enough data points\" warning",
+    '--percentile with insufficient data emits "not enough data points" warning',
 )
 def test_req39_aggregate_insufficient_data(metrics_world: dict[str, Any]) -> None:
     pass
@@ -178,21 +179,15 @@ def given_12_events_across_4_domains(metrics_world: dict[str, Any]) -> None:
     now = datetime.now(UTC)
     events: list[dict] = []
     for _ in range(3):
-        events.append(
-            {"name": "suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)}
-        )
+        events.append({"name": "suggest_invoked_total", "fields": {"count": 1}, "ts": _iso(now)})
     for _ in range(3):
-        events.append(
-            {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)}
-        )
+        events.append({"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)})
     for _ in range(3):
         events.append(
             {"name": "vector_search_invoked_total", "fields": {"count": 1}, "ts": _iso(now)}
         )
     for _ in range(3):
-        events.append(
-            {"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)}
-        )
+        events.append({"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)})
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
@@ -203,12 +198,7 @@ def given_metrics_file_missing(metrics_world: dict[str, Any]) -> None:
         metrics_world["metrics_path"].unlink()
 
 
-@given(
-    parsers.parse(
-        "5 metric events are written spanning 3 days "
-        "(oldest 3d ago, newest 30m ago)"
-    )
-)
+@given(parsers.parse("5 metric events are written spanning 3 days (oldest 3d ago, newest 30m ago)"))
 def given_5_events_spanning_3_days_window(
     metrics_world: dict[str, Any],
 ) -> None:
@@ -228,11 +218,13 @@ def given_5_events_spanning_3_days_window(
     ]
     events: list[dict] = []
     for offset, name in offsets:
-        events.append({
-            "name": name,
-            "fields": {"count": 1},
-            "ts": _iso(now - offset),
-        })
+        events.append(
+            {
+                "name": name,
+                "fields": {"count": 1},
+                "ts": _iso(now - offset),
+            }
+        )
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
@@ -299,11 +291,7 @@ def given_12_events_with_3_distinct_counters_per_domain(
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
-@given(
-    parsers.parse(
-        "24 metric events across all 8 domains (3 each)"
-    )
-)
+@given(parsers.parse("24 metric events across all 8 domains (3 each)"))
 def given_24_events_across_8_domains(
     metrics_world: dict[str, Any],
 ) -> None:
@@ -335,7 +323,11 @@ def given_24_events_across_8_domains(
         # 3 federated counters
         {"name": "federated_search_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
         {"name": "federated_search_projects_queried", "fields": {"count": 1}, "ts": _iso(now)},
-        {"name": "federated_search_results_returned_total", "fields": {"count": 1}, "ts": _iso(now)},
+        {
+            "name": "federated_search_results_returned_total",
+            "fields": {"count": 1},
+            "ts": _iso(now),
+        },
         # 3 snapshot counters
         {"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)},
         {"name": "snapshot_rollback_total", "fields": {"count": 1}, "ts": _iso(now)},
@@ -368,24 +360,28 @@ def when_run_metrics_summary_window_1h_text(
 ) -> None:
     """Invoke ``flow metrics summary --window 1h --format text`` via CliRunner."""
     metrics_world["command"] = [
-        "metrics", "summary", "--window", "1h", "--format", "text",
+        "metrics",
+        "summary",
+        "--window",
+        "1h",
+        "--format",
+        "text",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
 
-@when(
-    parsers.parse(
-        "I run `flow metrics summary --since 2026-06-26T00:00:00Z --format json`"
-    )
-)
+@when(parsers.parse("I run `flow metrics summary --since 2026-06-26T00:00:00Z --format json`"))
 def when_run_metrics_summary_since_iso_json(
     metrics_world: dict[str, Any],
 ) -> None:
     """Invoke ``flow metrics summary --since <iso> --format json``."""
     metrics_world["command"] = [
-        "metrics", "summary",
-        "--since", "2026-06-26T00:00:00Z",
-        "--format", "json",
+        "metrics",
+        "summary",
+        "--since",
+        "2026-06-26T00:00:00Z",
+        "--format",
+        "json",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
@@ -393,19 +389,18 @@ def when_run_metrics_summary_since_iso_json(
 # ---------- REQ-37 When steps ----------
 
 
-@when(
-    parsers.parse(
-        "I run `flow metrics summary --domain snapshot --format text`"
-    )
-)
+@when(parsers.parse("I run `flow metrics summary --domain snapshot --format text`"))
 def when_run_metrics_summary_domain_snapshot_text(
     metrics_world: dict[str, Any],
 ) -> None:
     """Invoke ``flow metrics summary --domain snapshot --format text``."""
     metrics_world["command"] = [
-        "metrics", "summary",
-        "--domain", "snapshot",
-        "--format", "text",
+        "metrics",
+        "summary",
+        "--domain",
+        "snapshot",
+        "--format",
+        "text",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
@@ -414,36 +409,24 @@ def when_run_metrics_summary_domain_snapshot_text(
 
 
 @then(parsers.parse('stdout contains a "{section}" section'))
-def then_stdout_contains_section(
-    metrics_world: dict[str, Any], section: str
-) -> None:
+def then_stdout_contains_section(metrics_world: dict[str, Any], section: str) -> None:
     result = metrics_world["result"]
     assert result.exit_code == 0, (
         f"expected exit 0; got {result.exit_code}. output={result.output!r}"
     )
-    assert section in result.output, (
-        f"expected {section!r} in stdout; got {result.output!r}"
-    )
+    assert section in result.output, f"expected {section!r} in stdout; got {result.output!r}"
 
 
 @then(parsers.parse('stdout contains the literal text "{needle}"'))
-def then_stdout_contains_literal(
-    metrics_world: dict[str, Any], needle: str
-) -> None:
+def then_stdout_contains_literal(metrics_world: dict[str, Any], needle: str) -> None:
     result = metrics_world["result"]
-    assert needle in result.output, (
-        f"expected {needle!r} in stdout; got {result.output!r}"
-    )
+    assert needle in result.output, f"expected {needle!r} in stdout; got {result.output!r}"
 
 
 @then(parsers.parse('stdout contains "{needle}"'))
-def then_stdout_contains(
-    metrics_world: dict[str, Any], needle: str
-) -> None:
+def then_stdout_contains(metrics_world: dict[str, Any], needle: str) -> None:
     result = metrics_world["result"]
-    assert needle in result.output, (
-        f"expected {needle!r} in stdout; got {result.output!r}"
-    )
+    assert needle in result.output, f"expected {needle!r} in stdout; got {result.output!r}"
 
 
 @then("exit code is 0")
@@ -478,11 +461,7 @@ def then_stdout_contains_only_most_recent_counter(
         )
 
 
-@then(
-    parsers.parse(
-        "stdout JSON contains exactly the 2 events after that timestamp"
-    )
-)
+@then(parsers.parse("stdout JSON contains exactly the 2 events after that timestamp"))
 def then_stdout_json_contains_exactly_2_events(
     metrics_world: dict[str, Any],
 ) -> None:
@@ -495,13 +474,9 @@ def then_stdout_json_contains_exactly_2_events(
     # Flatten the nested {domain: {counter: count}} shape and assert exactly
     # the 2 expected counter names are present (each with count=1).
     flat = {
-        counter: count
-        for domain_map in payload.values()
-        for counter, count in domain_map.items()
+        counter: count for domain_map in payload.values() for counter, count in domain_map.items()
     }
-    assert flat == {"counter_d": 1, "counter_e": 1}, (
-        f"unexpected payload: {flat!r}"
-    )
+    assert flat == {"counter_d": 1, "counter_e": 1}, f"unexpected payload: {flat!r}"
 
 
 # ---------- REQ-37 Then steps ----------
@@ -531,8 +506,7 @@ def then_stdout_contains_only_3_snapshot_counters(
         "snapshot_prune_total",
     ):
         assert expected in result.output, (
-            f"expected snapshot counter {expected!r} in stdout; "
-            f"got {result.output!r}"
+            f"expected snapshot counter {expected!r} in stdout; got {result.output!r}"
         )
     # All non-snapshot counter names MUST be excluded.
     for excluded in (
@@ -547,16 +521,11 @@ def then_stdout_contains_only_3_snapshot_counters(
         "vector_search_latency_ms",
     ):
         assert excluded not in result.output, (
-            f"unexpected non-snapshot counter {excluded!r} in stdout: "
-            f"{result.output!r}"
+            f"unexpected non-snapshot counter {excluded!r} in stdout: {result.output!r}"
         )
 
 
-@then(
-    parsers.parse(
-        'stdout does NOT contain "binding:" or "drift:" or "vector:"'
-    )
-)
+@then(parsers.parse('stdout does NOT contain "binding:" or "drift:" or "vector:"'))
 def then_stdout_does_not_contain_other_domain_headers(
     metrics_world: dict[str, Any],
 ) -> None:
@@ -578,8 +547,7 @@ def then_stdout_does_not_contain_other_domain_headers(
     # Other-domain headers MUST NOT appear.
     for excluded_header in ("binding:", "drift:", "vector:"):
         assert excluded_header not in result.output, (
-            f"unexpected domain header {excluded_header!r} in stdout: "
-            f"{result.output!r}"
+            f"unexpected domain header {excluded_header!r} in stdout: {result.output!r}"
         )
 
 
@@ -623,10 +591,7 @@ def then_stdout_contains_all_8_domain_headers(
 
 
 @given(
-    parsers.parse(
-        "5 metric events are written "
-        "(3 snapshot_create_total + 2 drift_invoked_total)"
-    )
+    parsers.parse("5 metric events are written (3 snapshot_create_total + 2 drift_invoked_total)")
 )
 def given_5_events_3_snapshot_2_drift(metrics_world: dict[str, Any]) -> None:
     """Seed 5 events: 3 snapshot_create_total + 2 drift_invoked_total.
@@ -656,11 +621,7 @@ def given_5_events_3_snapshot_2_drift(metrics_world: dict[str, Any]) -> None:
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
-@given(
-    parsers.parse(
-        "3 metric events (one each of binding / drift / vector)"
-    )
-)
+@given(parsers.parse("3 metric events (one each of binding / drift / vector)"))
 def given_3_events_one_per_domain(metrics_world: dict[str, Any]) -> None:
     """Seed 3 events, one per domain (binding / drift / vector).
 
@@ -715,11 +676,13 @@ def given_6_events_spanning_3_days_for_window(
     ]
     events: list[dict] = []
     for offset, name in offsets_and_names:
-        events.append({
-            "name": name,
-            "fields": {"count": 1},
-            "ts": _iso(now - offset),
-        })
+        events.append(
+            {
+                "name": name,
+                "fields": {"count": 1},
+                "ts": _iso(now - offset),
+            }
+        )
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
@@ -730,11 +693,7 @@ def when_run_metrics_export_prometheus(metrics_world: dict[str, Any]) -> None:
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
 
-@when(
-    parsers.parse(
-        "I run `flow metrics export --format prometheus --out metrics.prom`"
-    )
-)
+@when(parsers.parse("I run `flow metrics export --format prometheus --out metrics.prom`"))
 def when_run_metrics_export_prometheus_to_file(
     metrics_world: dict[str, Any],
 ) -> None:
@@ -742,32 +701,35 @@ def when_run_metrics_export_prometheus_to_file(
     out_path = metrics_world["tmp_path"] / "metrics.prom"
     metrics_world["out_path"] = out_path
     metrics_world["command"] = [
-        "metrics", "export", "--format", "prometheus",
-        "--out", str(out_path),
+        "metrics",
+        "export",
+        "--format",
+        "prometheus",
+        "--out",
+        str(out_path),
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
 
-@when(
-    parsers.parse(
-        "I run `flow metrics export --format prometheus --window 1h`"
-    )
-)
+@when(parsers.parse("I run `flow metrics export --format prometheus --window 1h`"))
 def when_run_metrics_export_prometheus_window_1h(
     metrics_world: dict[str, Any],
 ) -> None:
     """Invoke ``flow metrics export --format prometheus --window 1h``."""
     metrics_world["command"] = [
-        "metrics", "export", "--format", "prometheus",
-        "--window", "1h",
+        "metrics",
+        "export",
+        "--format",
+        "prometheus",
+        "--window",
+        "1h",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
 
 @then(
     parsers.parse(
-        "stdout contains only the in-window counters "
-        "(binding_event_30m, binding_event_5m)"
+        "stdout contains only the in-window counters (binding_event_30m, binding_event_5m)"
     )
 )
 def then_stdout_contains_only_in_window_counters(
@@ -779,12 +741,10 @@ def then_stdout_contains_only_in_window_counters(
         f"expected exit 0; got {result.exit_code}. output={result.output!r}"
     )
     assert "binding_event_30m" in result.output, (
-        f"expected in-window counter binding_event_30m in stdout; "
-        f"got {result.output!r}"
+        f"expected in-window counter binding_event_30m in stdout; got {result.output!r}"
     )
     assert "binding_event_5m" in result.output, (
-        f"expected in-window counter binding_event_5m in stdout; "
-        f"got {result.output!r}"
+        f"expected in-window counter binding_event_5m in stdout; got {result.output!r}"
     )
     # All out-of-window events MUST be excluded.
     for excluded in (
@@ -794,8 +754,7 @@ def then_stdout_contains_only_in_window_counters(
         "binding_event_90m",
     ):
         assert excluded not in result.output, (
-            f"unexpected out-of-window counter {excluded!r} in stdout: "
-            f"{result.output!r}"
+            f"unexpected out-of-window counter {excluded!r} in stdout: {result.output!r}"
         )
 
 
@@ -825,11 +784,7 @@ def then_file_metrics_prom_valid(metrics_world: dict[str, Any]) -> None:
 # ---------- REQ-39 (aggregate subcommand) Given / When / Then steps ----------
 
 
-@given(
-    parsers.parse(
-        "100 metric events of drift_invoked_total over 1 hour"
-    )
-)
+@given(parsers.parse("100 metric events of drift_invoked_total over 1 hour"))
 def given_100_drift_events_over_1h(metrics_world: dict[str, Any]) -> None:
     """Seed 100 drift_invoked_total events with monotonic value 1..100.
 
@@ -864,18 +819,18 @@ def given_only_1_metric_event(metrics_world: dict[str, Any]) -> None:
     _write_jsonl(metrics_world["metrics_path"], events)
 
 
-@when(
-    parsers.parse(
-        "I run `flow metrics aggregate --percentile p95 --format text`"
-    )
-)
+@when(parsers.parse("I run `flow metrics aggregate --percentile p95 --format text`"))
 def when_run_metrics_aggregate_p95_text(
     metrics_world: dict[str, Any],
 ) -> None:
     """Invoke ``flow metrics aggregate --percentile p95 --format text``."""
     metrics_world["command"] = [
-        "metrics", "aggregate",
-        "--percentile", "p95", "--format", "text",
+        "metrics",
+        "aggregate",
+        "--percentile",
+        "p95",
+        "--format",
+        "text",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
@@ -884,16 +839,15 @@ def when_run_metrics_aggregate_p95_text(
 def when_run_metrics_aggregate_p99(metrics_world: dict[str, Any]) -> None:
     """Invoke ``flow metrics aggregate --percentile p99`` (insufficient-data scenario)."""
     metrics_world["command"] = [
-        "metrics", "aggregate", "--percentile", "p99",
+        "metrics",
+        "aggregate",
+        "--percentile",
+        "p99",
     ]
     metrics_world["result"] = runner.invoke(main, metrics_world["command"])
 
 
-@then(
-    parsers.parse(
-        'stdout contains "drift_invoked_total" with a p95 value'
-    )
-)
+@then(parsers.parse('stdout contains "drift_invoked_total" with a p95 value'))
 def then_stdout_contains_counter_with_p95(
     metrics_world: dict[str, Any],
 ) -> None:
@@ -911,13 +865,9 @@ def then_stdout_contains_counter_with_p95(
         f"expected 'drift_invoked_total' in stdout; got {result.output!r}"
     )
     # The header row MUST carry the p95 column label.
-    assert "p95" in result.output, (
-        f"expected 'p95' column label in stdout; got {result.output!r}"
-    )
+    assert "p95" in result.output, f"expected 'p95' column label in stdout; got {result.output!r}"
     # The p95 value 95.0 MUST appear in the data row.
-    assert "95" in result.output, (
-        f"expected p95 value 95 in stdout; got {result.output!r}"
-    )
+    assert "95" in result.output, f"expected p95 value 95 in stdout; got {result.output!r}"
 
 
 @then(parsers.parse('stdout contains "not enough data points"'))
@@ -932,10 +882,8 @@ def then_stdout_contains_not_enough_data_points(
     """
     result = metrics_world["result"]
     assert result.exit_code == 0, (
-        f"expected exit 0 (graceful warning); got {result.exit_code}. "
-        f"output={result.output!r}"
+        f"expected exit 0 (graceful warning); got {result.exit_code}. output={result.output!r}"
     )
     assert "not enough data points" in result.output, (
-        f"expected 'not enough data points' warning in stdout; "
-        f"got {result.output!r}"
+        f"expected 'not enough data points' warning in stdout; got {result.output!r}"
     )
