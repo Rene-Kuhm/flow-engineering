@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [1.3.0] - 2026-07-09
+
 ### Added
 - Incident response guide for CI, runner, release, memory/SDD, and security incidents.
 - Change governance guide covering Definition of Done, release notes, ADR triggers, and SDD/OpenSpec hygiene.
