@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Check runner and latest CI health
-        shell: powershell
+        shell: powershell -ExecutionPolicy Bypass -NoProfile -Command ". '{0}'"
         run: |
           $ErrorActionPreference = "Stop"
 
