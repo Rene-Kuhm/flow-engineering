@@ -52,7 +52,7 @@ Goal: secrets and supply chain mistakes should be hard to miss.
 - [x] Document secret handling and security reporting. See `SECURITY.md` and `docs/security-baseline.md`.
 - [x] Define token rotation rules for GitHub, OpenAI, OpenCode, and runner credentials. See `docs/security-baseline.md`.
 - [x] Add dependency update policy. See `docs/dependency-updates.md`.
-- [ ] Add lightweight SAST/security scan for changed code.
+- [x] Add lightweight SAST/security scan for changed code. CI runs a focused Ruff security rule set over `src` and `scripts`.
 - [x] Require extra review for changes touching secrets, runner setup, filesystem access, auth, or external command execution. See `docs/security-baseline.md`.
 
 ## Priority 3 — governance of change
