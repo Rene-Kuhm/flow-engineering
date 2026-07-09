@@ -121,6 +121,7 @@ See [Enterprise Readiness](docs/enterprise-readiness.md) for the operational, se
 See [Dependency Updates](docs/dependency-updates.md) for Dependabot scope and review rules.
 See [Security Baseline](docs/security-baseline.md) and [Security Policy](SECURITY.md) for secret handling, token rotation, and sensitive-change gates.
 See [Operating Manual](docs/operating-manual.md) for the first-read map for agents and maintainers.
+See [Glossary](docs/glossary.md) for project-specific vocabulary and domain terms.
 See [Session Checklist](docs/session-checklist.md) for the start/close routine agents should follow.
 See [Release and Recovery](docs/release-recovery.md) for release tagging, runner rebuild, rollback, and disaster recovery.
 See [Incident Response](docs/incident-response.md) for the symptom/diagnosis/fix/prevention workflow.

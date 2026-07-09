@@ -34,6 +34,21 @@ quality bar to enforce before changing the project.
 | Drift-detection slice rules | `docs/engineering-quality-gates.md` |
 | Live debt and follow-ups | `docs/follow-up-audit.md` |
 | Memory hygiene | `docs/memory-maintenance.md` |
+| Project vocabulary | `docs/glossary.md` |
+
+## Agent context loading
+
+Use this when MiniMax, Codex, or another agent needs focused context. Load the
+smallest set that answers the task; do not copy these files into parallel docs.
+
+| Agent need | Load |
+|---|---|
+| Understand the project shape | `docs/operating-manual.md`, `README.md`, `docs/glossary.md` |
+| Design a change | `docs/change-governance.md`, `docs/engineering-quality-gates.md`, relevant `docs/adr/`, relevant `openspec/specs/` |
+| Work on drift detection | `docs/drift-detection-regression-set.md`, `openspec/changes/drift-detection/`, `docs/follow-up-audit.md` |
+| Touch CI, runner, or operations | `docs/system-health.md`, `docs/runner-watchdog.md`, `docs/incident-response.md`, `docs/release-recovery.md` |
+| Use memory or old SDD context | `docs/memory-maintenance.md`, `docs/follow-up-audit.md`, then verify current code/tests |
+| Close a session | `docs/session-checklist.md`, `docs/change-governance.md` |
 
 ## Architecture and decisions
 
