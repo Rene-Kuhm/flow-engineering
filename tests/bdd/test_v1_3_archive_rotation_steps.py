@@ -70,22 +70,21 @@ def given_archive_has_fresh_and_old_entries(tmp_path, monkeypatch) -> None:  # t
     monkeypatch.chdir(repo)
 
 
-@given("the production module \"src/flow_engineering/cli/rotation.py\" exists")
+@given('the production module "src/flow_engineering/cli/rotation.py" exists')
 def given_rotation_module_exists() -> None:
     """Implicit precondition; the AST step asserts the file is present."""
     rotation = (
-        Path(__file__).resolve().parents[2]
-        / "src" / "flow_engineering" / "cli" / "rotation.py"
+        Path(__file__).resolve().parents[2] / "src" / "flow_engineering" / "cli" / "rotation.py"
     )
     assert rotation.exists(), f"production module missing at {rotation}"
 
 
-@given("the operator runs \"flow archive rotate --help\"")
+@given('the operator runs "flow archive rotate --help"')
 def given_operator_runs_help(context: dict) -> None:
     context["result"] = runner.invoke(main, ["archive", "rotate", "--help"])
 
 
-@when("the integration test \"tests/integration/test_rotation_readonly_contract.py\" runs")
+@when('the integration test "tests/integration/test_rotation_readonly_contract.py" runs')
 def when_integration_test_runs() -> None:
     """Invoke the integration test as a subprocess to mirror CI."""
 
@@ -94,31 +93,38 @@ def when_integration_test_runs() -> None:
 def when_command_completes(context: dict) -> None:
     """No-op alias; confirms no exception for the help scenario."""
     assert context["result"].exception is None or isinstance(
-        context["result"].exception, SystemExit,
+        context["result"].exception,
+        SystemExit,
     )
 
 
-@when("the operator runs \"flow archive rotate --help\"")
+@when('the operator runs "flow archive rotate --help"')
 def run_help(context: dict) -> None:
     context["result"] = runner.invoke(main, ["archive", "rotate", "--help"])
 
 
-@when("the operator runs \"flow archive rotate --older-than 90 --dry-run\"")
+@when('the operator runs "flow archive rotate --older-than 90 --dry-run"')
 def run_default_format(context: dict) -> None:
     context["result"] = runner.invoke(
-        main, ["archive", "rotate", "--older-than", "90", "--dry-run"],
+        main,
+        ["archive", "rotate", "--older-than", "90", "--dry-run"],
     )
 
 
 @when(
-    "the operator runs \"flow archive rotate --older-than 180 --dry-run "
-    "--format yaml\"",
+    'the operator runs "flow archive rotate --older-than 180 --dry-run --format yaml"',
 )
 def run_yaml_format(context: dict) -> None:
     context["result"] = runner.invoke(
-        main, [
-            "archive", "rotate", "--older-than", "180",
-            "--dry-run", "--format", "yaml",
+        main,
+        [
+            "archive",
+            "rotate",
+            "--older-than",
+            "180",
+            "--dry-run",
+            "--format",
+            "yaml",
         ],
     )
 
@@ -131,17 +137,17 @@ def exit_code_zero(context: dict) -> None:
     )
 
 
-@then("the output documents the \"--older-than\" option")
+@then('the output documents the "--older-than" option')
 def output_documents_older_than(context: dict) -> None:
     assert "--older-than" in context["result"].output
 
 
-@then("the output documents the \"--dry-run\" option")
+@then('the output documents the "--dry-run" option')
 def output_documents_dry_run(context: dict) -> None:
     assert "--dry-run" in context["result"].output
 
 
-@then("the output documents the \"--format\" option")
+@then('the output documents the "--format" option')
 def output_documents_format(context: dict) -> None:
     assert "--format" in context["result"].output
 
@@ -151,13 +157,13 @@ def output_is_valid_yaml(context: dict) -> None:
     yaml.safe_load(context["result"].output)  # raises if invalid
 
 
-@then("the output contains a \"candidates\" key")
+@then('the output contains a "candidates" key')
 def output_has_candidates_key(context: dict) -> None:
     payload = yaml.safe_load(context["result"].output)
     assert "candidates" in payload
 
 
-@then("the \"dry_run\" field is true")
+@then('the "dry_run" field is true')
 def dry_run_field_is_true(context: dict) -> None:
     payload = yaml.safe_load(context["result"].output)
     assert payload["dry_run"] is True
@@ -175,7 +181,9 @@ def filesystem_unchanged() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["git", "status", "--porcelain"],
-        capture_output=True, text=True, cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
         check=True,
     )
     # The fixture files added by RED-phase step glue (``tests/``,
@@ -187,7 +195,7 @@ def filesystem_unchanged() -> None:
     )
 
 
-@then("the 400-day-old entry appears in the \"candidates\" list")
+@then('the 400-day-old entry appears in the "candidates" list')
 def old_entry_in_candidates(context: dict) -> None:
     payload = yaml.safe_load(context["result"].output)
     paths = [c["path"] for c in payload["candidates"]]
@@ -196,7 +204,7 @@ def old_entry_in_candidates(context: dict) -> None:
     )
 
 
-@then("the 7-day-old entry does not appear in the \"candidates\" list")
+@then('the 7-day-old entry does not appear in the "candidates" list')
 def fresh_entry_not_in_candidates(context: dict) -> None:
     payload = yaml.safe_load(context["result"].output)
     paths = [c["path"] for c in payload["candidates"]]
@@ -210,22 +218,22 @@ def fresh_entry_not_in_candidates(context: dict) -> None:
 )
 def ast_parses_rotation_module() -> None:
     import ast
+
     rotation = (
-        Path(__file__).resolve().parents[2]
-        / "src" / "flow_engineering" / "cli" / "rotation.py"
+        Path(__file__).resolve().parents[2] / "src" / "flow_engineering" / "cli" / "rotation.py"
     )
     source = rotation.read_text(encoding="utf-8")
     ast.parse(source, filename=str(rotation))
 
 
-@then("it asserts zero calls to \"shutil.move\"")
+@then('it asserts zero calls to "shutil.move"')
 def zero_shutil_move() -> None:
     import ast
 
     from tests.integration.test_rotation_readonly_contract import _violations
+
     rotation = (
-        Path(__file__).resolve().parents[2]
-        / "src" / "flow_engineering" / "cli" / "rotation.py"
+        Path(__file__).resolve().parents[2] / "src" / "flow_engineering" / "cli" / "rotation.py"
     )
     source = rotation.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(rotation))
@@ -233,14 +241,14 @@ def zero_shutil_move() -> None:
     assert not any("shutil.move" in v for v in violations), violations
 
 
-@then("it asserts zero calls to \"os.rename\"")
+@then('it asserts zero calls to "os.rename"')
 def zero_os_rename() -> None:
     import ast
 
     from tests.integration.test_rotation_readonly_contract import _violations
+
     rotation = (
-        Path(__file__).resolve().parents[2]
-        / "src" / "flow_engineering" / "cli" / "rotation.py"
+        Path(__file__).resolve().parents[2] / "src" / "flow_engineering" / "cli" / "rotation.py"
     )
     source = rotation.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(rotation))
@@ -248,14 +256,14 @@ def zero_os_rename() -> None:
     assert not any("os.rename" in v for v in violations), violations
 
 
-@then("it asserts zero calls to \"Path.rename\"")
+@then('it asserts zero calls to "Path.rename"')
 def zero_path_rename() -> None:
     import ast
 
     from tests.integration.test_rotation_readonly_contract import _violations
+
     rotation = (
-        Path(__file__).resolve().parents[2]
-        / "src" / "flow_engineering" / "cli" / "rotation.py"
+        Path(__file__).resolve().parents[2] / "src" / "flow_engineering" / "cli" / "rotation.py"
     )
     source = rotation.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(rotation))
@@ -267,5 +275,6 @@ def zero_path_rename() -> None:
 def command_completes(context: dict) -> None:
     """No-op alias for the run-help step; just confirms no exception."""
     assert context["result"].exception is None or isinstance(
-        context["result"].exception, SystemExit,
+        context["result"].exception,
+        SystemExit,
     )

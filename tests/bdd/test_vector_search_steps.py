@@ -39,6 +39,7 @@ Test isolation:
   candidates — the cosine is controlled via FixedVectorsProvider, not the
   prose.
 """
+
 from __future__ import annotations
 
 import json
@@ -89,9 +90,7 @@ class FixedVectorsProvider(EmbeddingProvider):
     def embed(self, texts: list[str]) -> np.ndarray:
         rows: list[np.ndarray] = []
         for t in texts:
-            rows.append(
-                self._vectors.get(t, np.zeros(EMBEDDING_DIMS, dtype=np.float32))
-            )
+            rows.append(self._vectors.get(t, np.zeros(EMBEDDING_DIMS, dtype=np.float32)))
         return np.stack(rows).astype(np.float32)
 
 
@@ -164,9 +163,7 @@ def _build_worked_example_fixture():
 
 
 @pytest.fixture
-def vector_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def vector_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for REQ-17 + REQ-18 scenarios."""
     metrics_path = tmp_path / "metrics.jsonl"
     monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
@@ -257,9 +254,7 @@ def hybrid_with_mock_provider(vector_world):
     )
     vector_world["backend"] = inner
     vector_world["provider"] = MockEmbeddingProvider()
-    vector_world["hybrid"] = HybridBackend(
-        inner=inner, embedding_provider=vector_world["provider"]
-    )
+    vector_world["hybrid"] = HybridBackend(inner=inner, embedding_provider=vector_world["provider"])
 
 
 @given("a corpus of 3 observations with semantic content")
@@ -322,60 +317,54 @@ def hybrid_wraps_inmemory(vector_world):
 @when(parsers.parse('I call mem_search_semantic("{query}", k={k:d})'))
 def call_semantic_with_k(vector_world, query: str, k: int):
     backend = vector_world["hybrid"] or vector_world["backend"]
-    vector_world["modules_before"] = {
-        "torch", "sentence_transformers", "sqlite_vec"
-    } & set(sys.modules)
+    vector_world["modules_before"] = {"torch", "sentence_transformers", "sqlite_vec"} & set(
+        sys.modules
+    )
     try:
         vector_world["results"] = backend.mem_search_semantic(query, k=k)
     except Exception as exc:
         vector_world["raised"] = exc
     finally:
-        vector_world["modules_after"] = {
-            "torch", "sentence_transformers", "sqlite_vec"
-        } & set(sys.modules)
+        vector_world["modules_after"] = {"torch", "sentence_transformers", "sqlite_vec"} & set(
+            sys.modules
+        )
 
 
 @when(parsers.parse('I call mem_search_semantic("{query}")'))
 def call_semantic(vector_world, query: str):
     backend = vector_world["hybrid"] or vector_world["backend"]
-    vector_world["modules_before"] = {
-        "torch", "sentence_transformers", "sqlite_vec"
-    } & set(sys.modules)
+    vector_world["modules_before"] = {"torch", "sentence_transformers", "sqlite_vec"} & set(
+        sys.modules
+    )
     try:
         vector_world["results"] = backend.mem_search_semantic(query)
     except Exception as exc:
         vector_world["raised"] = exc
     finally:
-        vector_world["modules_after"] = {
-            "torch", "sentence_transformers", "sqlite_vec"
-        } & set(sys.modules)
+        vector_world["modules_after"] = {"torch", "sentence_transformers", "sqlite_vec"} & set(
+            sys.modules
+        )
 
 
 @when(parsers.parse('I call mem_search("{query}")'))
 def call_mem_search(vector_world, query: str):
     backend = vector_world["backend"]
-    vector_world["modules_before"] = {
-        "torch", "sentence_transformers", "sqlite_vec"
-    } & set(sys.modules)
+    vector_world["modules_before"] = {"torch", "sentence_transformers", "sqlite_vec"} & set(
+        sys.modules
+    )
     try:
         vector_world["results"] = backend.mem_search(query)
     except Exception as exc:
         vector_world["raised"] = exc
     finally:
-        vector_world["modules_after"] = {
-            "torch", "sentence_transformers", "sqlite_vec"
-        } & set(sys.modules)
+        vector_world["modules_after"] = {"torch", "sentence_transformers", "sqlite_vec"} & set(
+            sys.modules
+        )
 
 
-@when(
-    parsers.parse(
-        'I call hybrid.mem_save with title "{title}" and content "{content}"'
-    )
-)
+@when(parsers.parse('I call hybrid.mem_save with title "{title}" and content "{content}"'))
 def hybrid_save(vector_world, title: str, content: str):
-    saved = vector_world["hybrid"].mem_save(
-        title=title, content=content, topic_key="sdd/x/spec"
-    )
+    saved = vector_world["hybrid"].mem_save(title=title, content=content, topic_key="sdd/x/spec")
     vector_world["saved"] = saved
 
 
@@ -387,12 +376,10 @@ def hybrid_save(vector_world, title: str, content: str):
 @then(parsers.parse("{n:d} results are returned"))
 def n_results_returned(vector_world, n: int):
     assert vector_world["raised"] is None, (
-        f"Expected success, got {type(vector_world['raised']).__name__}: "
-        f"{vector_world['raised']}"
+        f"Expected success, got {type(vector_world['raised']).__name__}: {vector_world['raised']}"
     )
     assert len(vector_world["results"]) == n, (
-        f"Expected {n} results, got {len(vector_world['results'])}: "
-        f"{vector_world['results']!r}"
+        f"Expected {n} results, got {len(vector_world['results'])}: {vector_world['results']!r}"
     )
 
 
@@ -407,9 +394,7 @@ def each_result_has_keys(vector_world):
 @then("results are ordered by score descending")
 def results_ordered_by_score(vector_world):
     scores = [r["score"] for r in vector_world["results"]]
-    assert scores == sorted(scores, reverse=True), (
-        f"Results not ordered by score desc: {scores}"
-    )
+    assert scores == sorted(scores, reverse=True), f"Results not ordered by score desc: {scores}"
 
 
 @then("VectorSearchDisabled is raised")
@@ -433,9 +418,7 @@ def no_heavy_imports_leaked(vector_world):
     """REQ-17 scenarios 2-4: gate path MUST NOT pull torch / sqlite_vec."""
     before = vector_world.get("modules_before") or set()
     after = vector_world.get("modules_after") or set()
-    assert before == after, (
-        f"Vector search gate leaked heavy imports: {after - before}"
-    )
+    assert before == after, f"Vector search gate leaked heavy imports: {after - before}"
 
 
 @then("FTS5 results are returned normally")
@@ -466,8 +449,7 @@ def observation_saved_to_inner(vector_world):
     assert "id" in saved, f"Saved observation missing id: {saved!r}"
     inner = vector_world["backend"]
     assert saved["id"] in inner.observations, (
-        f"Observation {saved['id']} not found in inner backend: "
-        f"{list(inner.observations.keys())}"
+        f"Observation {saved['id']} not found in inner backend: {list(inner.observations.keys())}"
     )
 
 
@@ -538,9 +520,7 @@ def test_req18_empty_query_returns_empty(vector_world):
         "obs3: ({a3:.2f}, {f3:.2f})"
     )
 )
-def three_obs_with_known_sims_and_fts(
-    vector_world, a1, f1, a2, f2, a3, f3
-):
+def three_obs_with_known_sims_and_fts(vector_world, a1, f1, a2, f2, a3, f3):
     """Build the worked example with the given cosine/FTS scores.
 
     Uses FixedVectorsProvider for the cosine values and ScoredInMemoryBackend
@@ -564,9 +544,7 @@ def seeded_three_obs(vector_world):
     """Scenarios 2-3 reuse the corpus from scenario 1 if present, else build."""
     if vector_world.get("hybrid") is not None and vector_world.get("obs_ids"):
         return
-    three_obs_with_known_sims_and_fts(
-        vector_world, 0.96, 0.50, 0.0, 0.20, 0.30, 0.10
-    )
+    three_obs_with_known_sims_and_fts(vector_world, 0.96, 0.50, 0.0, 0.20, 0.30, 0.10)
 
 
 @given(parsers.parse('the query "{query}"'))
@@ -602,9 +580,7 @@ def call_hybrid(vector_world, query: str, k: int, alpha: float):
     vector_world["alpha"] = alpha
     vector_world["k"] = k
     try:
-        vector_world["results"] = vector_world["hybrid"].mem_search_hybrid(
-            query, k=k, alpha=alpha
-        )
+        vector_world["results"] = vector_world["hybrid"].mem_search_hybrid(query, k=k, alpha=alpha)
     except Exception as exc:
         vector_world["raised"] = exc
 
@@ -614,9 +590,7 @@ def call_hybrid_default_k(vector_world, query: str, alpha: float):
     vector_world["query"] = query
     vector_world["alpha"] = alpha
     try:
-        vector_world["results"] = vector_world["hybrid"].mem_search_hybrid(
-            query, alpha=alpha
-        )
+        vector_world["results"] = vector_world["hybrid"].mem_search_hybrid(query, alpha=alpha)
     except Exception as exc:
         vector_world["raised"] = exc
 
@@ -626,9 +600,7 @@ def call_hybrid_default_alpha(vector_world, query: str, k: int):
     vector_world["query"] = query
     vector_world["k"] = k
     try:
-        vector_world["results"] = vector_world["hybrid"].mem_search_hybrid(
-            query, k=k
-        )
+        vector_world["results"] = vector_world["hybrid"].mem_search_hybrid(query, k=k)
     except Exception as exc:
         vector_world["raised"] = exc
 
@@ -636,8 +608,8 @@ def call_hybrid_default_alpha(vector_world, query: str, k: int):
 @when(parsers.parse('I call mem_search_semantic("{query}", k={k:d}) (pure)'))
 def call_semantic_pure(vector_world, query: str, k: int):
     try:
-        vector_world["pure_semantic_results"] = (
-            vector_world["hybrid"].mem_search_semantic(query, k=k)
+        vector_world["pure_semantic_results"] = vector_world["hybrid"].mem_search_semantic(
+            query, k=k
         )
     except Exception as exc:
         vector_world["raised"] = exc
@@ -659,8 +631,7 @@ def call_inner_mem_search(vector_world, query: str):
 @then(parsers.parse("results are ordered: obs{id1:d}, obs{id2:d}, obs{id3:d}"))
 def results_ordered_by_ids(vector_world, id1: int, id2: int, id3: int):
     assert vector_world["raised"] is None, (
-        f"Expected success, got {type(vector_world['raised']).__name__}: "
-        f"{vector_world['raised']}"
+        f"Expected success, got {type(vector_world['raised']).__name__}: {vector_world['raised']}"
     )
     expected = [
         vector_world["obs_ids"][id1 - 1],
@@ -681,8 +652,7 @@ def results_ordered_by_ids(vector_world, id1: int, id2: int, id3: int):
 )
 def scores_match_with_tolerance(vector_world, id1, id2, id3, s1, s2, s3):
     assert vector_world["raised"] is None, (
-        f"Expected success, got {type(vector_world['raised']).__name__}: "
-        f"{vector_world['raised']}"
+        f"Expected success, got {type(vector_world['raised']).__name__}: {vector_world['raised']}"
     )
     expected = {
         vector_world["obs_ids"][id1 - 1]: s1,
@@ -691,9 +661,7 @@ def scores_match_with_tolerance(vector_world, id1, id2, id3, s1, s2, s3):
     }
     for obs_id, expected_score in expected.items():
         actual_score = next(
-            r["score"]
-            for r in vector_world["results"]
-            if r["observation_id"] == obs_id
+            r["score"] for r in vector_world["results"] if r["observation_id"] == obs_id
         )
         assert actual_score == pytest.approx(expected_score, abs=1e-3), (
             f"obs{vector_world['obs_ids'].index(obs_id) + 1} score: "
@@ -704,27 +672,18 @@ def scores_match_with_tolerance(vector_world, id1, id2, id3, s1, s2, s3):
 @then(parsers.parse("the rank index of obs{n:d} is {rank:d}"))
 def rank_index_of_obs(vector_world, n: int, rank: int):
     obs_id = vector_world["obs_ids"][n - 1]
-    actual_rank = next(
-        r["rank"] for r in vector_world["results"] if r["observation_id"] == obs_id
-    )
-    assert actual_rank == rank, (
-        f"obs{n} rank: expected {rank}, got {actual_rank}"
-    )
+    actual_rank = next(r["rank"] for r in vector_world["results"] if r["observation_id"] == obs_id)
+    assert actual_rank == rank, f"obs{n} rank: expected {rank}, got {actual_rank}"
 
 
 @then("hybrid results equal pure semantic results in order and ids")
 def hybrid_equals_pure_semantic(vector_world):
     assert vector_world["raised"] is None, (
-        f"Expected success, got {type(vector_world['raised']).__name__}: "
-        f"{vector_world['raised']}"
+        f"Expected success, got {type(vector_world['raised']).__name__}: {vector_world['raised']}"
     )
     hybrid_ids = [r["observation_id"] for r in vector_world["results"]]
-    pure_ids = [
-        r["observation_id"] for r in vector_world["pure_semantic_results"]
-    ]
-    assert hybrid_ids == pure_ids, (
-        f"Hybrid ids {hybrid_ids} != pure semantic ids {pure_ids}"
-    )
+    pure_ids = [r["observation_id"] for r in vector_world["pure_semantic_results"]]
+    assert hybrid_ids == pure_ids, f"Hybrid ids {hybrid_ids} != pure semantic ids {pure_ids}"
 
 
 @then("hybrid scores differ from pure semantic by at most 1e-3")
@@ -745,14 +704,11 @@ def hybrid_scores_close_to_pure(vector_world):
 def hybrid_equals_pure_fts(vector_world):
     """REQ-18 scenario 3 sanity check (alpha=0.0 == pure FTS)."""
     assert vector_world["raised"] is None, (
-        f"Expected success, got {type(vector_world['raised']).__name__}: "
-        f"{vector_world['raised']}"
+        f"Expected success, got {type(vector_world['raised']).__name__}: {vector_world['raised']}"
     )
     hybrid_ids = [r["observation_id"] for r in vector_world["results"]]
     fts_ids = [o["id"] for o in vector_world["inner_results"]]
-    assert set(hybrid_ids) == set(fts_ids), (
-        f"Hybrid ids {hybrid_ids} != FTS ids {fts_ids} as sets"
-    )
+    assert set(hybrid_ids) == set(fts_ids), f"Hybrid ids {hybrid_ids} != FTS ids {fts_ids} as sets"
 
 
 @then("hybrid scores equal the FTS-only scores (1.0 * fts)")
@@ -785,9 +741,7 @@ def empty_list_returned(vector_world):
         f"Expected no exception, got {type(vector_world['raised']).__name__}: "
         f"{vector_world['raised']}"
     )
-    assert vector_world["results"] == [], (
-        f"Expected [], got {vector_world['results']!r}"
-    )
+    assert vector_world["results"] == [], f"Expected [], got {vector_world['results']!r}"
 
 
 # =====================================================================
@@ -963,9 +917,7 @@ def then_both_calls_identical(embedding_world):
 @then(parsers.parse("the array shape is ({rows:d}, {cols:d})"))
 def then_shape_n_by_m(embedding_world, rows: int, cols: int):
     arr = embedding_world["vectors"][-1]
-    assert arr.shape == (rows, cols), (
-        f"Expected shape ({rows}, {cols}), got {arr.shape}"
-    )
+    assert arr.shape == (rows, cols), f"Expected shape ({rows}, {cols}), got {arr.shape}"
 
 
 @then(parsers.parse("the L2 norm of the vector is within [{lo:.2f}, {hi:.2f}] of 1.0"))
@@ -983,9 +935,7 @@ def then_bye_differs_from_hello(embedding_world):
     """The last 2 vectors in embedding_world['vectors'] are hello and goodbye."""
     assert len(embedding_world["vectors"]) >= 2
     hello, bye = embedding_world["vectors"][-2], embedding_world["vectors"][-1]
-    assert not np.array_equal(hello, bye), (
-        "Expected different vectors for different inputs"
-    )
+    assert not np.array_equal(hello, bye), "Expected different vectors for different inputs"
 
 
 @then('"torch" is NOT in sys.modules')
@@ -1032,25 +982,19 @@ def then_embedding_provider_unavailable_raised(embedding_world):
 @then(parsers.parse('the embedding error message includes "{needle}"'))
 def then_embedding_error_message_includes(embedding_world, needle: str):
     raised = embedding_world["raised"]
-    assert needle in str(raised), (
-        f"Expected '{needle}' in error message, got: {raised!r}"
-    )
+    assert needle in str(raised), f"Expected '{needle}' in error message, got: {raised!r}"
 
 
 @then("the exception is also an ImportError")
 def then_exception_is_import_error(embedding_world):
     raised = embedding_world["raised"]
-    assert isinstance(raised, ImportError), (
-        f"Expected ImportError, got {type(raised).__name__}"
-    )
+    assert isinstance(raised, ImportError), f"Expected ImportError, got {type(raised).__name__}"
 
 
 @then(parsers.parse("the returned numpy array has shape ({rows:d}, {cols:d})"))
 def then_returned_array_shape(embedding_world, rows: int, cols: int):
     arr = embedding_world["vectors"][-1]
-    assert arr.shape == (rows, cols), (
-        f"Expected shape ({rows}, {cols}), got {arr.shape}"
-    )
+    assert arr.shape == (rows, cols), f"Expected shape ({rows}, {cols}), got {arr.shape}"
 
 
 @then(parsers.parse("each row has L2 norm within [{lo:.2f}, {hi:.2f}] of 1.0"))
@@ -1291,9 +1235,7 @@ def then_result_is_obs1_zero(vec_store_world):
 @then(parsers.parse("{obs_id} is NOT in the result list"))
 def then_obs_not_in_results(vec_store_world, obs_id: str):
     ids = [r[0] for r in vec_store_world["search_results"]]
-    assert obs_id not in ids, (
-        f"Expected {obs_id!r} NOT in result list, but found it: {ids}"
-    )
+    assert obs_id not in ids, f"Expected {obs_id!r} NOT in result list, but found it: {ids}"
 
 
 @then(parsers.parse("{obs_id} IS in the result list"))
@@ -1361,9 +1303,7 @@ def then_result_list_size(vec_store_world, n: int):
 @then(parsers.parse("{obs_id} is at position {pos:d}"))
 def then_obs_at_position(vec_store_world, obs_id: str, pos: int):
     results = vec_store_world["search_results"]
-    assert 0 <= pos < len(results), (
-        f"Position {pos} out of range for {len(results)} results"
-    )
+    assert 0 <= pos < len(results), f"Position {pos} out of range for {len(results)} results"
     assert results[pos][0] == obs_id, (
         f"Expected {obs_id!r} at position {pos}, got {results[pos][0]!r}"
     )
@@ -1373,9 +1313,7 @@ def then_obs_at_position(vec_store_world, obs_id: str, pos: int):
 def then_distances_sorted_asc(vec_store_world):
     results = vec_store_world["search_results"]
     distances = [d for _obs, d in results]
-    assert distances == sorted(distances), (
-        f"Distances not ascending: {distances}"
-    )
+    assert distances == sorted(distances), f"Distances not ascending: {distances}"
 
 
 # =====================================================================
@@ -1592,8 +1530,7 @@ def _invoke_reindex(world: dict[str, Any], extra_args: list[str]) -> None:
 def then_exit_code_zero(vec_reindex_world):
     last = vec_reindex_world["run_outputs"][-1]
     assert last.exit_code == 0, (
-        f"Expected exit code 0, got {last.exit_code}: "
-        f"stdout={last.stdout!r} stderr={last.stderr!r}"
+        f"Expected exit code 0, got {last.exit_code}: stdout={last.stdout!r} stderr={last.stderr!r}"
     )
 
 
@@ -1602,8 +1539,7 @@ def then_reindex_output_contains(vec_reindex_world, needle: str):
     last = vec_reindex_world["run_outputs"][-1]
     combined = (last.output or "") + (last.stderr or "")
     assert needle in combined, (
-        f"Expected {needle!r} in output, got:\n"
-        f"output={last.output!r}\nstderr={last.stderr!r}"
+        f"Expected {needle!r} in output, got:\noutput={last.output!r}\nstderr={last.stderr!r}"
     )
 
 
@@ -1621,31 +1557,23 @@ def then_index_size_gauge(vec_reindex_world, n: int):
             line = line.strip()
             if line:
                 events.append(json.loads(line))
-        gauge_events = [
-            e for e in events if e.get("name") == "vector_index_size_observations"
-        ]
+        gauge_events = [e for e in events if e.get("name") == "vector_index_size_observations"]
         if gauge_events:
             value = int(gauge_events[-1].get("fields", {}).get("value", -1))
-            assert value == n, (
-                f"Expected vector_index_size_observations == {n}, got {value}"
-            )
+            assert value == n, f"Expected vector_index_size_observations == {n}, got {value}"
             return
     # Fallback: read directly from the SqliteVecStore on disk (truth source).
     pytest.importorskip("sqlite_vec")
     from flow_engineering.vectors import SqliteVecStore
 
     store = SqliteVecStore(vec_reindex_world["vectors_path"])
-    assert store.count() == n, (
-        f"Expected store.count() == {n}, got {store.count()}"
-    )
+    assert store.count() == n, f"Expected store.count() == {n}, got {store.count()}"
 
 
 @then(parsers.parse('the second output contains "{needle}"'))
 def then_second_output_contains(vec_reindex_world, needle: str):
     outputs = vec_reindex_world["run_outputs"]
-    assert len(outputs) >= 2, (
-        f"Expected ≥2 reindex runs, got {len(outputs)}"
-    )
+    assert len(outputs) >= 2, f"Expected ≥2 reindex runs, got {len(outputs)}"
     last = outputs[-1]
     combined = (last.output or "") + (last.stderr or "")
     assert needle in combined, (
@@ -1754,9 +1682,7 @@ def given_hybrid_with_mock_provider(vector_world):
     )
     vector_world["backend"] = inner
     vector_world["provider"] = MockEmbeddingProvider()
-    vector_world["hybrid"] = HybridBackend(
-        inner=inner, embedding_provider=vector_world["provider"]
-    )
+    vector_world["hybrid"] = HybridBackend(inner=inner, embedding_provider=vector_world["provider"])
 
 
 @given(parsers.parse("a corpus of {n:d} observations"))
@@ -1838,10 +1764,7 @@ def then_jsonl_has_counter_with_trigger(vector_world, name: str, trigger: str):
     )
     events = _read_jsonl_events(metrics_path)
     matches = [
-        e
-        for e in events
-        if e.get("name") == name
-        and e.get("fields", {}).get("trigger") == trigger
+        e for e in events if e.get("name") == name and e.get("fields", {}).get("trigger") == trigger
     ]
     assert matches, (
         f"Expected ≥1 event with name={name!r} trigger={trigger!r}, "
@@ -1865,8 +1788,7 @@ def then_counter_value_is(vector_world, name: str, n: int):
     events = _read_jsonl_events(metrics_path)
     matches = [e for e in events if e.get("name") == name]
     assert matches, (
-        f"Expected ≥1 event with name={name!r}, "
-        f"got names: {[e.get('name') for e in events]}"
+        f"Expected ≥1 event with name={name!r}, got names: {[e.get('name') for e in events]}"
     )
     total = 0
     for e in matches:
@@ -1875,10 +1797,7 @@ def then_counter_value_is(vector_world, name: str, n: int):
             total += int(fields["count"])
         elif "value" in fields:
             total += int(fields["value"])
-    assert total == n, (
-        f"Expected {name!r} total={n}, got {total} "
-        f"(across {len(matches)} event(s))"
-    )
+    assert total == n, f"Expected {name!r} total={n}, got {total} (across {len(matches)} event(s))"
 
 
 @then(
@@ -1897,14 +1816,11 @@ def then_jsonl_has_latency_event(vector_world, name: str):
     events = _read_jsonl_events(metrics_path)
     matches = [e for e in events if e.get("name") == name]
     assert matches, (
-        f"Expected ≥1 event with name={name!r}, "
-        f"got names: {[e.get('name') for e in events]}"
+        f"Expected ≥1 event with name={name!r}, got names: {[e.get('name') for e in events]}"
     )
     for e in matches:
         elapsed = e.get("fields", {}).get("elapsed_ms")
-        assert elapsed is not None, (
-            f"Event {name!r} missing elapsed_ms field: {e!r}"
-        )
+        assert elapsed is not None, f"Event {name!r} missing elapsed_ms field: {e!r}"
         assert elapsed >= 0, f"Expected non-negative elapsed_ms in {name}, got {elapsed!r}"
 
 
@@ -1947,8 +1863,7 @@ def then_names_follow_convention(vector_world):
     for e in events:
         name = e.get("name", "")
         assert name in canonical, (
-            f"Emitted name {name!r} not in canonical VECTOR_COUNTER_NAMES "
-            f"({sorted(canonical)})"
+            f"Emitted name {name!r} not in canonical VECTOR_COUNTER_NAMES ({sorted(canonical)})"
         )
         assert pattern.match(name), (
             f"Name {name!r} does not match REQ-8 convention pattern "
