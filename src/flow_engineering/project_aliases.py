@@ -66,9 +66,7 @@ class AliasRecord(TypedDict):
 # ---------- Paths + errors ----------
 
 
-DEFAULT_ALIASES_PATH: Path = (
-    Path.home() / ".config" / "flow-engineering" / "project-aliases.json"
-)
+DEFAULT_ALIASES_PATH: Path = Path.home() / ".config" / "flow-engineering" / "project-aliases.json"
 """Canonical path for the alias config (overridable via ``path=`` kwargs)."""
 
 
@@ -133,8 +131,7 @@ def load_aliases(path: Path | None = None) -> list[AliasRecord]:
         ) from exc
     if not isinstance(payload, dict):
         raise AliasConfigParseError(
-            f"project-aliases.json at {target} must be a JSON object; "
-            f"got {type(payload).__name__}"
+            f"project-aliases.json at {target} must be a JSON object; got {type(payload).__name__}"
         )
     records = payload.get("aliases", [])
     if records is None:
@@ -161,9 +158,7 @@ def load_aliases(path: Path | None = None) -> list[AliasRecord]:
     return normalized
 
 
-def save_aliases(
-    aliases: list[AliasRecord], path: Path | None = None
-) -> None:
+def save_aliases(aliases: list[AliasRecord], path: Path | None = None) -> None:
     """Atomically write the alias config to disk.
 
     Atomic write via ``tempfile.NamedTemporaryFile + Path.replace`` so a
@@ -193,9 +188,7 @@ def save_aliases(
         raise
 
 
-def add_alias(
-    old: str, new: str, *, path: Path | None = None
-) -> dict[str, str]:
+def add_alias(old: str, new: str, *, path: Path | None = None) -> dict[str, str]:
     """Append a new alias record (idempotent + conflict-safe).
 
     Behaviour:
@@ -223,8 +216,7 @@ def add_alias(
                     "new": new,
                 }
             raise ValueError(
-                f"alias for {old} already maps to {existing_new}; "
-                f"refusing to overwrite with {new}"
+                f"alias for {old} already maps to {existing_new}; refusing to overwrite with {new}"
             )
     new_record: AliasRecord = {
         "old": old,

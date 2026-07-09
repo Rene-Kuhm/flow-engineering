@@ -16,6 +16,7 @@ Public surface (REQ-V1.0.1..V1.0.4) — added incrementally per strict TDD:
 All public functions are pure: subprocess + filesystem effects live behind
 the ``_run_search`` private seam which tests monkeypatch.
 """
+
 from __future__ import annotations
 
 import json
@@ -442,9 +443,7 @@ def where(
     else:
         graph = grep_graphify(query, limit=limit)
         graph_skipped = False
-    return WhereResult(
-        code=code, tests=tests, sdd=sdd, graph=graph, graph_skipped=graph_skipped
-    )
+    return WhereResult(code=code, tests=tests, sdd=sdd, graph=graph, graph_skipped=graph_skipped)
 
 
 def _ascii_safe(s: str) -> str:

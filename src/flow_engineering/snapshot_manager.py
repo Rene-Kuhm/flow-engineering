@@ -36,6 +36,7 @@ CLI surface (``flow snapshot {create,list,...}``) and the remaining
 methods (``show``, ``diff``, ``rollback``, ``prune``) land in later
 tasks. This file is the foundation that everything else builds on.
 """
+
 from __future__ import annotations
 
 import gzip
@@ -438,9 +439,7 @@ class SnapshotManager:
 
         observations = list(self.backend.iter_observations())
         project_tags = {
-            int(o["id"]): str(o.get("project", "insyd"))
-            for o in observations
-            if "id" in o
+            int(o["id"]): str(o.get("project", "insyd")) for o in observations if "id" in o
         }
         obs_count = len(observations)
 
@@ -479,9 +478,7 @@ class SnapshotManager:
         }
 
         # Compute sha256 over canonical-JSON WITHOUT the sha256 field.
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = dict(envelope)
         envelope_for_hash["metadata"] = meta_for_hash
         canonical = _canonical_json_dumps(envelope_for_hash)
@@ -500,9 +497,7 @@ class SnapshotManager:
             envelope["metadata"]["file_size_bytes"] = len(gzipped)
             # Recompute sha256 with the final ``file_size_bytes`` so the
             # on-disk fingerprint matches the bytes written.
-            meta_for_hash = {
-                k: v for k, v in envelope["metadata"].items() if k != "sha256"
-            }
+            meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
             envelope_for_hash = dict(envelope)
             envelope_for_hash["metadata"] = meta_for_hash
             sha = hashlib.sha256(
@@ -517,7 +512,8 @@ class SnapshotManager:
             # with ``delete=False`` is portable across POSIX + Windows; we
             # close it before ``Path.replace`` to release the file handle.
             fd, tmp_path_str = tempfile.mkstemp(
-                prefix=f".{snap_id}-", suffix=".json.gz.tmp",
+                prefix=f".{snap_id}-",
+                suffix=".json.gz.tmp",
                 dir=str(self.snapshots_dir),
             )
             os.close(fd)
@@ -614,9 +610,7 @@ class SnapshotManager:
         """
         path = self.snapshots_dir / f"{snap_id}.json.gz"
         if not path.exists():
-            raise SnapshotEnvelopeError(
-                f"snapshot not found: {snap_id} (no file at {path})"
-            )
+            raise SnapshotEnvelopeError(f"snapshot not found: {snap_id} (no file at {path})")
         try:
             with gzip.open(path, "rt", encoding="utf-8") as fh:
                 envelope = json.loads(fh.read())
@@ -635,12 +629,8 @@ class SnapshotManager:
         meta = envelope.get("metadata", {})
         stored_sha = meta.get("sha256", "")
         # Recompute sha256 over canonical-JSON WITHOUT the sha256 field.
-        envelope_for_hash = {
-            k: v for k, v in envelope.items() if k != "metadata"
-        }
-        envelope_for_hash["metadata"] = {
-            k: v for k, v in meta.items() if k != "sha256"
-        }
+        envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
+        envelope_for_hash["metadata"] = {k: v for k, v in meta.items() if k != "sha256"}
         expected_sha = hashlib.sha256(
             _canonical_json_dumps(envelope_for_hash).encode("utf-8")
         ).hexdigest()
@@ -680,9 +670,7 @@ class SnapshotManager:
         envelope_a = self.show(snap_id_a)
         if snap_id_b is None:
             obs_b_list = list(self.backend.iter_observations())
-            index_b: dict[int, dict[str, Any]] = {
-                int(o["id"]): o for o in obs_b_list if "id" in o
-            }
+            index_b: dict[int, dict[str, Any]] = {int(o["id"]): o for o in obs_b_list if "id" in o}
         else:
             envelope_b = self.show(snap_id_b)
             obs_b_list = list(envelope_b.get("graph_state", {}).get("observations", []))
@@ -816,9 +804,7 @@ class SnapshotManager:
             for cid in diff.removed:
                 conflicts.append({"id": int(cid), "change": "removed"})
             for mod in diff.modified:
-                conflicts.append(
-                    {"id": int(mod["id"]), "change": "modified"}
-                )
+                conflicts.append({"id": int(mod["id"]), "change": "modified"})
             # Audit trail: even a refused rollback increments the counter.
             self._record_rollback_event(
                 success=False,
@@ -1023,8 +1009,7 @@ class SnapshotManager:
         # Validation: at least one filter MUST be supplied.
         if keep_last is None and keep_days is None and max_total_size_mb is None:
             raise PruneNoFilterError(
-                "at least one of --keep-last, --keep-days, --max-total-size-mb "
-                "is required"
+                "at least one of --keep-last, --keep-days, --max-total-size-mb is required"
             )
 
         # D10 safety gate: keep_last=0 with confirm=True requires force=True.
@@ -1056,9 +1041,7 @@ class SnapshotManager:
         # be random in that case, but ``created_at`` order is stable. We
         # break ties by ``snap_id`` so the result is deterministic.
         files = sorted(self.snapshots_dir.glob("snap_*.json.gz"))
-        metas: list[tuple[Path, SnapshotMeta]] = [
-            (p, self._read_meta_header(p)) for p in files
-        ]
+        metas: list[tuple[Path, SnapshotMeta]] = [(p, self._read_meta_header(p)) for p in files]
         metas.sort(key=lambda pm: (pm[1].created_at, pm[1].id))
         snap_ids_oldest_first = [m.id for _, m in metas]
         newest_meta = metas[-1][1] if metas else None
@@ -1081,10 +1064,9 @@ class SnapshotManager:
         if keep_days is not None:
             # Keep snapshots whose created_at >= now - keep_days.
             from datetime import datetime as _dt
+
             cutoff_epoch = now - (float(keep_days) * 86400.0)
-            cutoff_iso = _dt.fromtimestamp(cutoff_epoch, UTC).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            cutoff_iso = _dt.fromtimestamp(cutoff_epoch, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             for i, (_, m) in enumerate(metas):
                 # The created_at is ISO 8601 with Z suffix; lexicographic
                 # comparison against an ISO cutoff is correct for fixed-
@@ -1122,11 +1104,7 @@ class SnapshotManager:
         # Build the candidate set.
         would_delete = [snap_ids_oldest_first[i] for i, k in enumerate(keep_mask) if not k]
         would_keep = [snap_ids_oldest_first[i] for i, k in enumerate(keep_mask) if k]
-        freed_bytes = sum(
-            metas[i][0].stat().st_size
-            for i, k in enumerate(keep_mask)
-            if not k
-        )
+        freed_bytes = sum(metas[i][0].stat().st_size for i, k in enumerate(keep_mask) if not k)
 
         # Dry-run short-circuit: no files touched, no counter emitted.
         if not confirm:
@@ -1150,6 +1128,7 @@ class SnapshotManager:
         )
         if force_deletes_newest:
             import sys
+
             print(
                 "WARNING: --force override; most-recent snapshot was "
                 "protected by default and is being deleted",

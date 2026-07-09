@@ -5,6 +5,7 @@ delegation hooks (real sdd-* sub-agents when available; graceful
 no-op otherwise), drift detection on apply-progress, and graphify
 rebuild on archive.
 """
+
 from __future__ import annotations
 
 import json
@@ -65,8 +66,7 @@ def apply_change(
             task_id=None,
             delegated=False,
             delegation_error=(
-                f"Cannot apply from {sm.status.value}. "
-                f"Required: TASKED or APPLYING."
+                f"Cannot apply from {sm.status.value}. Required: TASKED or APPLYING."
             ),
         )
 
@@ -77,6 +77,7 @@ def apply_change(
 
     # Find next task from tasks.md (with prior apply-progress from Engram if available)
     import re
+
     next_task_id: str | None = None
     completed: set[str] = set()
     if backend is not None:
@@ -88,7 +89,8 @@ def apply_change(
             try:
                 progress = json.loads(progress_json)
                 completed = {
-                    tid for tid, info in progress.get("tasks", {}).items()
+                    tid
+                    for tid, info in progress.get("tasks", {}).items()
                     if info.get("status") in ("completed", "done")
                 }
             except json.JSONDecodeError:
@@ -128,10 +130,7 @@ def apply_change(
         task_id=next_task_id,
         delegated=delegated,
         delegation_error=delegation_error,
-        message=(
-            f"Apply batch started. "
-            f"Next task: {next_task_id or '(run tasks first)'}."
-        ),
+        message=(f"Apply batch started. Next task: {next_task_id or '(run tasks first)'}."),
     )
 
 
@@ -169,10 +168,7 @@ def verify_change(
             new_status=sm.status,
             failure_class=None,
             action="reject",
-            message=(
-                f"Cannot verify from {sm.status.value}. "
-                f"Required: APPLYING or VERIFYING."
-            ),
+            message=(f"Cannot verify from {sm.status.value}. Required: APPLYING or VERIFYING."),
         )
 
     # Transition APPLYING → VERIFYING on first verify
@@ -184,11 +180,7 @@ def verify_change(
     failure = classify_test_failures(test_output) if test_output else FailureClass.UNKNOWN
 
     if failure in (FailureClass.STRUCTURAL, FailureClass.CONTRACT):
-        action = (
-            "escalate_structural"
-            if failure == FailureClass.STRUCTURAL
-            else "respec"
-        )
+        action = "escalate_structural" if failure == FailureClass.STRUCTURAL else "respec"
         return VerifyResult(
             change=change,
             new_status=sm.status,
@@ -285,15 +277,14 @@ def archive_change(
             new_status=sm.status,
             graphify_decision=None,
             graphify_exit_code=-1,
-            message=(
-                f"Cannot archive from {sm.status.value}. "
-                f"Required: ARCHIVING."
-            ),
+            message=(f"Cannot archive from {sm.status.value}. Required: ARCHIVING."),
         )
 
     # Run graphify hook
     exit_code, stderr, decision = archive_graphify_hook(
-        change_dir, diff_text=diff_text, graphify_bin=graphify_bin,
+        change_dir,
+        diff_text=diff_text,
+        graphify_bin=graphify_bin,
         dry_run=dry_run_graphify,
     )
 

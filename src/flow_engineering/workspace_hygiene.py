@@ -185,9 +185,7 @@ def _list_non_empty_files(project_path: Path) -> list[str]:
     trio per REQ-HYGIENE-BACKUP-GATE-NONEMPTY.
     """
     return sorted(
-        entry.name
-        for entry in project_path.iterdir()
-        if entry.name not in HIDDEN_SYSTEM_FILES
+        entry.name for entry in project_path.iterdir() if entry.name not in HIDDEN_SYSTEM_FILES
     )
 
 
@@ -241,9 +239,7 @@ def _format_git_stderr(stderr: object) -> str:
 # =============================================================================
 
 
-def _snapshot_project(
-    project_path: Path, backup_root: Path, *, rule_id: str = "R2"
-) -> Path:
+def _snapshot_project(project_path: Path, backup_root: Path, *, rule_id: str = "R2") -> Path:
     """Copy the project's pre-mutation files to a timestamped backup dir.
 
     Layout (REQ-HYGIENE-BACKUP-LAYOUT):
@@ -276,9 +272,7 @@ def _snapshot_project(
         "bytes_total": bytes_total,
         "created_at": timestamp,
     }
-    (snapshot_dir / "manifest.json").write_text(
-        json_dumps(manifest), encoding="utf-8"
-    )
+    (snapshot_dir / "manifest.json").write_text(json_dumps(manifest), encoding="utf-8")
     shutil.copytree(
         project_path,
         snapshot_dir / "files",
@@ -288,9 +282,7 @@ def _snapshot_project(
     return snapshot_dir
 
 
-def _verify_post_mutation(
-    project_path: Path, pre_snapshot: Path | None
-) -> bool:
+def _verify_post_mutation(project_path: Path, pre_snapshot: Path | None) -> bool:
     """Return True iff post-mutation ``.git/`` looks valid.
 
     Currently checks file existence only (fast, no subprocess). A future
@@ -364,9 +356,7 @@ def _apply_hygiene_rule(
 
     # Step 1 — mutation gate.
     if not yes and not dry_run:
-        raise MutationGateError(
-            "--yes required for `flow workspace fix` mutations"
-        )
+        raise MutationGateError("--yes required for `flow workspace fix` mutations")
 
     # Step 2 — backup gate (only applies to the non-dry-run path; dry-run
     # can safely report the plan regardless of emptiness).
@@ -451,9 +441,7 @@ def _apply_hygiene_rule(
         has_graphify=project.has_graphify,
         last_status_check=_now_iso_utc(),
     )
-    new_projects = [
-        p for p in registry.projects if p.name != new_entry.name
-    ]
+    new_projects = [p for p in registry.projects if p.name != new_entry.name]
     new_projects.append(new_entry)
     new_registry = registry.model_copy(update={"projects": new_projects})
     save_registry_atomic(new_registry)
@@ -475,9 +463,7 @@ def _apply_hygiene_rule(
 # =============================================================================
 
 
-def _archive_project(
-    registry: Registry, project_name: str, reason: str | None
-) -> Registry:
+def _archive_project(registry: Registry, project_name: str, reason: str | None) -> Registry:
     """Return a NEW ``Registry`` with ``project_name`` moved to ``archived[]``.
 
     The input ``registry`` is NOT mutated (pydantic v2 ``model_copy`` is
@@ -526,10 +512,7 @@ def _restore_archived_project(registry: Registry, project_name: str) -> Registry
             break
     if found is None:
         raise RegistryError(
-            user_message=(
-                f"Project `{project_name}` is not archived. "
-                f"Nothing to restore."
-            )
+            user_message=(f"Project `{project_name}` is not archived. Nothing to restore.")
         )
     restored_entry = ProjectEntry(
         name=found.name,
@@ -540,9 +523,7 @@ def _restore_archived_project(registry: Registry, project_name: str) -> Registry
         has_graphify=False,
         last_status_check=_now_iso_utc(),
     )
-    new_projects = [
-        p for p in registry.projects if p.name != restored_entry.name
-    ]
+    new_projects = [p for p in registry.projects if p.name != restored_entry.name]
     new_projects.append(restored_entry)
     new_archived = [a for a in registry.archived if a.name != project_name]
     return registry.model_copy(update={"projects": new_projects, "archived": new_archived})

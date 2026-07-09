@@ -20,6 +20,7 @@ denied) is swallowed at the module level so it never crashes the
 runtime render path. The reader mirrors :class:`DriftEventLog.read_all`
 (malformed lines silently skipped; missing file → ``[]``).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -30,9 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-DEFAULT_PROMPT_RENDER_LOG_PATH: Path = (
-    Path.home() / ".flow-engineering" / "prompt_renders.jsonl"
-)
+DEFAULT_PROMPT_RENDER_LOG_PATH: Path = Path.home() / ".flow-engineering" / "prompt_renders.jsonl"
 """Default JSONL sink path (REQ-V1.1.3).
 
 Mirrors :data:`flow_engineering.drift_event_log.DEFAULT_DRIFT_EVENT_LOG_PATH`
@@ -93,9 +92,7 @@ class PromptRenderLog:
     """Append-only JSONL writer with in-process thread safety (mirrors ``DriftEventLog``)."""
 
     def __init__(self, path: Path | None = None) -> None:
-        self.path: Path = (
-            path if path is not None else DEFAULT_PROMPT_RENDER_LOG_PATH
-        )
+        self.path: Path = path if path is not None else DEFAULT_PROMPT_RENDER_LOG_PATH
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 

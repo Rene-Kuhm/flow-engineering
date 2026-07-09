@@ -156,8 +156,7 @@ def load_registry(*, path: Path | None = None) -> Registry:
         payload: Any = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RegistryError(
-            f"failed to parse registry at {target}: {exc}. "
-            f"Delete or fix the file before retrying."
+            f"failed to parse registry at {target}: {exc}. Delete or fix the file before retrying."
         ) from exc
     try:
         return Registry.model_validate(payload)
@@ -201,9 +200,7 @@ def save_registry_atomic(registry: Registry, *, path: Path | None = None) -> Non
             Path(tmp_path_str).unlink()
         if isinstance(exc, RegistryError):
             raise
-        raise RegistryError(
-            f"failed to write registry at {target}: {exc}"
-        ) from exc
+        raise RegistryError(f"failed to write registry at {target}: {exc}") from exc
 
 
 __all__ = [

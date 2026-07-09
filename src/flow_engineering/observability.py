@@ -276,7 +276,7 @@ def _extract_block_source(content: str) -> str | None:
     marker_idx = content.rfind(CODE_REFS_MARKER)
     if marker_idx < 0:
         return None
-    body = content[marker_idx + len(CODE_REFS_MARKER):].strip()
+    body = content[marker_idx + len(CODE_REFS_MARKER) :].strip()
     if not body:
         return None
     try:
@@ -610,19 +610,19 @@ the value is overridable per-call via the ``path`` argument on each public helpe
 
 DOMAIN_BY_PREFIX: dict[str, str] = {
     # prefix -> domain
-    "suggest_": "binding",        # REQ-8 close (auto_suggest_code_refs.py)
-    "bindings_": "binding",       # REQ-8 close (auto_suggest_code_refs.py: note `bindings_` plural)
-    "inspect_": "binding",        # REQ-8 close (cli.py:945-950)
-    "backfill_": "backfill",      # REQ-8 close (backfill coverage)
-    "drift_": "drift",            # REQ-12
-    "vector_": "vector",          # REQ-22
-    "reindex_": "vector",         # REQ-22 reindex counters
-    "federated_": "federated",    # REQ-26 federated
-    "snapshot_": "snapshot",      # REQ-26 snapshot (graph-snapshots)
+    "suggest_": "binding",  # REQ-8 close (auto_suggest_code_refs.py)
+    "bindings_": "binding",  # REQ-8 close (auto_suggest_code_refs.py: note `bindings_` plural)
+    "inspect_": "binding",  # REQ-8 close (cli.py:945-950)
+    "backfill_": "backfill",  # REQ-8 close (backfill coverage)
+    "drift_": "drift",  # REQ-12
+    "vector_": "vector",  # REQ-22
+    "reindex_": "vector",  # REQ-22 reindex counters
+    "federated_": "federated",  # REQ-26 federated
+    "snapshot_": "snapshot",  # REQ-26 snapshot (graph-snapshots)
     "update_observation_metadata_": "metadata",  # REQ-13 / REQ-24
-    "project_tag_": "metadata",   # REQ-24
-    "engine_": "engine",          # REQ-42 reserved (no v1 counters; v1.1 follow-up)
-    "prompts_": "prompt",         # REQ-V1.1.4 / REQ-52 (prompt render counters)
+    "project_tag_": "metadata",  # REQ-24
+    "engine_": "engine",  # REQ-42 reserved (no v1 counters; v1.1 follow-up)
+    "prompts_": "prompt",  # REQ-V1.1.4 / REQ-52 (prompt render counters)
 }
 """Prefix -> domain lookup table for change #6 read-side helpers (design D5).
 
@@ -682,9 +682,7 @@ def validate_domain(domain: str) -> str:
     MUST ``.lower()`` the value before calling.
     """
     if domain not in ALL_DOMAINS:
-        raise ValueError(
-            f"unknown domain {domain!r}; valid: {', '.join(ALL_DOMAINS)}"
-        )
+        raise ValueError(f"unknown domain {domain!r}; valid: {', '.join(ALL_DOMAINS)}")
     return domain
 
 
@@ -757,9 +755,9 @@ def _read_metrics_file(path: Path) -> list[MetricEvent]:
         ts_raw = payload.get("ts", "")
         fields = payload.get("fields") or {}
         try:
-            ts_epoch = datetime.strptime(ts_raw, "%Y-%m-%dT%H:%M:%SZ").replace(
-                tzinfo=UTC
-            ).timestamp()
+            ts_epoch = (
+                datetime.strptime(ts_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp()
+            )
         except (TypeError, ValueError):
             # Skip events with malformed timestamps (best-effort).
             continue
@@ -808,8 +806,7 @@ def read_events_by_domain(domain: str, path: Path | None = None) -> list[MetricE
     prefixes = _prefixes_for_domain(domain)
     if not prefixes:
         raise ValueError(
-            f"unknown domain: {domain!r}; "
-            f"valid domains: {sorted(set(DOMAIN_BY_PREFIX.values()))}"
+            f"unknown domain: {domain!r}; valid domains: {sorted(set(DOMAIN_BY_PREFIX.values()))}"
         )
     events = read_all_metrics(path)
     return [e for e in events if any(e.counter_name.startswith(p) for p in prefixes)]
@@ -911,11 +908,7 @@ def _escape_label_value(value: object) -> str:
     Any non-string value is coerced via ``str()`` first.
     """
     text = str(value)
-    return (
-        text.replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-    )
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def _derive_metric_type(name: str) -> str:
@@ -956,10 +949,7 @@ def _format_label_block(labels: dict[str, str]) -> str:
     """
     if not labels:
         return ""
-    parts = ",".join(
-        f'{k}="{_escape_label_value(v)}"'
-        for k, v in sorted(labels.items())
-    )
+    parts = ",".join(f'{k}="{_escape_label_value(v)}"' for k, v in sorted(labels.items()))
     return "{" + parts + "}"
 
 
@@ -991,9 +981,7 @@ def aggregate_events_to_metrics(
     for event in events:
         pname = _prometheus_name(event.counter_name, prefix)
         str_labels: dict[str, str] = {
-            k: str(v)
-            for k, v in event.labels.items()
-            if k not in _LABEL_VALUE_KEYS
+            k: str(v) for k, v in event.labels.items() if k not in _LABEL_VALUE_KEYS
         }
         key = (pname, frozenset(str_labels.items()))
         try:
@@ -1069,9 +1057,7 @@ def write_prometheus_textfile(content: str, path: Path) -> None:
     atomic_write_text(path, content)
 
 
-def aggregate(
-    values: Iterable[float], percentile: Literal[50, 95, 99]
-) -> float:
+def aggregate(values: Iterable[float], percentile: Literal[50, 95, 99]) -> float:
     """Compute the requested percentile of ``values`` (D7 / REQ-39).
 
     Uses sorted-index lookup (floor interpolation) — closest integer rank
@@ -1126,9 +1112,7 @@ def aggregate_many(
     pct_list = list(percentiles)
     for pct in pct_list:
         if pct not in _VALID_PERCENTILES:
-            raise ValueError(
-                f"invalid percentile {pct}; valid: {sorted(_VALID_PERCENTILES)}"
-            )
+            raise ValueError(f"invalid percentile {pct}; valid: {sorted(_VALID_PERCENTILES)}")
     samples = list(values)
     if not samples:
         return dict.fromkeys(pct_list, 0.0)
@@ -1240,15 +1224,14 @@ def aggregate_percentile(
     """
     for pct in percentiles:
         if pct not in _VALID_PERCENTILES:
-            raise ValueError(
-                f"invalid percentile {pct}; valid: {sorted(_VALID_PERCENTILES)}"
-            )
+            raise ValueError(f"invalid percentile {pct}; valid: {sorted(_VALID_PERCENTILES)}")
 
     samplers: dict[str, ReservoirSampler] = {}
     for event in events:
         if event.counter_name not in samplers:
             samplers[event.counter_name] = ReservoirSampler(
-                capacity=reservoir_size, seed=seed,
+                capacity=reservoir_size,
+                seed=seed,
             )
         labels = event.labels or {}
         raw_value = labels.get("value", labels.get("count", 1))
@@ -1351,9 +1334,7 @@ def atomic_write_text(path: Path, content: str) -> int:
     - No ``.tmp`` orphan files are left behind on failure.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=".metrics-", suffix=".prom.tmp", dir=str(path.parent)
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix=".metrics-", suffix=".prom.tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp:
             tmp.write(content)
@@ -1398,9 +1379,7 @@ def parse_window(window: str) -> int:
     Raises ``ValueError`` on invalid format (CLI catches and exits 2 per D9).
     """
     if not isinstance(window, str) or not window:
-        raise ValueError(
-            f"window must be a non-empty string; got {window!r}"
-        )
+        raise ValueError(f"window must be a non-empty string; got {window!r}")
     normalized = window.strip().lower()
     if not normalized:
         raise ValueError("window must be a non-empty string")
@@ -1409,25 +1388,18 @@ def parse_window(window: str) -> int:
     # Custom format: <int><h|d>
     if len(normalized) < 2:
         raise ValueError(
-            f"window must be one of {sorted(WINDOW_PATTERNS)} "
-            f"or '<int><h|d>'; got {window!r}"
+            f"window must be one of {sorted(WINDOW_PATTERNS)} or '<int><h|d>'; got {window!r}"
         )
     unit = normalized[-1]
     body = normalized[:-1]
     if unit not in ("h", "d"):
-        raise ValueError(
-            f"window unit must be 'h' or 'd'; got {window!r}"
-        )
+        raise ValueError(f"window unit must be 'h' or 'd'; got {window!r}")
     try:
         n = int(body)
     except ValueError as exc:
-        raise ValueError(
-            f"window prefix must be an integer; got {window!r}: {exc}"
-        ) from exc
+        raise ValueError(f"window prefix must be an integer; got {window!r}: {exc}") from exc
     if n <= 0:
-        raise ValueError(
-            f"window duration must be positive; got {window!r}"
-        )
+        raise ValueError(f"window duration must be positive; got {window!r}")
     if unit == "h":
         return n * 3600
     return n * 86400
