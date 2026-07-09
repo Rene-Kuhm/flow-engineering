@@ -29,6 +29,7 @@ function-call time:
   ``cli.drift`` (Slice 4) and ``metrics.py`` re-fetches via
   ``from flow_engineering.cli.drift import _parse_since`` on each call.
 """
+
 from __future__ import annotations
 
 import json
@@ -63,8 +64,13 @@ def _summarize_metrics(events: list[dict[str, Any]]) -> dict[str, int]:
 
 
 @main.group(invoke_without_command=True)
-@click.option("--json", "json_flag", is_flag=True, default=False,
-              help="Emit machine-readable JSON instead of a text summary.")
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text summary.",
+)
 @click.pass_context
 def metrics(ctx: click.Context, json_flag: bool) -> None:
     """Dump the JSONL counter sink as a summary (REQ-8 close).
@@ -105,12 +111,16 @@ SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
 
 @metrics.command("summary")
 @click.option(
-    "--format", "fmt", default="text",
+    "--format",
+    "fmt",
+    default="text",
     type=click.Choice(["text", "json", "json-detailed"], case_sensitive=False),
     help="Output format (REQ-35: text default, json for machine-readable).",
 )
 @click.option(
-    "--window", "window", default=None,
+    "--window",
+    "window",
+    default=None,
     help=(
         "Rolling time-window filter (REQ-35/REQ-36): preset "
         "(1h|24h|7d|30d) or custom '<int><h|d>' (e.g. 12h, 3d). "
@@ -118,7 +128,9 @@ SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
     ),
 )
 @click.option(
-    "--domain", "domain", default=None,
+    "--domain",
+    "domain",
+    default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help=(
         "Prefix-based domain slice (REQ-37): "
@@ -127,11 +139,17 @@ SUMMARY_DOMAIN_CHOICES: list[str] = list(observability.ALL_DOMAINS)
     ),
 )
 @click.option(
-    "--since", "since_iso", default=None, metavar="ISO8601",
+    "--since",
+    "since_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
 )
 @click.option(
-    "--until", "until_iso", default=None, metavar="ISO8601",
+    "--until",
+    "until_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
 )
 def metrics_summary(
@@ -158,6 +176,7 @@ def metrics_summary(
     from flow_engineering.cli.drift import (
         _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
     )
+
     fmt_lower = fmt.lower()
 
     since_epoch: float | None = None
@@ -272,10 +291,7 @@ def _apply_metrics_filters(
         filtered = observability.filter_by_window(filtered, window)
     if domain is not None:
         prefixes = observability._prefixes_for_domain(domain)
-        filtered = [
-            e for e in filtered
-            if any(e.counter_name.startswith(p) for p in prefixes)
-        ]
+        filtered = [e for e in filtered if any(e.counter_name.startswith(p) for p in prefixes)]
     if since_epoch is not None:
         filtered = [e for e in filtered if e.timestamp >= since_epoch]
     if until_epoch is not None:
@@ -285,7 +301,9 @@ def _apply_metrics_filters(
 
 @metrics.command("export")
 @click.option(
-    "--format", "fmt", default="text",
+    "--format",
+    "fmt",
+    default="text",
     type=click.Choice(["text", "json", "prometheus"], case_sensitive=False),
     help=(
         "Output format (REQ-38): text default, json for machine-readable "
@@ -293,7 +311,9 @@ def _apply_metrics_filters(
     ),
 )
 @click.option(
-    "--out", "out_path", default=None,
+    "--out",
+    "out_path",
+    default=None,
     type=click.Path(),
     help=(
         "Atomic write to <path> (REQ-38 / D10). Default = stdout. "
@@ -301,22 +321,29 @@ def _apply_metrics_filters(
     ),
 )
 @click.option(
-    "--window", "window", default=None,
-    help=(
-        "Rolling time-window filter (REQ-36): preset "
-        "(1h|24h|7d|30d) or custom '<int><h|d>'."
-    ),
+    "--window",
+    "window",
+    default=None,
+    help=("Rolling time-window filter (REQ-36): preset (1h|24h|7d|30d) or custom '<int><h|d>'."),
 )
 @click.option(
-    "--since", "since_iso", default=None, metavar="ISO8601",
+    "--since",
+    "since_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
 )
 @click.option(
-    "--until", "until_iso", default=None, metavar="ISO8601",
+    "--until",
+    "until_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
 )
 @click.option(
-    "--domain", "domain", default=None,
+    "--domain",
+    "domain",
+    default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help="Prefix-based domain slice (REQ-37).",
 )
@@ -355,6 +382,7 @@ def metrics_export(
     from flow_engineering.cli.drift import (
         _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
     )
+
     fmt_lower = fmt.lower()
 
     since_epoch: float | None = None
@@ -405,9 +433,9 @@ def metrics_export(
                 {
                     "name": ev.counter_name,
                     "fields": ev.labels,
-                    "ts": datetime.fromtimestamp(
-                        ev.timestamp, tz=UTC
-                    ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "ts": datetime.fromtimestamp(ev.timestamp, tz=UTC).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
                 }
                 for ev in filtered
             ],
@@ -427,10 +455,7 @@ def metrics_export(
                 content = "(no metrics recorded)\n"
             else:
                 width = max(len(name) for name in flat)
-                lines = [
-                    f"{name.ljust(width)}  {count}"
-                    for name, count in sorted(flat.items())
-                ]
+                lines = [f"{name.ljust(width)}  {count}" for name, count in sorted(flat.items())]
                 content = "\n".join(lines) + "\n"
     else:
         click.echo(f"unknown --format value: {fmt}", err=True)
@@ -468,9 +493,11 @@ AGGREGATE_PERCENTILE_CHOICES: list[str] = ["p50", "p95", "p99"]
 
 @metrics.command("aggregate")
 @click.option(
-    "--percentile", "percentiles",
+    "--percentile",
+    "percentiles",
     type=click.Choice(AGGREGATE_PERCENTILE_CHOICES, case_sensitive=False),
-    multiple=True, default=("p95",),
+    multiple=True,
+    default=("p95",),
     help=(
         "Percentile(s) to compute (REQ-39): p50 / p95 / p99. "
         "Repeatable; default = p95. Uses reservoir sampling for "
@@ -478,34 +505,43 @@ AGGREGATE_PERCENTILE_CHOICES: list[str] = ["p50", "p95", "p99"]
     ),
 )
 @click.option(
-    "--window", "window", default=None,
-    help=(
-        "Rolling time-window filter (REQ-36): preset "
-        "(1h|24h|7d|30d) or custom '<int><h|d>'."
-    ),
+    "--window",
+    "window",
+    default=None,
+    help=("Rolling time-window filter (REQ-36): preset (1h|24h|7d|30d) or custom '<int><h|d>'."),
 )
 @click.option(
-    "--since", "since_iso", default=None, metavar="ISO8601",
+    "--since",
+    "since_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 lower bound: ts >= <iso> (REQ-36).",
 )
 @click.option(
-    "--until", "until_iso", default=None, metavar="ISO8601",
+    "--until",
+    "until_iso",
+    default=None,
+    metavar="ISO8601",
     help="Absolute ISO 8601 upper bound: ts <= <iso> (REQ-36).",
 )
 @click.option(
-    "--domain", "domain", default=None,
+    "--domain",
+    "domain",
+    default=None,
     type=click.Choice(SUMMARY_DOMAIN_CHOICES, case_sensitive=False),
     help="Prefix-based domain slice (REQ-37).",
 )
 @click.option(
-    "--reservoir-size", "reservoir_size", default=1000, type=int,
-    help=(
-        "Sample-size ceiling per counter for the reservoir sampler "
-        "(REQ-39 / D7). Default 1000."
-    ),
+    "--reservoir-size",
+    "reservoir_size",
+    default=1000,
+    type=int,
+    help=("Sample-size ceiling per counter for the reservoir sampler (REQ-39 / D7). Default 1000."),
 )
 @click.option(
-    "--format", "fmt", default="text",
+    "--format",
+    "fmt",
+    default="text",
     type=click.Choice(["text", "json"], case_sensitive=False),
     help="Output format (REQ-39): text (default aligned table) or json.",
 )
@@ -535,6 +571,7 @@ def metrics_aggregate(
     from flow_engineering.cli.drift import (
         _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
     )
+
     fmt_lower = fmt.lower()
 
     # Parse the --percentile labels into integers; validate against the

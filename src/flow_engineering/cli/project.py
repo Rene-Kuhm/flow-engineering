@@ -381,13 +381,17 @@ def projects_ls(root: Path | None, json_flag: bool) -> None:
     type_w = max(len("TYPE"), max((len(m["type"] or "?") for m in projects), default=4))
     has_flow_w = len("FLOW")
 
-    click.echo(f"{'NAME'.ljust(name_w)}  {'TYPE'.ljust(type_w)}  {'FLOW'.ljust(has_flow_w)}  README")
+    click.echo(
+        f"{'NAME'.ljust(name_w)}  {'TYPE'.ljust(type_w)}  {'FLOW'.ljust(has_flow_w)}  README"
+    )
     click.echo(f"{'-' * name_w}  {'-' * type_w}  {'-' * has_flow_w}  {'-' * 20}")
     for m in projects:
         ptype = m["type"] or "?"
         has_flow = m["has_flow"] or "-"
         readme = m["readme_first_line"] or ""
-        click.echo(f"{m['name'].ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}")
+        click.echo(
+            f"{m['name'].ljust(name_w)}  {ptype.ljust(type_w)}  {has_flow.ljust(has_flow_w)}  {readme}"
+        )
 
 
 @projects_group.command(name="backfill")
@@ -500,22 +504,14 @@ def projects_backfill(
     if project_key is not None:
         # Single-key scope (legacy REQ-24 + alias-key re-tag).
         candidates = [
-            o
-            for o in all_observations
-            if (not o.get("project")) or o.get("project") == project_key
+            o for o in all_observations if (not o.get("project")) or o.get("project") == project_key
         ]
     else:
         # No --project: iterate the alias map (REQ-27 integration).
-        candidates = [
-            o
-            for o in all_observations
-            if o.get("project") in alias_map
-        ]
+        candidates = [o for o in all_observations if o.get("project") in alias_map]
 
     if since is not None:
-        candidates = [
-            o for o in candidates if str(o.get("created_at", "")) >= since
-        ]
+        candidates = [o for o in candidates if str(o.get("created_at", "")) >= since]
 
     would_change = 0
     would_skip = 0
