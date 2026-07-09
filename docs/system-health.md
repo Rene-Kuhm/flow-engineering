@@ -27,7 +27,7 @@ Last checked: 2026-07-09.
 |---|---|---|
 | Runner service | Healthy | `actions.runner.Rene-Kuhm-flow-engineering.TECNODESPEGUE-flow-engineering` is `Running` / `Automatic` |
 | Startup fallback | Removed | `flow-engineering-actions-runner.cmd` does not exist in Startup |
-| CI | Green | `tests` run `28991760348` passed on `main` |
+| CI | Green | `tests` run `28994892701` passed on `main` for release fix `15f7f8e` |
 | Scheduled monitor | Green | `health-monitor` run `28992222994` passed on `main` |
 
 Expected healthy state:
