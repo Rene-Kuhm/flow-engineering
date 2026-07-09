@@ -4,6 +4,7 @@ Covers req1_format.feature, req2_parsing.feature, req3_engram_io.feature,
 req4_backfill.feature, and req5_nonbreaking.feature. The step bodies call
 into the same modules exercised by the unit tests in tests/unit/.
 """
+
 from __future__ import annotations
 
 import json
@@ -22,6 +23,7 @@ from flow_engineering.binding import (
 from flow_engineering.engram_io import EngramClient, InMemoryBackend
 
 # ---------- Fixtures shared across scenarios ----------
+
 
 @pytest.fixture
 def world(tmp_path):
@@ -43,6 +45,7 @@ def world(tmp_path):
 
 
 # ---------- Scenario bindings ----------
+
 
 # req1_format.feature
 @scenario("../bdd/req1_format.feature", "Marker present with valid JSON parses cleanly")
@@ -71,12 +74,17 @@ def test_extract_preserves_order(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req2_parsing.feature", "format produces a canonical block string with marker and schema")
+@scenario(
+    "../bdd/req2_parsing.feature", "format produces a canonical block string with marker and schema"
+)
 def test_format_canonical(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req2_parsing.feature", "extract composed with format composed with extract is idempotent")
+@scenario(
+    "../bdd/req2_parsing.feature",
+    "extract composed with format composed with extract is idempotent",
+)
 def test_round_trip_idempotent(world):  # noqa: F811
     pass
 
@@ -87,12 +95,17 @@ def test_format_rejects_unknown_source(world):  # noqa: F811
 
 
 # req3_engram_io.feature
-@scenario("../bdd/req3_engram_io.feature", "Save without marker writes through with an unbound block appended")
+@scenario(
+    "../bdd/req3_engram_io.feature",
+    "Save without marker writes through with an unbound block appended",
+)
 def test_save_unbound(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req3_engram_io.feature", "Save with valid block writes the content with block intact")
+@scenario(
+    "../bdd/req3_engram_io.feature", "Save with valid block writes the content with block intact"
+)
 def test_save_valid_block(world):  # noqa: F811
     pass
 
@@ -102,7 +115,9 @@ def test_save_malformed_rejected(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req3_engram_io.feature", "Save with unknown schema version is rejected before write")
+@scenario(
+    "../bdd/req3_engram_io.feature", "Save with unknown schema version is rejected before write"
+)
 def test_save_schema_rejected(world):  # noqa: F811
     pass
 
@@ -139,17 +154,24 @@ def test_nonbreaking_save(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req5_nonbreaking.feature", "load_phase returns full content including the appended block")
+@scenario(
+    "../bdd/req5_nonbreaking.feature",
+    "load_phase returns full content including the appended block",
+)
 def test_nonbreaking_load(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req5_nonbreaking.feature", "FTS5-style prose query still matches observations with new block")
+@scenario(
+    "../bdd/req5_nonbreaking.feature",
+    "FTS5-style prose query still matches observations with new block",
+)
 def test_nonbreaking_fts(world):  # noqa: F811
     pass
 
 
 # ---------- Shared Given steps ----------
+
 
 @given("the binding module is importable")
 def binding_importable(world):
@@ -184,11 +206,7 @@ def obs_empty_unbound(world):
 
 @given(parsers.parse('an observation ending with "<!-- code_refs -->" followed by invalid JSON'))
 def obs_malformed(world):
-    world["content"] = (
-        "## Decision\n\nSome prose.\n\n"
-        f"{CODE_REFS_MARKER}\n"
-        "{this is not json}\n"
-    )
+    world["content"] = f"## Decision\n\nSome prose.\n\n{CODE_REFS_MARKER}\n{{this is not json}}\n"
 
 
 @given("an observation with two bindings in the order [A, B]")
@@ -210,7 +228,7 @@ def obs_well_formed(world):
     obs_valid_manual(world)
 
 
-@given("a list of one CodeRef with source \"manual\"")
+@given('a list of one CodeRef with source "manual"')
 def one_manual_ref(world):
     world["refs_in"] = [
         CodeRef("p", "x", "X", "x.py", 1, 0.9, "manual"),
@@ -249,19 +267,13 @@ def given_prose_with_block(world):
 
 @given(parsers.parse('observation prose ending with "<!-- code_refs -->" followed by invalid JSON'))
 def given_prose_malformed(world):
-    world["content"] = (
-        "## Decision\n\nSome prose.\n\n"
-        f"{CODE_REFS_MARKER}\n"
-        "{not json}\n"
-    )
+    world["content"] = f"## Decision\n\nSome prose.\n\n{CODE_REFS_MARKER}\n{{not json}}\n"
 
 
 @given("observation prose ending with a code_refs block with schema 99")
 def given_prose_bad_schema(world):
     world["content"] = (
-        "## Decision\n\nSome prose.\n\n"
-        f"{CODE_REFS_MARKER}\n"
-        '{"schema": 99, "nodes": []}\n'
+        f'## Decision\n\nSome prose.\n\n{CODE_REFS_MARKER}\n{{"schema": 99, "nodes": []}}\n'
     )
 
 
@@ -284,6 +296,7 @@ def setup_long_obs(world):
 def prime_with_backfill(world):
     """Run an apply first so the second run is a no-op."""
     from scripts.backfill_code_refs import run
+
     backend = world["backend"]
     # Capture each observation's updated_at before the second run.
     world["pre_second_updated_at"] = {
@@ -293,12 +306,12 @@ def prime_with_backfill(world):
     run(backend=backend, project="insyd", cache_dir=world["cache_dir"], dry_run=False)
 
 
-@given("an observation whose prose contains the word \"jwt\"")
+@given('an observation whose prose contains the word "jwt"')
 def obs_prose_with_jwt(world):
     world["content"] = "## Decision\n\nUse JWT for auth.\n"
 
 
-@given("save_phase is called for \"propose\"")
+@given('save_phase is called for "propose"')
 def save_phase_propose(world):
     world["phase"] = "propose"
     client = world["client"]
@@ -312,6 +325,7 @@ def save_phase_propose(world):
 
 # ---------- When steps ----------
 
+
 @when("the parser extracts the block")
 def do_extract(world):
     try:
@@ -321,13 +335,13 @@ def do_extract(world):
         world["raised"] = exc
 
 
-@when("binding formats the refs with source \"manual\"")
+@when('binding formats the refs with source "manual"')
 def do_format_manual(world):
     world["format_source"] = "manual"
     world["formatted"] = format_code_refs_block(world["refs_in"], source="manual")
 
 
-@when("binding formats the refs with source \"made_up\"")
+@when('binding formats the refs with source "made_up"')
 def do_format_made_up(world):
     try:
         format_code_refs_block(world["refs_in"], source="made_up")  # type: ignore[arg-type]
@@ -376,6 +390,7 @@ def do_save_phase_with_content(world, content):
 @when("the backfill script runs in dry-run mode")
 def do_backfill_dry(world):
     from scripts.backfill_code_refs import run
+
     world["result"] = run(
         backend=world["backend"],
         project="insyd",
@@ -387,6 +402,7 @@ def do_backfill_dry(world):
 @when("the backfill script runs in apply mode")
 def do_backfill_apply(world):
     from scripts.backfill_code_refs import run
+
     world["result"] = run(
         backend=world["backend"],
         project="insyd",
@@ -406,13 +422,14 @@ def do_mem_search(world, query):
     world["search_results"] = backend.mem_search(query=query, topic_key=None, limit=10)
 
 
-@when("load_phase is called for \"propose\"")
+@when('load_phase is called for "propose"')
 def do_load_phase(world):
     client = world["client"]
     world["loaded_content"] = client.load_phase(world["phase"])
 
 
 # ---------- Then steps ----------
+
 
 @then(parsers.parse('it returns one CodeRef with id "{ref_id}"'))
 def then_one_ref(world, ref_id):
@@ -458,12 +475,12 @@ def then_two_refs_order(world):
     assert [r.id for r in refs] == ["node_a", "node_b"]
 
 
-@then("the output starts with \"<!-- code_refs -->\"")
+@then('the output starts with "<!-- code_refs -->"')
 def then_starts_marker(world):
     assert world["formatted"].startswith(f"{CODE_REFS_MARKER}\n")
 
 
-@then("the body contains \"schema: 1\"")
+@then('the body contains "schema: 1"')
 def then_body_schema(world):
     assert '"schema": 1' in world["formatted"]
 
@@ -500,7 +517,7 @@ def then_persisted_ends_with_block(world):
     # is followed by the JSON body that ends with a closing brace.
     marker_idx = saved.rfind(CODE_REFS_MARKER)
     assert marker_idx >= 0
-    after = saved[marker_idx + len(CODE_REFS_MARKER):].strip()
+    after = saved[marker_idx + len(CODE_REFS_MARKER) :].strip()
     assert after.startswith("{")
     assert after.endswith("}")
 
@@ -510,7 +527,7 @@ def then_one_marker(world):
     assert world["saved_content"].count(CODE_REFS_MARKER) == 1
 
 
-@then("the persisted block source is \"manual\"")
+@then('the persisted block source is "manual"')
 def then_block_source_manual(world):
     assert '"source": "manual"' in world["saved_content"]
 
@@ -565,7 +582,9 @@ def then_no_block_added(world):
 @then("the observation gained a code_refs block")
 def then_obs_gained_block(world):
     backend = world["backend"]
-    any_with_block = any(CODE_REFS_MARKER in obs["content"] for obs in backend.observations.values())
+    any_with_block = any(
+        CODE_REFS_MARKER in obs["content"] for obs in backend.observations.values()
+    )
     assert any_with_block
 
 
@@ -594,10 +613,8 @@ def then_not_rewritten(world):
     for obs_id, obs in backend.observations.items():
         # The second apply must not have touched any observation; updated_at
         # is whatever the first apply left it at.
-        assert obs["updated_at"] == pre[obs_id] \
-            or obs["updated_at"] == pre[obs_id] + 1, (
-            f"obs {obs_id} updated_at changed unexpectedly: "
-            f"{pre[obs_id]} -> {obs['updated_at']}"
+        assert obs["updated_at"] == pre[obs_id] or obs["updated_at"] == pre[obs_id] + 1, (
+            f"obs {obs_id} updated_at changed unexpectedly: {pre[obs_id]} -> {obs['updated_at']}"
         )
 
 
@@ -617,7 +634,7 @@ def then_preimage_count(world):
     assert len(lines) == expected
 
 
-@then("each entry records the original content under \"before\"")
+@then('each entry records the original content under "before"')
 def then_preimage_before(world):
     path = world["preimage_path"]
     for line in path.read_text(encoding="utf-8").splitlines():
