@@ -33,8 +33,9 @@ Last checked: 2026-07-09.
 |---|---|---|
 | Runner service | Healthy | `actions.runner.Rene-Kuhm-flow-engineering.TECNODESPEGUE-flow-engineering` is `Running` / `Automatic` |
 | Startup fallback | Removed | `flow-engineering-actions-runner.cmd` does not exist in Startup |
-| CI | Green | `tests` run `28995468222` passed on `main` for release evidence `e296eba` |
-| Scheduled monitor | Green | `health-monitor` run `28996019265` passed on `main` |
+| CI | Green | `tests` run `29002058447` passed on `main` for `74d6ce0` |
+| Scheduled monitor | Green | `health-monitor` run `29000171647` passed on `main` |
+| Out-of-band watchdog | Healthy | `scripts/runner_watchdog.ps1 -Json` reported `overall: ok` with latest tests run `29002058447` |
 
 Expected healthy state:
 
