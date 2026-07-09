@@ -115,6 +115,7 @@ See [Engineering Quality Gates](docs/engineering-quality-gates.md) for self-host
 See [Follow-up Audit](docs/follow-up-audit.md) for the current debt triage policy and next-slice guidance.
 See [Drift Detection Regression Set](docs/drift-detection-regression-set.md) for the minimum tests required by future drift slices.
 See [System Health](docs/system-health.md) for the lightweight runner/CI/follow-up dashboard.
+See [Runner Watchdog](docs/runner-watchdog.md) for out-of-band runner-down checks.
 See [Memory Maintenance](docs/memory-maintenance.md) for keeping Engram/SDD context useful instead of noisy.
 See [Enterprise Readiness](docs/enterprise-readiness.md) for the operational, security, governance, and recovery checklist.
 See [Dependency Updates](docs/dependency-updates.md) for Dependabot scope and review rules.

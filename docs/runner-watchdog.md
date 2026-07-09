@@ -1,0 +1,56 @@
+# Runner Watchdog
+
+Use this when you need a runner-down signal that does not depend on GitHub Actions starting successfully. It is designed for Windows Task Scheduler, Uptime Kuma push monitors, or any external scheduler that can run PowerShell.
+
+## Quick path
+
+Run a local check without GitHub API calls:
+
+```powershell
+./scripts/runner_watchdog.ps1 -SkipGitHub
+```
+
+Run the full check with GitHub CLI available:
+
+```powershell
+./scripts/runner_watchdog.ps1 -Repo Rene-Kuhm/flow-engineering -MaxCiAgeHours 24
+```
+
+Send alerts to a webhook when the watchdog finds a warning or critical state:
+
+```powershell
+$env:FLOW_RUNNER_ALERT_WEBHOOK = "https://example.invalid/webhook"
+./scripts/runner_watchdog.ps1
+```
+
+## Exit codes
+
+| Exit code | Meaning |
+|---|---|
+| `0` | All checks are OK or explicitly skipped. |
+| `1` | Warning: the runner may be OK, but CI freshness or GitHub visibility needs attention. |
+| `2` | Critical: the runner service is missing/unhealthy or latest tests are not green. |
+
+## What it checks
+
+| Check | Source | Why |
+|---|---|---|
+| Runner service | Windows service manager | Detects service missing, stopped, or not configured for Automatic start. |
+| Latest `main` tests run | `gh run list` | Detects red or stale CI when GitHub CLI is available. |
+| Webhook delivery | Optional `FLOW_RUNNER_ALERT_WEBHOOK` | Lets an external monitor receive the alert payload. |
+
+## Recommended schedule
+
+Use Task Scheduler or an external monitor every 15 minutes. The task should run outside GitHub Actions; otherwise it cannot detect the case where the runner is down and no job starts.
+
+Keep the task simple:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File C:/dev/proyects/flow-engineering/scripts/runner_watchdog.ps1
+```
+
+## Limitations
+
+- This does not create a SaaS monitor by itself; it provides the health signal and optional webhook payload.
+- Webhook secrets belong in machine environment variables or the scheduler secret store, not in the repository.
+- If GitHub CLI is unavailable, the watchdog still checks the runner service and reports CI visibility as a warning unless `-SkipGitHub` is used.

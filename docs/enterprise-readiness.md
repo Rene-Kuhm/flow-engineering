@@ -17,9 +17,9 @@ This project is healthy for a small advanced team. Enterprise readiness means ma
 | Area | Current state | Enterprise gap |
 |------|---------------|----------------|
 | CI | GitHub Actions is green on Python 3.12 and 3.13. | Keep failure signals visible and investigated. |
-| Runner | Self-hosted Windows runner runs as an Automatic service. | Add out-of-band runner-down alert after GitHub-hosted billing or an external monitor is available. |
-| Health | `scripts/system_health.ps1` gives manual system status; `health-monitor` runs scheduled checks. | Keep recording recent health history. |
-| Memory | Engram/SDD memory policy exists. | Add periodic review cadence and stale-memory triage. |
+| Runner | Self-hosted Windows runner runs as an Automatic service. | Out-of-band watchdog is available for Task Scheduler or external monitors. |
+| Health | `scripts/system_health.ps1`, `health-monitor`, and `runner_watchdog.ps1` cover manual, scheduled, and out-of-band checks. | Keep recording recent health history. |
+| Memory | Engram/SDD memory policy exists with monthly review cadence and stale-memory triage. | Keep memory verified against current code before acting. |
 | Follow-ups | Follow-up audit exists and has no urgent blockers. | Keep a single live follow-up register. |
 | Drift detection | Active change exists with review-budget guardrail. | Continue only via small, tested slices. |
 
@@ -42,7 +42,7 @@ Goal: failures should find us before users do.
 - [x] Add a scheduled runner health check. See `.github/workflows/health-monitor.yml`.
 - [x] Add CI failure notification path. `health-monitor` fails visibly through GitHub Actions notifications when the self-hosted runner is available.
 - [x] Add stale-green alert when no successful CI run exists after a threshold. `health-monitor` uses `HEALTH_MAX_CI_AGE_HOURS`.
-- [ ] Add out-of-band runner-down alert after GitHub-hosted billing or an external monitor is available.
+- [x] Add out-of-band runner-down alert hook. See `scripts/runner_watchdog.ps1` and `docs/runner-watchdog.md`; wire it to Task Scheduler or an external monitor for live paging.
 - [x] Document incident response: symptom, diagnosis, fix, prevention. See `docs/incident-response.md`.
 - [x] Record recent health-check result history. See `docs/system-health.md`.
 
@@ -120,11 +120,10 @@ A slice is done when:
 
 ## Next recommended slices
 
+No mandatory enterprise hardening slice remains open from this checklist. Future work should be product evolution, not process expansion.
+
 | Slice | Why | Size target |
 |-------|-----|-------------|
-| Session checklist | Standardizes how agents start and close work. | Docs-only, <150 LOC |
-| Runner alerting | Converts manual health into proactive operations. | Small script/workflow, <300 LOC |
-| Secret/dependency baseline | Raises enterprise security posture. | Config/docs, <300 LOC |
 | Drift-detection micro-slice | Continues product evolution safely. | Code+tests, <=400 LOC |
 
 ## Anti-goals
