@@ -49,8 +49,7 @@ class TestObservationSourceProtocol:
         declared = {
             name
             for name in dir(ObservationSource)
-            if not name.startswith("_")
-            and callable(getattr(ObservationSource, name, None))
+            if not name.startswith("_") and callable(getattr(ObservationSource, name, None))
         }
         assert declared == {"iter_observations"}
 
@@ -113,7 +112,9 @@ class TestFrozenBackendObservationSource:
     """
 
     def test_round_trips_snapshot_observations(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         import gzip
         import hashlib
@@ -158,12 +159,14 @@ class TestFrozenBackendObservationSource:
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         envelope["metadata"]["sha256"] = hashlib.sha256(
-            json.dumps(envelope_for_hash, ensure_ascii=False,
-                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            json.dumps(
+                envelope_for_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8"),
         ).hexdigest()
         (snapshots_dir / f"{snap_id}.json.gz").write_bytes(
             gzip.compress(
-                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+                mtime=0,
             )
         )
 
@@ -176,7 +179,9 @@ class TestFrozenBackendObservationSource:
         assert ids == [1, 2]
 
     def test_envelope_corruption_yields_empty_observations(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         """Consistent with the existing legacy behavior: a corrupt envelope
         yields an empty observation set (the scan will fail later via the
@@ -210,7 +215,8 @@ class TestFrozenBackendObservationSource:
         }
         (snapshots_dir / "snap_corrupt_obs.json.gz").write_bytes(
             gzip.compress(
-                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+                mtime=0,
             )
         )
 
