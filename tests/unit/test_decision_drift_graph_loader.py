@@ -79,8 +79,7 @@ class TestGraphLoaderProtocol:
         declared_methods = {
             name
             for name in dir(GraphLoader)
-            if not name.startswith("_")
-            and callable(getattr(GraphLoader, name, None))
+            if not name.startswith("_") and callable(getattr(GraphLoader, name, None))
         }
         assert declared_methods == {"load"}, (
             f"GraphLoader Protocol must declare ONLY the load() method; "
@@ -118,7 +117,8 @@ class TestLiveDiskGraphLoader:
     """
 
     def test_live_disk_loader_returns_index_tuple_on_valid_graph(
-        self, tmp_path,
+        self,
+        tmp_path,
     ) -> None:
         """Happy path: a 2-node ``graph.json`` fixture returns
         ``(current_nodes, current_id_map, mtime)`` matching the legacy
@@ -164,7 +164,8 @@ class TestLiveDiskGraphLoader:
         assert current_id_map["beta"] == ("src/beta.py", 20, "BetaNode")
 
     def test_live_disk_loader_raises_graph_missing_on_absent_path(
-        self, tmp_path,
+        self,
+        tmp_path,
     ) -> None:
         """REQ-DRIFT-DETECTION-1 scenario 2: when ``graph_json_path``
         points at a non-existent file, ``GraphMissing`` is raised (NOT
@@ -246,8 +247,10 @@ def _make_snapshot_with_graph_json(snapshots_dir, graph_nodes):
     envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
     envelope_for_hash["metadata"] = meta_for_hash
     canonical = json.dumps(
-        envelope_for_hash, ensure_ascii=False,
-        sort_keys=True, separators=(",", ":"),
+        envelope_for_hash,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     envelope["metadata"]["sha256"] = hashlib.sha256(
         canonical.encode("utf-8"),
@@ -258,11 +261,13 @@ def _make_snapshot_with_graph_json(snapshots_dir, graph_nodes):
     envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
     envelope_for_hash["metadata"] = meta_for_hash
     envelope["metadata"]["sha256"] = hashlib.sha256(
-        json.dumps(envelope_for_hash, ensure_ascii=False,
-                   sort_keys=True, separators=(",", ":")).encode("utf-8"),
+        json.dumps(
+            envelope_for_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8"),
     ).hexdigest()
     final_bytes = gzip.compress(
-        json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+        json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+        mtime=0,
     )
     (snapshots_dir / f"{snap_id}.json.gz").write_bytes(final_bytes)
     return snap_id
@@ -281,7 +286,9 @@ class TestSnapshotGraphLoader:
     """
 
     def test_snapshot_loader_round_trips_frozen_graph_content(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         """Happy path: a snapshot envelope with ``graph_json_content``
         returns ``(current_nodes, current_id_map, mtime)`` matching the
@@ -314,7 +321,9 @@ class TestSnapshotGraphLoader:
         assert mtime >= 0
 
     def test_snapshot_loader_raises_envelope_corrupt_on_bad_sha(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         """Corrupt envelope (sha256 mismatch) raises
         ``SnapshotEnvelopeCorrupt`` — NOT the legacy fail-open
@@ -442,10 +451,14 @@ class TestTypedExceptionHierarchy:
             SnapshotEnvelopeCorrupt,
         )
 
-        for cls in (GraphLoadError, GraphMissing, GraphMalformed, PermissionDenied, SnapshotEnvelopeCorrupt):
-            assert issubclass(cls, Exception), (
-                f"{cls.__name__} must inherit from Exception"
-            )
+        for cls in (
+            GraphLoadError,
+            GraphMissing,
+            GraphMalformed,
+            PermissionDenied,
+            SnapshotEnvelopeCorrupt,
+        ):
+            assert issubclass(cls, Exception), f"{cls.__name__} must inherit from Exception"
 
 
 # ---------- T4.1 — SnapshotGraphMissing canonical relocation (2 tests) ----------
@@ -492,8 +505,7 @@ class TestSnapshotGraphMissingReExport:
 
         deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
         assert deprecations, (
-            "Expected a DeprecationWarning when importing "
-            "decision_drift.SnapshotGraphMissing"
+            "Expected a DeprecationWarning when importing decision_drift.SnapshotGraphMissing"
         )
         # Wording matches v1.1.6 precedent at snapshot_manager.py:113-124.
         msg = str(deprecations[0].message)
@@ -550,19 +562,22 @@ class TestUnableReasonMapping:
     """
 
     def test_unable_reason_is_graph_file_missing_for_missing_path(
-        self, tmp_path,
+        self,
+        tmp_path,
     ) -> None:
         from flow_engineering import decision_drift
 
         absent = tmp_path / "does_not_exist.json"
         report = decision_drift.scan_change(
-            "my-change", graph_json_path=absent,
+            "my-change",
+            graph_json_path=absent,
         )
         assert report.graph_unavailable is True
         assert report.unable_reason == "graph_file_missing"
 
     def test_unable_reason_is_graph_file_malformed_for_invalid_json(
-        self, tmp_path,
+        self,
+        tmp_path,
     ) -> None:
         from flow_engineering import decision_drift
 
@@ -570,14 +585,17 @@ class TestUnableReasonMapping:
         malformed.write_text("{not-json", encoding="utf-8")
 
         report = decision_drift.scan_change(
-            "my-change", graph_json_path=malformed,
+            "my-change",
+            graph_json_path=malformed,
         )
 
         assert report.graph_unavailable is True
         assert report.unable_reason == "graph_file_malformed"
 
     def test_unable_reason_is_snapshot_envelope_corrupt_for_bad_sha(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         import gzip
         import json
@@ -605,12 +623,14 @@ class TestUnableReasonMapping:
         }
         (snapshots_dir / "snap_corrupt_t51.json.gz").write_bytes(
             gzip.compress(
-                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+                mtime=0,
             )
         )
 
         report = decision_drift.scan_change(
-            "my-change", snap_id="snap_corrupt_t51",
+            "my-change",
+            snap_id="snap_corrupt_t51",
         )
         assert report.graph_unavailable is True
         assert report.unable_reason == "snapshot_envelope_corrupt"
@@ -653,10 +673,10 @@ class TestByteIdenticalDriftReport:
         # graph node.
         cref_block = (
             "<!-- code_refs -->\n"
-            "{\"schema\": 1, \"source\": \"manual\", \"nodes\": ["
-            "{\"project\": \"insyd\", \"id\": \"alpha\", "
-            "\"label\": \"AlphaNode\", \"file\": \"src/alpha.py\", "
-            "\"line\": 10, \"confidence\": 1.0, \"source\": \"manual\"}]}\n"
+            '{"schema": 1, "source": "manual", "nodes": ['
+            '{"project": "insyd", "id": "alpha", '
+            '"label": "AlphaNode", "file": "src/alpha.py", '
+            '"line": 10, "confidence": 1.0, "source": "manual"}]}\n'
         )
         backend = InMemoryBackend()
         backend.mem_save(
@@ -671,8 +691,7 @@ class TestByteIdenticalDriftReport:
             _json.dumps(
                 {
                     "nodes": [
-                        {"id": "alpha", "label": "AlphaNode",
-                         "file": "src/alpha.py", "line": 10},
+                        {"id": "alpha", "label": "AlphaNode", "file": "src/alpha.py", "line": 10},
                     ],
                 },
             ),
@@ -680,7 +699,9 @@ class TestByteIdenticalDriftReport:
         )
 
         report = decision_drift.scan_change(
-            "mychange", graph_json_path=graph_path, backend=backend,
+            "mychange",
+            graph_json_path=graph_path,
+            backend=backend,
         )
 
         # Byte-identical invariants: graph_unavailable=False + at least
@@ -693,7 +714,9 @@ class TestByteIdenticalDriftReport:
         assert report.class_counts[DriftClass.STILL_VALID] == 1
 
     def test_snapshot_path_byte_identical_happy_path(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ) -> None:
         import gzip
         import hashlib
@@ -715,18 +738,19 @@ class TestByteIdenticalDriftReport:
                 "id": 1,
                 "topic_key": "sdd/mychange/t62",
                 "content": "observation prose\n<!-- code_refs -->\n"
-                "{\"schema\": 1, \"source\": \"manual\", \"nodes\": ["
-                "{\"project\": \"insyd\", \"id\": \"beta\", "
-                "\"label\": \"BetaNode\", \"file\": \"src/beta.py\", "
-                "\"line\": 20, \"confidence\": 1.0, "
-                "\"source\": \"manual\"}]}\n",
+                '{"schema": 1, "source": "manual", "nodes": ['
+                '{"project": "insyd", "id": "beta", '
+                '"label": "BetaNode", "file": "src/beta.py", '
+                '"line": 20, "confidence": 1.0, '
+                '"source": "manual"}]}\n',
             },
         ]
         graph_json_content = json.dumps(
-            {"nodes": [
-                {"id": "beta", "label": "BetaNode",
-                 "file": "src/beta.py", "line": 20},
-            ]},
+            {
+                "nodes": [
+                    {"id": "beta", "label": "BetaNode", "file": "src/beta.py", "line": 20},
+                ]
+            },
         )
         envelope = {
             "schema": 1,
@@ -751,8 +775,9 @@ class TestByteIdenticalDriftReport:
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         envelope["metadata"]["sha256"] = hashlib.sha256(
-            json.dumps(envelope_for_hash, ensure_ascii=False,
-                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            json.dumps(
+                envelope_for_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8"),
         ).hexdigest()
         canonical_bytes = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
         envelope["metadata"]["file_size_bytes"] = len(canonical_bytes)
@@ -760,12 +785,14 @@ class TestByteIdenticalDriftReport:
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         envelope["metadata"]["sha256"] = hashlib.sha256(
-            json.dumps(envelope_for_hash, ensure_ascii=False,
-                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            json.dumps(
+                envelope_for_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8"),
         ).hexdigest()
         (snapshots_dir / f"{snap_id}.json.gz").write_bytes(
             gzip.compress(
-                json.dumps(envelope, ensure_ascii=False).encode("utf-8"), mtime=0,
+                json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
+                mtime=0,
             )
         )
 

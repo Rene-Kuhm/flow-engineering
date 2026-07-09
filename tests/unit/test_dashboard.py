@@ -75,7 +75,9 @@ def _completed(
     args: list[str], *, returncode: int = 0, stdout: str = "", stderr: str = ""
 ) -> subprocess.CompletedProcess[str]:
     """Build a canned ``CompletedProcess`` for ``fake_run`` callbacks."""
-    return subprocess.CompletedProcess(args=args, returncode=returncode, stdout=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(
+        args=args, returncode=returncode, stdout=stdout, stderr=stderr
+    )
 
 
 def _render_text(renderable: Any) -> str:
@@ -127,6 +129,7 @@ class TestRunSubprocessJson:
 
     def test_non_zero_exit_raises_subprocess_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returncode != 0 + non-empty stderr → ``DashboardSubprocessError``."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             return _completed(argv, returncode=2, stdout="", stderr="boom: missing arg")
 
@@ -142,6 +145,7 @@ class TestRunSubprocessJson:
 
     def test_invalid_json_raises_parse_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returncode 0 but stdout is not parseable JSON → ``DashboardParseError``."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             return _completed(argv, returncode=0, stdout="not-json-at-all {{{")
 
@@ -152,6 +156,7 @@ class TestRunSubprocessJson:
 
     def test_binary_not_found_raises_flow_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """``FileNotFoundError`` from subprocess → ``DashboardFlowNotFoundError`` (not bare OSError)."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             raise FileNotFoundError(2, "No such file", argv[0])
 
@@ -190,8 +195,11 @@ class TestFetchProjectList:
         assert [p["name"] for p in result] == ["alpha", "beta"]
         assert result[1]["has_git"] is False
 
-    def test_non_zero_exit_propagates_subprocess_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_non_zero_exit_propagates_subprocess_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Subprocess failure bubbles up as ``DashboardSubprocessError`` (no silent fallback)."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             return _completed(argv, returncode=1, stderr="flow: project root not configured")
 
@@ -202,6 +210,7 @@ class TestFetchProjectList:
 
     def test_invalid_json_propagates_parse_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Garbage stdout → ``DashboardParseError`` (no fallback to ``[]``)."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             return _completed(argv, returncode=0, stdout="oops")
 
@@ -212,6 +221,7 @@ class TestFetchProjectList:
 
     def test_flow_binary_not_found_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Binary missing → ``DashboardFlowNotFoundError`` propagates from helper."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             raise FileNotFoundError(2, "No such file", "flow")
 
@@ -267,8 +277,11 @@ class TestFetchStatusSummary:
         assert result["needs_attention"][0]["name"] == "alpha"
         assert "R1: uncommitted work" in result["needs_attention"][0]["reasons"]
 
-    def test_non_zero_exit_propagates_subprocess_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_non_zero_exit_propagates_subprocess_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Subprocess failure bubbles up as ``DashboardSubprocessError``."""
+
         def fake_run(argv: list[str], **kwargs: Any) -> Any:
             return _completed(argv, returncode=3, stderr="workspace root unreadable")
 
@@ -372,17 +385,16 @@ class TestFilterByRules:
             {"name": "gamma", "path": "/p/gamma"},
         ]
         needs_attention = [
-            {"name": "alpha", "path": "/p/alpha",
-             "reasons": ["R1: uncommitted work"]},
-            {"name": "beta", "path": "/p/beta",
-             "reasons": ["R2: not a git repository"]},
-            {"name": "gamma", "path": "/p/gamma",
-             "reasons": ["R2: not a git repository", "R3: no tests"]},
+            {"name": "alpha", "path": "/p/alpha", "reasons": ["R1: uncommitted work"]},
+            {"name": "beta", "path": "/p/beta", "reasons": ["R2: not a git repository"]},
+            {
+                "name": "gamma",
+                "path": "/p/gamma",
+                "reasons": ["R2: not a git repository", "R3: no tests"],
+            },
         ]
 
-        filtered_projects, filtered_needs = filter_by_rules(
-            projects, needs_attention, ["R2"]
-        )
+        filtered_projects, filtered_needs = filter_by_rules(projects, needs_attention, ["R2"])
 
         kept_names = [p["name"] for p in filtered_projects]
         kept_need_names = [n["name"] for n in filtered_needs]
@@ -398,19 +410,13 @@ class TestFilterByRules:
             {"name": "delta", "path": "/p/delta"},
         ]
         needs_attention = [
-            {"name": "alpha", "path": "/p/alpha",
-             "reasons": ["R1: uncommitted work"]},
-            {"name": "beta", "path": "/p/beta",
-             "reasons": ["R2: not a git repository"]},
-            {"name": "gamma", "path": "/p/gamma",
-             "reasons": ["R3: no tests"]},
-            {"name": "delta", "path": "/p/delta",
-             "reasons": ["R4: no openspec"]},
+            {"name": "alpha", "path": "/p/alpha", "reasons": ["R1: uncommitted work"]},
+            {"name": "beta", "path": "/p/beta", "reasons": ["R2: not a git repository"]},
+            {"name": "gamma", "path": "/p/gamma", "reasons": ["R3: no tests"]},
+            {"name": "delta", "path": "/p/delta", "reasons": ["R4: no openspec"]},
         ]
 
-        filtered_projects, _ = filter_by_rules(
-            projects, needs_attention, ["R1", "R3"]
-        )
+        filtered_projects, _ = filter_by_rules(projects, needs_attention, ["R1", "R3"])
 
         # beta (R2) and delta (R4) are excluded; alpha (R1) and gamma (R3) kept.
         kept_names = sorted(p["name"] for p in filtered_projects)
@@ -476,8 +482,8 @@ class TestSortProjects:
             {"name": "medium", "path": "/p/medium"},
         ]
         needs_by_name = {
-            "clean":  [],
-            "noisy":  ["R1", "R2", "R3", "R4"],
+            "clean": [],
+            "noisy": ["R1", "R2", "R3", "R4"],
             "medium": ["R1", "R2"],
         }
 
@@ -497,12 +503,12 @@ class TestSortProjects:
         """
         projects = [
             {"name": "alpha", "path": "/path/alpha"},
-            {"name": "beta",  "path": "/path/beta"},
+            {"name": "beta", "path": "/path/beta"},
             {"name": "gamma", "path": "/path/gamma"},
         ]
         needs_by_name = {
             "alpha": ["R1", "R2", "R3"],
-            "beta":  ["R1"],
+            "beta": ["R1"],
             "gamma": [],
         }
         result = sort_projects(projects, "needs-count", needs_by_name=needs_by_name)
@@ -515,7 +521,7 @@ class TestSortProjects:
         """
         projects = [
             {"name": "alpha", "path": "/path/alpha", "reasons": ["R1", "R2"]},
-            {"name": "beta",  "path": "/path/beta",  "reasons": []},
+            {"name": "beta", "path": "/path/beta", "reasons": []},
         ]
         with pytest.warns(DeprecationWarning, match="needs_by_name=None is deprecated"):
             result = sort_projects(projects, "needs-count")
@@ -531,7 +537,7 @@ class TestSortProjects:
         """
         projects = [
             {"name": "alpha", "path": "/path/alpha"},
-            {"name": "beta",  "path": "/path/beta"},
+            {"name": "beta", "path": "/path/beta"},
             {"name": "gamma", "path": "/path/gamma"},
         ]
         result = sort_projects(projects, "needs-count", needs_by_name={})
@@ -625,10 +631,8 @@ class TestRenderNeedsTable:
             {"name": "beta", "path": "/p/beta"},
         ]
         needs_attention = [
-            {"name": "alpha", "path": "/p/alpha",
-             "reasons": ["R1: dirty", "R2: no_git"]},
-            {"name": "beta", "path": "/p/beta",
-             "reasons": ["R3: no_tests"]},
+            {"name": "alpha", "path": "/p/alpha", "reasons": ["R1: dirty", "R2: no_git"]},
+            {"name": "beta", "path": "/p/beta", "reasons": ["R3: no_tests"]},
         ]
 
         table = render_needs_table(projects, needs_attention)
@@ -648,21 +652,20 @@ class TestRenderNeedsTable:
         escapes leak into the output. This is the integration test that
         proves Section B + color logic cooperate correctly."""
         projects = [
-            {"name": "noisy", "path": "/p/noisy",
-             "reasons": ["R1", "R2", "R3"]},
-            {"name": "calm", "path": "/p/calm",
-             "reasons": []},
+            {"name": "noisy", "path": "/p/noisy", "reasons": ["R1", "R2", "R3"]},
+            {"name": "calm", "path": "/p/calm", "reasons": []},
         ]
         needs_attention = [
-            {"name": "noisy", "path": "/p/noisy",
-             "reasons": ["R1: dirty", "R2: no_git", "R3: no_tests"]},
+            {
+                "name": "noisy",
+                "path": "/p/noisy",
+                "reasons": ["R1: dirty", "R2: no_git", "R3: no_tests"],
+            },
             {"name": "calm", "path": "/p/calm", "reasons": []},
         ]
 
         text_default = _render_text(render_needs_table(projects, needs_attention))
-        text_no_color = _render_text(
-            render_needs_table(projects, needs_attention, no_color=True)
-        )
+        text_no_color = _render_text(render_needs_table(projects, needs_attention, no_color=True))
 
         # Both rows render — color logic does not filter content.
         assert "noisy" in text_default
@@ -682,8 +685,7 @@ class TestRenderNeedsTable:
         long_name = "a" * 35
         projects = [{"name": long_name, "path": f"/p/{long_name}"}]
         needs_attention = [
-            {"name": long_name, "path": f"/p/{long_name}",
-             "reasons": ["R1: dirty"]},
+            {"name": long_name, "path": f"/p/{long_name}", "reasons": ["R1: dirty"]},
         ]
 
         console = Console(
@@ -725,8 +727,7 @@ class TestRenderNeedsTable:
         long_but_fits = "a" * 50  # 50 chars; longer than the 30-char column
         projects = [{"name": long_but_fits, "path": f"/p/{long_but_fits}"}]
         needs_attention = [
-            {"name": long_but_fits, "path": f"/p/{long_but_fits}",
-             "reasons": ["R1: dirty"]},
+            {"name": long_but_fits, "path": f"/p/{long_but_fits}", "reasons": ["R1: dirty"]},
         ]
         text = _render_text(render_needs_table(projects, needs_attention))
         assert "\u2026" not in text, (
@@ -781,9 +782,7 @@ class TestRenderArchived:
         ]
         table = render_archived(archived)
         text = _render_text(table)
-        assert "\u2026" not in text, (
-            f"render_archived MUST NOT emit Unicode U+2026; got: {text!r}"
-        )
+        assert "\u2026" not in text, f"render_archived MUST NOT emit Unicode U+2026; got: {text!r}"
 
     def test_render_archived_uses_explicit_column_widths(self) -> None:
         """Render of ``render_archived`` MUST keep the ISO ``archived_at``
@@ -846,8 +845,7 @@ class TestRenderDashboard:
         """Full composition: header + needs table + archived table + footer,
         all rendered through a single Group."""
         summary = {
-            "totals": {"projects": 3, "needs_attention": 2,
-                       "dirty": 1, "no_git": 1, "no_tests": 0},
+            "totals": {"projects": 3, "needs_attention": 2, "dirty": 1, "no_git": 1, "no_tests": 0},
             "archived_count": 1,
         }
         projects = [
@@ -855,15 +853,16 @@ class TestRenderDashboard:
             {"name": "beta", "path": "/p/beta"},
         ]
         needs_attention = [
-            {"name": "alpha", "path": "/p/alpha",
-             "reasons": ["R1: dirty"]},
-            {"name": "beta", "path": "/p/beta",
-             "reasons": ["R2: no_git"]},
+            {"name": "alpha", "path": "/p/alpha", "reasons": ["R1: dirty"]},
+            {"name": "beta", "path": "/p/beta", "reasons": ["R2: no_git"]},
         ]
         archived = [
-            {"name": "retired-x", "path": "/p/retired-x",
-             "archived_at": "2026-06-15T08:30:00Z",
-             "reason": "stale"},
+            {
+                "name": "retired-x",
+                "path": "/p/retired-x",
+                "archived_at": "2026-06-15T08:30:00Z",
+                "reason": "stale",
+            },
         ]
 
         group = render_dashboard(projects, summary, archived, needs_attention)
@@ -1044,9 +1043,7 @@ class TestRenderR1Detail:
         ]
         table = render_r1_detail(needs)
         text = _render_text(table)
-        assert "\u2026" not in text, (
-            f"Section E MUST NOT emit Unicode U+2026; got: {text!r}"
-        )
+        assert "\u2026" not in text, f"Section E MUST NOT emit Unicode U+2026; got: {text!r}"
 
 
 class TestRenderDashboardComposesSectionE:
@@ -1129,9 +1126,7 @@ class TestRenderDashboardComposesSectionE:
         idx_archived_title = text.find("Archived projects")
         idx_tip = text.find("Tip")
         assert idx_dirty != -1, f"dirty row ' M a.py' not in text: {text!r}"
-        assert idx_archived_title != -1, (
-            f"archived title 'Archived projects' not in text: {text!r}"
-        )
+        assert idx_archived_title != -1, f"archived title 'Archived projects' not in text: {text!r}"
         assert idx_tip != -1, f"footer 'Tip' not in text: {text!r}"
         # Order: A + B → E (dirty row) → C (archived table) → D (footer tip).
         assert idx_dirty < idx_archived_title < idx_tip, (

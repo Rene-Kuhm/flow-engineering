@@ -53,8 +53,7 @@ def _ref(
 
 def _nodes(*pairs: tuple[str, str]) -> dict[str, dict]:
     return {
-        pid: {"id": pid, "label": lbl, "file": "src/auth/jwt.py", "line": 42}
-        for pid, lbl in pairs
+        pid: {"id": pid, "label": lbl, "file": "src/auth/jwt.py", "line": 42} for pid, lbl in pairs
     }
 
 
@@ -344,9 +343,10 @@ def test_scan_change_snapshot(tmp_path: Path) -> None:
     assert report.graph_unavailable is False
     # v0.8.0 (REQ-56 W8): graph_mtime is ISO 8601 str, not float epoch.
     from datetime import datetime
-    expected_iso = datetime.fromtimestamp(
-        graph_path.stat().st_mtime, tz=UTC
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    expected_iso = datetime.fromtimestamp(graph_path.stat().st_mtime, tz=UTC).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
     assert report.graph_mtime == expected_iso
 
 
@@ -427,9 +427,7 @@ def test_scan_change_obsolete_opt_in_off(tmp_path: Path, monkeypatch: pytest.Mon
     assert report.graph_unavailable is False
 
 
-def test_scan_change_obsolete_opt_in_on(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_change_obsolete_opt_in_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """include_obsolete=True + zero graphify candidates -> OBSOLETE finding."""
     from flow_engineering import graphify_query
 
@@ -440,9 +438,7 @@ def test_scan_change_obsolete_opt_in_on(
 
     monkeypatch.setattr(graphify_query, "query_nodes", lambda *a, **kw: [])
 
-    report = scan_change(
-        "test", graph_json_path=graph_path, backend=backend, include_obsolete=True
-    )
+    report = scan_change("test", graph_json_path=graph_path, backend=backend, include_obsolete=True)
     obsolete = [f for f in report.findings if f.drift_class is DriftClass.OBSOLETE]
     assert len(obsolete) == 1
     assert obsolete[0].drift_class is DriftClass.OBSOLETE
@@ -493,16 +489,12 @@ def test_scan_change_since_filter(tmp_path: Path) -> None:
 
     # InMemoryBackend assigns created_at = next_id * 1000, so first save -> 1000,
     # second -> 2000. since=1500 keeps only the second observation.
-    report = scan_change(
-        "test", graph_json_path=graph_path, backend=backend, since=1500.0
-    )
+    report = scan_change("test", graph_json_path=graph_path, backend=backend, since=1500.0)
     assert report.decisions_total == 1
     assert report.graph_unavailable is False
 
 
-def test_observability_drift_counters(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_observability_drift_counters(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """record_drift_summary emits 7 named counters into the JSONL sink.
 
     REQ-12: per invocation, exactly one JSONL line per counter is written.
@@ -546,9 +538,7 @@ def test_observability_drift_counters(
         assert names.count(counter) == 1, counter
 
     by_name = {
-        e["name"]: e["fields"].get("count")
-        for e in events
-        if "count" in e.get("fields", {})
+        e["name"]: e["fields"].get("count") for e in events if "count" in e.get("fields", {})
     }
     assert by_name["drift_still_valid_total"] == 3
     assert by_name["drift_label_drift_total"] == 2
