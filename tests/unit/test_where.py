@@ -15,6 +15,7 @@ Test isolation:
     ``openspec/changes/archive/``. ``grep_graphify`` operates on a
     monkeypatched ``graph_path`` pointing at a tmp_path fixture JSON.
 """
+
 from __future__ import annotations
 
 import json
@@ -121,9 +122,7 @@ class TestGrepRepo:
         assert [h.path for h in code] == ["src/auth.py", "src/middleware.py"]
         assert [h.path for h in tests] == ["tests/test_auth.py"]
 
-    def test_limit_caps_each_bucket(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_limit_caps_each_bucket(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """``limit=2`` truncates each bucket independently at 2 hits."""
         _make_src_tree(
             tmp_path,
@@ -263,9 +262,7 @@ class TestSplitCodeVsTests:
 class TestGrepSddArchive:
     """REQ-V1.0.2: ``grep_sdd_archive`` reads ``openspec/changes/archive/``."""
 
-    def test_one_hit_from_fixture_md(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_one_hit_from_fixture_md(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A single match in a fixture `.md` is reported with snippet."""
         archive = tmp_path / "openspec" / "changes" / "archive" / "2026-01-01-foo"
         archive.mkdir(parents=True)
@@ -288,9 +285,7 @@ class TestGrepSddArchive:
         monkeypatch.chdir(tmp_path)
         assert where.grep_sdd_archive("anything", limit=20) == []
 
-    def test_limit_caps_hits(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_limit_caps_hits(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """``limit=N`` truncates the result list at N hits."""
         archive = tmp_path / "openspec" / "changes" / "archive"
         for i in range(5):
@@ -494,9 +489,7 @@ class TestAsciiSafeOutput:
         raise ``UnicodeEncodeError`` when the Windows console tries to encode
         them as cp1252.
         """
-        hit = where.WhereHit(
-            path="src/whatever.py", line=42, snippet="# ✅ TODO → fix this"
-        )
+        hit = where.WhereHit(path="src/whatever.py", line=42, snippet="# ✅ TODO → fix this")
         formatted = where._format_hit(hit, section="CODE")
         assert "✅" not in formatted
         assert "→" not in formatted
