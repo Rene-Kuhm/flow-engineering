@@ -10,6 +10,11 @@ and is memory helping instead of adding noise.
 .\scripts\system_health.ps1
 ```
 
+GitHub also runs `health-monitor` every six hours on GitHub-hosted runners. It
+fails visibly if the self-hosted runner is offline, if the latest `main` tests
+run is not green, or if the latest green run is older than the configured stale
+threshold.
+
 Expected healthy state:
 
 | Check | Healthy value |
@@ -19,6 +24,19 @@ Expected healthy state:
 | Latest CI | most recent `main` run succeeds |
 | Active OpenSpec changes | only intentional in-progress work |
 | Follow-up audit | no urgent blocker unless explicitly promoted |
+
+## Scheduled health monitor
+
+Workflow: `.github/workflows/health-monitor.yml`
+
+The monitor checks:
+
+- at least one online runner whose name contains `flow-engineering`;
+- latest `main` push run for the `tests` workflow is `completed/success`;
+- latest green `main` tests run is not older than `HEALTH_MAX_CI_AGE_HOURS`.
+
+This workflow intentionally uses `ubuntu-latest`, not the self-hosted runner, so
+runner outages are still detectable.
 
 ## Manual runner health
 
