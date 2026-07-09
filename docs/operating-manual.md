@@ -44,6 +44,7 @@ smallest set that answers the task; do not copy these files into parallel docs.
 | Agent need | Load |
 |---|---|
 | Understand the project shape | `docs/operating-manual.md`, `README.md`, `docs/glossary.md` |
+| Choose commands for this or another stack | `docs/stack-tooling-policy.md`, then the target repository's manifests and lockfiles |
 | Design a change | `docs/change-governance.md`, `docs/engineering-quality-gates.md`, relevant `docs/adr/`, relevant `openspec/specs/` |
 | Work on drift detection | `docs/drift-detection-regression-set.md`, `openspec/changes/drift-detection/`, `docs/follow-up-audit.md` |
 | Touch CI, runner, or operations | `docs/system-health.md`, `docs/runner-watchdog.md`, `docs/incident-response.md`, `docs/release-recovery.md` |
