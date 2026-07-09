@@ -24,6 +24,7 @@ Strict TDD: tests written BEFORE the helper implementation. They MUST
 fail with ``ImportError: cannot import name 'render_prompt_canonical'``
 until ``prompt_registry.py`` exposes the helper (T2.2 GREEN).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,52 +41,35 @@ _RUNNER = CliRunner()
 class TestGoldenRegression:
     """``render_prompt_canonical()`` output is byte-identical to the committed snapshot."""
 
-    def test_strict_tdd_matches_snapshot(
-        self, production_golden_dir: Path
-    ) -> None:
+    def test_strict_tdd_matches_snapshot(self, production_golden_dir: Path) -> None:
         """strict_tdd snapshot = render_prompt_canonical('strict_tdd')."""
-        snapshot = (
-            production_golden_dir / "strict_tdd.txt"
-        ).read_text(encoding="utf-8")
+        snapshot = (production_golden_dir / "strict_tdd.txt").read_text(encoding="utf-8")
         rendered = render_prompt_canonical("strict_tdd")
         assert rendered == snapshot, (
-            f"strict_tdd drift detected: "
-            f"expected {len(snapshot)} bytes, got {len(rendered)} bytes"
+            f"strict_tdd drift detected: expected {len(snapshot)} bytes, got {len(rendered)} bytes"
         )
 
-    def test_auto_suggest_header_matches_snapshot(
-        self, production_golden_dir: Path
-    ) -> None:
+    def test_auto_suggest_header_matches_snapshot(self, production_golden_dir: Path) -> None:
         """auto_suggest_header snapshot = render_prompt_canonical('auto_suggest_header')."""
-        snapshot = (
-            production_golden_dir / "auto_suggest_header.txt"
-        ).read_text(encoding="utf-8")
+        snapshot = (production_golden_dir / "auto_suggest_header.txt").read_text(encoding="utf-8")
         rendered = render_prompt_canonical("auto_suggest_header")
         assert rendered == snapshot, (
             f"auto_suggest_header drift detected: "
             f"expected {len(snapshot)} bytes, got {len(rendered)} bytes"
         )
 
-    def test_auto_suggest_footer_matches_snapshot(
-        self, production_golden_dir: Path
-    ) -> None:
+    def test_auto_suggest_footer_matches_snapshot(self, production_golden_dir: Path) -> None:
         """auto_suggest_footer snapshot = render_prompt_canonical('auto_suggest_footer')."""
-        snapshot = (
-            production_golden_dir / "auto_suggest_footer.txt"
-        ).read_text(encoding="utf-8")
+        snapshot = (production_golden_dir / "auto_suggest_footer.txt").read_text(encoding="utf-8")
         rendered = render_prompt_canonical("auto_suggest_footer")
         assert rendered == snapshot, (
             f"auto_suggest_footer drift detected: "
             f"expected {len(snapshot)} bytes, got {len(rendered)} bytes"
         )
 
-    def test_auto_suggest_empty_matches_snapshot(
-        self, production_golden_dir: Path
-    ) -> None:
+    def test_auto_suggest_empty_matches_snapshot(self, production_golden_dir: Path) -> None:
         """auto_suggest_empty snapshot = render_prompt_canonical('auto_suggest_empty')."""
-        snapshot = (
-            production_golden_dir / "auto_suggest_empty.txt"
-        ).read_text(encoding="utf-8")
+        snapshot = (production_golden_dir / "auto_suggest_empty.txt").read_text(encoding="utf-8")
         rendered = render_prompt_canonical("auto_suggest_empty")
         assert rendered == snapshot, (
             f"auto_suggest_empty drift detected: "
@@ -110,9 +94,7 @@ class TestCanonicalRenders:
         assert "{{" not in rendered
         assert "}}" not in rendered
         assert "{" not in rendered
-        assert "}" not in rendered, (
-            f"residual placeholders in canonical render: {rendered!r}"
-        )
+        assert "}" not in rendered, f"residual placeholders in canonical render: {rendered!r}"
 
     def test_strict_tdd_canonical_overrides_accept_user_kwarg(self) -> None:
         """``**overrides`` lets callers substitute canonical kwargs (e.g., 'pytest').
@@ -138,9 +120,7 @@ class TestCanonicalRenders:
 class TestGoldenUpdate:
     """``flow prompts show --update-goldens`` + ``--check-snapshot`` flags (T2.3..T2.4)."""
 
-    def test_update_goldens_flag_writes_canonical_snapshot(
-        self, golden_snapshot_dir: Path
-    ) -> None:
+    def test_update_goldens_flag_writes_canonical_snapshot(self, golden_snapshot_dir: Path) -> None:
         """`--update-goldens` writes the canonical render to the snapshot file."""
         snap_path = golden_snapshot_dir / "strict_tdd.txt"
         assert not snap_path.exists(), (
@@ -156,24 +136,17 @@ class TestGoldenUpdate:
             f"--update-goldens failed: exit={result.exit_code}, "
             f"output={result.output!r}, exc={result.exception!r}"
         )
-        assert snap_path.exists(), (
-            f"--update-goldens did not write {snap_path}"
-        )
+        assert snap_path.exists(), f"--update-goldens did not write {snap_path}"
         written = snap_path.read_text(encoding="utf-8")
         expected = render_prompt_canonical("strict_tdd")
         assert written == expected, (
-            f"snapshot content mismatch: "
-            f"expected {len(expected)} bytes, got {len(written)} bytes"
+            f"snapshot content mismatch: expected {len(expected)} bytes, got {len(written)} bytes"
         )
 
-    def test_check_snapshot_flag_fails_on_drift(
-        self, golden_snapshot_dir: Path
-    ) -> None:
+    def test_check_snapshot_flag_fails_on_drift(self, golden_snapshot_dir: Path) -> None:
         """`--check-snapshot` exits non-zero + emits 'snapshot drift detected' on mismatch."""
         snap_path = golden_snapshot_dir / "auto_suggest_header.txt"
-        snap_path.write_text(
-            "GARBAGE BYTES THAT WILL NEVER MATCH", encoding="utf-8"
-        )
+        snap_path.write_text("GARBAGE BYTES THAT WILL NEVER MATCH", encoding="utf-8")
 
         result = _RUNNER.invoke(
             main,
@@ -181,8 +154,7 @@ class TestGoldenUpdate:
         )
 
         assert result.exit_code != 0, (
-            f"--check-snapshot should fail on drift but exited 0; "
-            f"output={result.output!r}"
+            f"--check-snapshot should fail on drift but exited 0; output={result.output!r}"
         )
         err_text = ""
         if result.stderr_bytes:
@@ -192,9 +164,7 @@ class TestGoldenUpdate:
             f"stderr should mention 'snapshot drift detected'; got: {full!r}"
         )
 
-    def test_check_snapshot_flag_passes_when_match(
-        self, golden_snapshot_dir: Path
-    ) -> None:
+    def test_check_snapshot_flag_passes_when_match(self, golden_snapshot_dir: Path) -> None:
         """`--check-snapshot` exits 0 when snapshot matches canonical render."""
         snap_path = golden_snapshot_dir / "auto_suggest_empty.txt"
         snap_path.write_text(

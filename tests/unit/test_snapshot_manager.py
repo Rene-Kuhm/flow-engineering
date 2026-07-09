@@ -48,6 +48,7 @@ Cross-cutting:
   the hex suffix is ``secrets.token_hex(3)`` for collision-safety on
   sub-second creates.
 """
+
 from __future__ import annotations
 
 import gzip
@@ -136,9 +137,7 @@ class TestCreateRoundTrip:
         meta = envelope["metadata"]
         assert "sha256" in meta
         envelope_without_sha = {k: v for k, v in envelope.items() if k != "metadata"}
-        envelope_without_sha["metadata"] = {
-            k: v for k, v in meta.items() if k != "sha256"
-        }
+        envelope_without_sha["metadata"] = {k: v for k, v in meta.items() if k != "sha256"}
         expected = hashlib.sha256(
             _canonical_json_dumps(envelope_without_sha).encode("utf-8")
         ).hexdigest()
@@ -176,10 +175,7 @@ class TestAtomicWrite:
         manager.create()
 
         # No .tmp / .partial files should remain in the snapshots dir.
-        tmp_files = [
-            p for p in tmp_path.iterdir()
-            if p.name.endswith(".tmp") or ".tmp." in p.name
-        ]
+        tmp_files = [p for p in tmp_path.iterdir() if p.name.endswith(".tmp") or ".tmp." in p.name]
         assert tmp_files == [], f"Unexpected temp files: {tmp_files!r}"
 
     def test_write_creates_one_file_per_create(self, tmp_path: Path) -> None:
@@ -200,9 +196,7 @@ class TestAtomicWrite:
 class TestFirstRunLabel:
     """First snapshot in an empty dir auto-labels ``initial_state`` unless overridden."""
 
-    def test_first_run_empty_dir_auto_labels_initial_state(
-        self, tmp_path: Path
-    ) -> None:
+    def test_first_run_empty_dir_auto_labels_initial_state(self, tmp_path: Path) -> None:
         from flow_engineering.snapshot_manager import SnapshotManager
 
         backend = InMemoryBackend()
@@ -213,9 +207,7 @@ class TestFirstRunLabel:
         envelope = _read_envelope(tmp_path / f"{snap_id}.json.gz")
         assert envelope["description"] == "initial_state"
 
-    def test_explicit_description_wins_over_initial_state(
-        self, tmp_path: Path
-    ) -> None:
+    def test_explicit_description_wins_over_initial_state(self, tmp_path: Path) -> None:
         from flow_engineering.snapshot_manager import SnapshotManager
 
         backend = InMemoryBackend()
@@ -227,9 +219,7 @@ class TestFirstRunLabel:
         envelope = _read_envelope(tmp_path / f"{snap_id}.json.gz")
         assert envelope["description"] == "second-explicit"
 
-    def test_no_description_when_dir_not_empty_no_auto_label(
-        self, tmp_path: Path
-    ) -> None:
+    def test_no_description_when_dir_not_empty_no_auto_label(self, tmp_path: Path) -> None:
         from flow_engineering.snapshot_manager import SnapshotManager
 
         backend = InMemoryBackend()
@@ -258,7 +248,7 @@ class TestSnapshotIdFormat:
         # ``snap_YYYY-MM-DDTHH-MM-SS-XXXXXX`` (ISO with dashes instead of colons).
         assert snap_id.startswith("snap_"), snap_id
         # Strip the ``snap_`` prefix and split the rest on ``-``.
-        body = snap_id[len("snap_"):]
+        body = snap_id[len("snap_") :]
         parts = body.split("-")
         # 5 date parts (year, month, day+hour, minute, second) + 1 hex part = 6.
         assert len(parts) == 6, f"Expected 6 dash-separated parts, got {snap_id!r}"
@@ -299,9 +289,7 @@ class TestListOrdering:
 
         entries = manager.list()
         ids_in_order = [e.id for e in entries]
-        assert ids_in_order == [id_c, id_b, id_a], (
-            f"Expected reverse chrono, got {ids_in_order!r}"
-        )
+        assert ids_in_order == [id_c, id_b, id_a], f"Expected reverse chrono, got {ids_in_order!r}"
 
 
 # ---------- REQ-29 scenario 2: since filter ----------
@@ -414,8 +402,13 @@ class TestShow:
         assert envelope["description"] == "rt"
         # All 6 top-level keys from D2 are present.
         for key in (
-            "schema", "id", "created_at", "trigger", "description",
-            "graph_state", "metadata",
+            "schema",
+            "id",
+            "created_at",
+            "trigger",
+            "description",
+            "graph_state",
+            "metadata",
         ):
             assert key in envelope, f"Missing top-level key {key}"
 
@@ -568,9 +561,7 @@ class TestDiffOneArgVsLive:
 class TestRollbackRefusedWithoutConfirm:
     """``rollback(snap_id, confirm=False)`` raises ``RollbackRefusedError``."""
 
-    def test_rollback_without_confirm_raises_refused_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_without_confirm_raises_refused_error(self, tmp_path: Path) -> None:
         from flow_engineering.snapshot_manager import (
             RollbackRefusedError,
             SnapshotManager,
@@ -586,14 +577,10 @@ class TestRollbackRefusedWithoutConfirm:
 
         # Error payload has the two required keys per REQ-32 scenario 1.
         payload = excinfo.value.payload
-        assert payload["error"] == (
-            "--confirm required to write; use --dry-run to preview"
-        )
+        assert payload["error"] == ("--confirm required to write; use --dry-run to preview")
         assert payload["snap_id"] == snap_id
 
-    def test_rollback_without_confirm_does_not_create_safety_snapshot(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_without_confirm_does_not_create_safety_snapshot(self, tmp_path: Path) -> None:
         """No Phase 1 safety snapshot must exist when --confirm is absent."""
         from flow_engineering.snapshot_manager import (
             RollbackRefusedError,
@@ -649,9 +636,7 @@ class TestRollbackAutoSafetySnapshot:
         assert safety_envelope["trigger"] == "rollback_safety"
         assert safety_envelope["description"] == f"pre_rollback_to_{target_id}"
 
-    def test_rollback_returns_rollback_result_with_required_fields(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_returns_rollback_result_with_required_fields(self, tmp_path: Path) -> None:
         from flow_engineering.snapshot_manager import SnapshotManager
 
         backend = InMemoryBackend()
@@ -670,9 +655,7 @@ class TestRollbackAutoSafetySnapshot:
         assert isinstance(result.applied, str)
         assert result.applied.startswith("+") or result.applied.startswith("~")
 
-    def test_rollback_dict_shape_matches_spec_json_contract(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_dict_shape_matches_spec_json_contract(self, tmp_path: Path) -> None:
         """The RollbackResult.to_dict() must match the spec JSON contract."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -695,9 +678,7 @@ class TestRollbackAutoSafetySnapshot:
 class TestRollbackConflictRefused:
     """Conflicts without --force raise ``RollbackConflictError`` (but safety snapshot still created)."""
 
-    def test_rollback_with_added_observations_raises_conflict_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_with_added_observations_raises_conflict_error(self, tmp_path: Path) -> None:
         from flow_engineering.snapshot_manager import (
             RollbackConflictError,
             SnapshotManager,
@@ -711,7 +692,8 @@ class TestRollbackConflictRefused:
         # Add 3 new observations AFTER the target snapshot.
         for i in range(3):
             backend.mem_save(
-                title=f"new-{i}", content=f"new content {i}",
+                title=f"new-{i}",
+                content=f"new content {i}",
                 topic_key="sdd/x/spec",
             )
 
@@ -722,9 +704,7 @@ class TestRollbackConflictRefused:
             manager.rollback(target_id, confirm=True)  # no force
 
         payload = excinfo.value.payload
-        assert payload["error"] == (
-            "live state has diverged; refusing rollback without --force"
-        )
+        assert payload["error"] == ("live state has diverged; refusing rollback without --force")
         # The new IDs (3, 4, 5) appear in the conflicts list with change="added".
         conflict_ids = {c["id"] for c in payload["conflicts"]}
         assert conflict_ids == {3, 4, 5}
@@ -760,9 +740,7 @@ class TestRollbackConflictRefused:
         change_types = [c["change"] for c in payload["conflicts"]]
         assert "modified" in change_types
 
-    def test_rollback_no_conflicts_succeeds_silently(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_no_conflicts_succeeds_silently(self, tmp_path: Path) -> None:
         """With no conflicts, rollback succeeds without raising."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -805,9 +783,7 @@ class TestRollbackForceOverride:
             f"Expected stderr warning; got stderr={captured.err!r}"
         )
 
-    def test_rollback_force_restores_modified_content(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_force_restores_modified_content(self, tmp_path: Path) -> None:
         """When force=True + modify conflict, rollback restores target content."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -827,17 +803,14 @@ class TestRollbackForceOverride:
         # Content restored.
         restored = backend.mem_get_observation(1)["content"]
         assert restored == original_content, (
-            f"Expected content to be restored to {original_content!r}; "
-            f"got {restored!r}"
+            f"Expected content to be restored to {original_content!r}; got {restored!r}"
         )
 
 
 class TestRollbackIdempotency:
     """Re-running rollback after a partial Phase 2 leaves a valid safety trail."""
 
-    def test_rollback_creates_safety_snapshot_each_invocation(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_creates_safety_snapshot_each_invocation(self, tmp_path: Path) -> None:
         """Each rollback creates its own safety snapshot (idempotent retry)."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -857,9 +830,7 @@ class TestRollbackIdempotency:
         assert result1.target_snapshot_id == target_id
         assert result2.target_snapshot_id == target_id
 
-    def test_rollback_safety_snapshot_round_trips_via_show(
-        self, tmp_path: Path
-    ) -> None:
+    def test_rollback_safety_snapshot_round_trips_via_show(self, tmp_path: Path) -> None:
         """The safety snapshot created by rollback must be loadable via show()."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -898,9 +869,7 @@ class TestCreatePopulatesGraphJsonContent:
     wired in batch B1).
     """
 
-    def test_create_populates_graph_json_content_when_file_exists(
-        self, tmp_path: Path
-    ) -> None:
+    def test_create_populates_graph_json_content_when_file_exists(self, tmp_path: Path) -> None:
         """create() reads graph.json from disk and stores raw content as a string."""
         import json as _json
 
@@ -922,12 +891,11 @@ class TestCreatePopulatesGraphJsonContent:
                 },
             ]
         }
-        graph_path.write_text(
-            _json.dumps(graph_payload, ensure_ascii=False), encoding="utf-8"
-        )
+        graph_path.write_text(_json.dumps(graph_payload, ensure_ascii=False), encoding="utf-8")
 
         snaps_dir = tmp_path / "snaps"
         import os as _os
+
         old_env = _os.environ.get("FLOW_GRAPH_JSON_PATH")
         _os.environ["FLOW_GRAPH_JSON_PATH"] = str(graph_path)
         try:
@@ -952,13 +920,9 @@ class TestCreatePopulatesGraphJsonContent:
             f"graph_json_content must be a string, got {type(graph_state['graph_json_content']).__name__}"
         )
         # The content matches the file content (raw JSON serialisation).
-        assert graph_state["graph_json_content"] == _json.dumps(
-            graph_payload, ensure_ascii=False
-        )
+        assert graph_state["graph_json_content"] == _json.dumps(graph_payload, ensure_ascii=False)
 
-    def test_create_omits_graph_json_content_when_file_missing(
-        self, tmp_path: Path
-    ) -> None:
+    def test_create_omits_graph_json_content_when_file_missing(self, tmp_path: Path) -> None:
         """Without graph.json on disk, the field is absent — drift scans refuse."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -994,9 +958,7 @@ class TestCreatePopulatesGraphJsonContent:
             f"graph_json_content must be absent when graph.json missing; got: {graph_state['graph_json_content']!r}"
         )
 
-    def test_drift_scan_with_snap_id_reads_frozen_graph_from_envelope(
-        self, tmp_path: Path
-    ) -> None:
+    def test_drift_scan_with_snap_id_reads_frozen_graph_from_envelope(self, tmp_path: Path) -> None:
         """End-to-end: snapshot has graph_json_content, scan reads frozen state.
 
         Mirrors the brief's acceptance criterion: "create a snapshot, call
@@ -1021,9 +983,7 @@ class TestCreatePopulatesGraphJsonContent:
                 },
             ]
         }
-        graph_path.write_text(
-            _json.dumps(graph_payload, ensure_ascii=False), encoding="utf-8"
-        )
+        graph_path.write_text(_json.dumps(graph_payload, ensure_ascii=False), encoding="utf-8")
 
         snaps_dir = tmp_path / "snaps"
         _os.environ["FLOW_GRAPH_JSON_PATH"] = str(graph_path)
@@ -1042,9 +1002,8 @@ class TestCreatePopulatesGraphJsonContent:
                 confidence=0.9,
                 source="manual",
             )
-            content = (
-                "## Decision\n\nSnapshot-pinned binding.\n"
-                + format_code_refs_block([cref], source="manual")
+            content = "## Decision\n\nSnapshot-pinned binding.\n" + format_code_refs_block(
+                [cref], source="manual"
             )
             backend = InMemoryBackend()
             backend.mem_save(
@@ -1060,8 +1019,7 @@ class TestCreatePopulatesGraphJsonContent:
             mutated_path = tmp_path / "mutated.json"
             mutated_path.write_text(
                 _json.dumps(
-                    {"nodes": [{"id": "vec_store", "label": "STALE",
-                                "file": "x.py", "line": 99}]},
+                    {"nodes": [{"id": "vec_store", "label": "STALE", "file": "x.py", "line": 99}]},
                     ensure_ascii=False,
                 ),
                 encoding="utf-8",
@@ -1081,9 +1039,7 @@ class TestCreatePopulatesGraphJsonContent:
             assert report.findings, "expected at least one finding"
             from flow_engineering.decision_drift import DriftClass
 
-            assert any(
-                f.drift_class == DriftClass.STILL_VALID for f in report.findings
-            ), (
+            assert any(f.drift_class == DriftClass.STILL_VALID for f in report.findings), (
                 f"expected STILL_VALID against frozen graph; got "
                 f"{[(f.drift_class.value, f.binding.id) for f in report.findings]!r}"
             )
@@ -1132,9 +1088,7 @@ class TestPrune:
                 time.sleep(interval)
         return ids
 
-    def test_prune_keep_last_evicts_oldest(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_keep_last_evicts_oldest(self, tmp_path: Path) -> None:
         """With 5 snapshots and keep_last=2, dry-run returns would_delete=[3 oldest]."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1150,9 +1104,7 @@ class TestPrune:
         result = manager.prune(keep_last=2)  # default confirm=False (dry-run)
 
         # 5 snapshots exist, keep_last=2 => 3 candidates for deletion.
-        assert result.deleted == [], (
-            f"dry-run MUST NOT delete; got deleted={result.deleted!r}"
-        )
+        assert result.deleted == [], f"dry-run MUST NOT delete; got deleted={result.deleted!r}"
         assert result.dry_run is True
         # would_keep = 2 newest, would_delete = 3 oldest (insertion order).
         assert len(result.would_delete) == 3
@@ -1163,9 +1115,7 @@ class TestPrune:
         remaining = sorted(p.name for p in tmp_path.glob("snap_*.json.gz"))
         assert len(remaining) == 5
 
-    def test_prune_keep_days_evicts_older_than_threshold(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_keep_days_evicts_older_than_threshold(self, tmp_path: Path) -> None:
         """keep_days=N keeps snapshots created in the last N days."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1190,7 +1140,10 @@ class TestPrune:
         envelope["created_at"] = "2020-01-01T00:00:00Z"  # > 30 days ago
         # Recompute sha256 so the envelope stays self-consistent.
         canonical = _canonical_json_dumps(
-            {**envelope, "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"}}
+            {
+                **envelope,
+                "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"},
+            }
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with _gzip.open(very_old_path, "wt", encoding="utf-8") as fh:
@@ -1204,9 +1157,7 @@ class TestPrune:
         )
         assert recent_id in result.would_keep
 
-    def test_prune_max_total_size_mb_evicts_oldest_first(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_max_total_size_mb_evicts_oldest_first(self, tmp_path: Path) -> None:
         """max_total_size_mb=N deletes oldest-first until total size fits."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1230,17 +1181,13 @@ class TestPrune:
         # The would-delete list is in chronological (oldest-first) order.
         if len(result.would_delete) > 1:
             ids_to_delete = result.would_delete
-            expected_oldest_first = sorted(
-                ids_to_delete, key=lambda sid: ids.index(sid)
-            )
+            expected_oldest_first = sorted(ids_to_delete, key=lambda sid: ids.index(sid))
             assert ids_to_delete == expected_oldest_first, (
                 f"would_delete must be oldest-first; got {ids_to_delete!r} "
                 f"vs expected {expected_oldest_first!r}"
             )
 
-    def test_prune_dry_run_when_no_confirm(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_dry_run_when_no_confirm(self, tmp_path: Path) -> None:
         """prune() without confirm=True is dry-run; no files deleted."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1265,9 +1212,7 @@ class TestPrune:
         # Newest snapshot is in would_keep.
         assert ids[-1] in result.would_keep
 
-    def test_prune_confirm_true_actually_deletes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_confirm_true_actually_deletes(self, tmp_path: Path) -> None:
         """prune(confirm=True, keep_last=1) deletes 3 of 4 snapshots."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1286,16 +1231,12 @@ class TestPrune:
         assert sorted(result.deleted) == sorted(ids[:3]), (
             f"expected 3 oldest deleted; got deleted={result.deleted!r}"
         )
-        remaining = sorted(
-            p.name.replace(".json.gz", "") for p in tmp_path.glob("snap_*.json.gz")
-        )
+        remaining = sorted(p.name.replace(".json.gz", "") for p in tmp_path.glob("snap_*.json.gz"))
         assert remaining == [ids[3]], (
             f"expected only the newest snapshot on disk; got {remaining!r}"
         )
 
-    def test_prune_never_deletes_most_recent(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_never_deletes_most_recent(self, tmp_path: Path) -> None:
         """The most-recent snapshot is in would_keep, never would_delete."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1316,9 +1257,7 @@ class TestPrune:
         )
         assert ids[-1] in result.would_keep
 
-    def test_prune_respects_pinned_metadata(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_respects_pinned_metadata(self, tmp_path: Path) -> None:
         """Snapshots with metadata.pinned=True are never deleted."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1341,7 +1280,10 @@ class TestPrune:
         # does not need to succeed for prune, but consistency matters
         # for downstream consumers).
         canonical = _canonical_json_dumps(
-            {**envelope, "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"}}
+            {
+                **envelope,
+                "metadata": {k: v for k, v in envelope["metadata"].items() if k != "sha256"},
+            }
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with _gzip.open(middle_path, "wt", encoding="utf-8") as fh:
@@ -1386,9 +1328,7 @@ class TestPrune:
             f"expected stderr warning; got stderr={captured.err!r}"
         )
 
-    def test_prune_returns_prune_result_dataclass(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prune_returns_prune_result_dataclass(self, tmp_path: Path) -> None:
         """prune() returns a PruneResult dataclass with the 5 required fields."""
         from flow_engineering.snapshot_manager import SnapshotManager
 
@@ -1400,7 +1340,11 @@ class TestPrune:
         result = manager.prune(keep_last=1)
 
         for field in (
-            "deleted", "would_delete", "would_keep", "freed_bytes", "dry_run",
+            "deleted",
+            "would_delete",
+            "would_keep",
+            "freed_bytes",
+            "dry_run",
         ):
             assert hasattr(result, field), f"missing field {field!r}"
         assert isinstance(result.deleted, list)

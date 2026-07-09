@@ -101,7 +101,12 @@ class TestGetPrompt:
         assert entry.domain == PromptDomain.OBSERVABILITY
 
     def test_get_prompt_returns_each_known_entry(self) -> None:
-        for name in {"strict_tdd", "auto_suggest_header", "auto_suggest_footer", "auto_suggest_empty"}:
+        for name in {
+            "strict_tdd",
+            "auto_suggest_header",
+            "auto_suggest_footer",
+            "auto_suggest_empty",
+        }:
             entry = get_prompt(name)
             assert entry.name == name
 
@@ -223,8 +228,7 @@ class TestPromptRegistryLoadsFromJ2Files:
             j2_path = repo_root / entry.metadata["template_file"]
             disk_body = load_template_from_file(j2_path)
             assert entry.template == disk_body, (
-                f"entry {entry.name!r}: catalog template disagrees with "
-                f"on-disk {j2_path}"
+                f"entry {entry.name!r}: catalog template disagrees with on-disk {j2_path}"
             )
 
     def test_load_template_from_file_strips_trailing_newline(self) -> None:

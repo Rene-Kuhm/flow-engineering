@@ -53,7 +53,12 @@ class TestGetPromptTemplate:
             get_prompt_template("nonexistent_prompt_xyz")
 
     def test_get_prompt_template_matches_get_prompt_dot_template(self) -> None:
-        for name in {"strict_tdd", "auto_suggest_header", "auto_suggest_footer", "auto_suggest_empty"}:
+        for name in {
+            "strict_tdd",
+            "auto_suggest_header",
+            "auto_suggest_footer",
+            "auto_suggest_empty",
+        }:
             assert get_prompt_template(name) == get_prompt(name).template
 
 
@@ -75,7 +80,12 @@ class TestGetPromptMetadata:
             get_prompt_metadata("nonexistent_prompt_xyz")
 
     def test_get_prompt_metadata_matches_get_prompt_dot_metadata(self) -> None:
-        for name in {"strict_tdd", "auto_suggest_header", "auto_suggest_footer", "auto_suggest_empty"}:
+        for name in {
+            "strict_tdd",
+            "auto_suggest_header",
+            "auto_suggest_footer",
+            "auto_suggest_empty",
+        }:
             assert get_prompt_metadata(name) == get_prompt(name).metadata
 
 

@@ -92,9 +92,7 @@ class TestLintReportProperties:
         assert report.error_count == 0
 
     def test_lint_prompts_error_codes_property(self) -> None:
-        bad_version = _make_broken(
-            name="bad_v", template="hi {{ name }}", version="not-semver"
-        )
+        bad_version = _make_broken(name="bad_v", template="hi {{ name }}", version="not-semver")
         report = lint_prompts((bad_version,))
         codes = report.error_codes
         assert "invalid_version" in codes
@@ -192,9 +190,7 @@ class TestLintPromptsCustomCatalogIsolation:
         report = lint_prompts(bad)
         assert report.error_count == len(expected)
         # Compare sorted codes (implementation may differ in ordering).
-        assert {e.error_code for e in report.errors} == {
-            e.error_code for e in expected
-        }
+        assert {e.error_code for e in report.errors} == {e.error_code for e in expected}
 
 
 # ---------- T3.3 (W1): lint spec-taxonomy alias map shim ----------
@@ -234,6 +230,7 @@ class TestLintSpecTaxonomyAlias:
         LINT_CATEGORY_SPEC_ALIASES`` without instantiating any object.
         """
         from flow_engineering import prompt_registry
+
         assert hasattr(prompt_registry, "LINT_CATEGORY_SPEC_ALIASES"), (
             "expected LINT_CATEGORY_SPEC_ALIASES module constant"
         )
@@ -250,9 +247,8 @@ class TestLintSpecTaxonomyAlias:
         equivalent code is ``undefined_var``.
         """
         from flow_engineering import prompt_registry
-        assert prompt_registry.get_spec_category("missing_placeholder") == (
-            "undefined_var"
-        ), (
+
+        assert prompt_registry.get_spec_category("missing_placeholder") == ("undefined_var"), (
             f"expected missing_placeholder → undefined_var; "
             f"got {prompt_registry.get_spec_category('missing_placeholder')!r}"
         )
@@ -265,10 +261,8 @@ class TestLintSpecTaxonomyAlias:
         equivalent code is ``jinja_syntax``.
         """
         from flow_engineering import prompt_registry
-        assert (
-            prompt_registry.get_spec_category("template_parse_error")
-            == "jinja_syntax"
-        )
+
+        assert prompt_registry.get_spec_category("template_parse_error") == "jinja_syntax"
 
     def test_unimplemented_spec_codes_return_none(self) -> None:
         """Spec codes the impl never emits return ``None``.
@@ -280,14 +274,13 @@ class TestLintSpecTaxonomyAlias:
         misleading mapping.
         """
         from flow_engineering import prompt_registry
+
         for unimplemented in (
             "unused_variable",
             "autoescape_disabled",
             "missing_variable",
         ):
-            assert (
-                prompt_registry.get_spec_category(unimplemented) is None
-            ), (
+            assert prompt_registry.get_spec_category(unimplemented) is None, (
                 f"expected {unimplemented} → None (unimplemented); "
                 f"got {prompt_registry.get_spec_category(unimplemented)!r}"
             )
@@ -301,6 +294,7 @@ class TestLintSpecTaxonomyAlias:
         ``invalid_domain``, ``invalid_version``) return ``None``.
         """
         from flow_engineering import prompt_registry
+
         for impl_only in (
             "undefined_var",  # reverse: impl has it but spec calls it missing_placeholder
             "duplicate_name",
@@ -324,6 +318,7 @@ class TestLintSpecTaxonomyAlias:
         usable.
         """
         from flow_engineering import prompt_registry
+
         prompt_registry.register(
             name="bdd_test_w1_alias",
             template="hello {{ undefined_thing }}",
@@ -334,9 +329,7 @@ class TestLintSpecTaxonomyAlias:
             report = prompt_registry.lint_prompts()
             spec_code = "missing_placeholder"
             impl_code = prompt_registry.get_spec_category(spec_code)
-            assert impl_code is not None, (
-                f"expected spec→impl mapping for {spec_code}"
-            )
+            assert impl_code is not None, f"expected spec→impl mapping for {spec_code}"
             codes_emitted = {e.error_code for e in report.errors}
             assert impl_code in codes_emitted, (
                 f"expected impl_code={impl_code!r} (resolved from "

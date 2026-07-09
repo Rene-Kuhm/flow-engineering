@@ -62,11 +62,7 @@ def jinja_prompts() -> None:
     )
     prompt_registry.register(
         name="jinja_multiline",
-        template=(
-            "Line one with {{ a }}.\n"
-            "Line two with {{ b }}.\n"
-            "Line three.\n"
-        ),
+        template=("Line one with {{ a }}.\nLine two with {{ b }}.\nLine three.\n"),
         domain=prompt_registry.PromptDomain.OBSERVABILITY,
         version="1.0.0",
         required_vars=("a", "b"),
@@ -115,12 +111,8 @@ class TestRenderPromptRaisesPromptRenderErrorOnMissingKwarg:
         assert excinfo.value.payload["reason"] == "missing_var"
         assert excinfo.value.payload["prompt"] == "jinja_missing"
 
-    def test_strict_mode_renders_when_all_vars_provided(
-        self, jinja_prompts: None
-    ) -> None:
-        assert (
-            render_prompt("jinja_missing", user_name="Filled") == "Hello, Filled!"
-        )
+    def test_strict_mode_renders_when_all_vars_provided(self, jinja_prompts: None) -> None:
+        assert render_prompt("jinja_missing", user_name="Filled") == "Hello, Filled!"
 
 
 class TestRenderPromptRaisesKeyErrorOnUnknownName:
@@ -158,9 +150,7 @@ class TestListRequiredVarsReturnsUndeclaredVariables:
         vars_ = list_required_vars("jinja_numeric")
         assert vars_ == {"count", "pi"}
 
-    def test_returns_empty_for_no_placeholder_template(
-        self, jinja_prompts: None
-    ) -> None:
+    def test_returns_empty_for_no_placeholder_template(self, jinja_prompts: None) -> None:
         assert list_required_vars("jinja_no_vars") == set()
 
     def test_returns_single_var(self, jinja_prompts: None) -> None:
@@ -170,15 +160,9 @@ class TestListRequiredVarsReturnsUndeclaredVariables:
 class TestRenderPromptHandlesMultilineTemplates:
     def test_multiline_keeps_trailing_newline(self, jinja_prompts: None) -> None:
         result = render_prompt("jinja_multiline", a="alpha", b="beta")
-        assert result == (
-            "Line one with alpha.\n"
-            "Line two with beta.\n"
-            "Line three.\n"
-        )
+        assert result == ("Line one with alpha.\nLine two with beta.\nLine three.\n")
 
-    def test_multiline_does_not_strip_internal_whitespace(
-        self, jinja_prompts: None
-    ) -> None:
+    def test_multiline_does_not_strip_internal_whitespace(self, jinja_prompts: None) -> None:
         result = render_prompt("jinja_multiline", a="x", b="y")
         assert "Line one with x." in result
         assert "Line two with y." in result
@@ -245,9 +229,7 @@ class TestPromptRenderSafeAutoescapeEnabled:
             required_vars=("user_name",),
         )
         try:
-            result = render_prompt_safe(
-                "autoescape_html", user_name="<script>alert(1)</script>"
-            )
+            result = render_prompt_safe("autoescape_html", user_name="<script>alert(1)</script>")
             assert "<script>" not in result
             assert "&lt;script&gt;" in result
             assert "alert(1)" in result
@@ -286,9 +268,7 @@ class TestPromptRenderErrorException:
         """The exception carries a ``payload`` dict for CLI diagnostics."""
         from flow_engineering.prompt_registry import PromptRenderError
 
-        exc = PromptRenderError(
-            {"prompt": "strict_tdd", "reason": "missing_var", "error": "boom"}
-        )
+        exc = PromptRenderError({"prompt": "strict_tdd", "reason": "missing_var", "error": "boom"})
         assert exc.payload == {
             "prompt": "strict_tdd",
             "reason": "missing_var",

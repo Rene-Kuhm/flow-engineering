@@ -14,6 +14,7 @@ Strict TDD: tests written BEFORE the new class. They MUST fail with
 AttributeError (``SnapshotGraphMissingError`` not yet defined) until
 the GREEN commit adds the class + alias.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -102,4 +103,5 @@ class TestSnapshotGraphMissingDeprecationWarning:
         from flow_engineering.snapshot_manager import (
             SnapshotGraphMissingError as canonical,  # noqa: N813
         )
+
         assert legacy is canonical
