@@ -138,25 +138,39 @@ class TestWindowIntegrationOnExport:
     """``flow metrics export --window=1h`` composes with the prometheus format."""
 
     def test_window_filter_integration_with_export(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--window=1h`` filters BEFORE prometheus_exposition is invoked."""
         metrics_file = tmp_path / "metrics.jsonl"
         now = datetime.now(UTC)
         # 4 fresh events (within 60min) + 1 old event (>60min).
-        _write_jsonl(metrics_file, [
-            {"name": "old_counter", "fields": {"count": 1}, "ts": _iso(now - timedelta(hours=2))},
-            {"name": "fresh_a", "fields": {"count": 1}, "ts": _iso(now)},
-            {"name": "fresh_b", "fields": {"count": 2}, "ts": _iso(now)},
-            {"name": "fresh_c", "fields": {"count": 3}, "ts": _iso(now)},
-            {"name": "fresh_d", "fields": {"count": 5}, "ts": _iso(now)},
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                {
+                    "name": "old_counter",
+                    "fields": {"count": 1},
+                    "ts": _iso(now - timedelta(hours=2)),
+                },
+                {"name": "fresh_a", "fields": {"count": 1}, "ts": _iso(now)},
+                {"name": "fresh_b", "fields": {"count": 2}, "ts": _iso(now)},
+                {"name": "fresh_c", "fields": {"count": 3}, "ts": _iso(now)},
+                {"name": "fresh_d", "fields": {"count": 5}, "ts": _iso(now)},
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--window", "1h",
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--window",
+                "1h",
             ],
         )
 
@@ -172,25 +186,39 @@ class TestWindowIntegrationOnExport:
         assert "flow_fresh_d 5.0" in result.output
 
     def test_window_filter_with_domain_composes_and_style(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``--window`` AND ``--domain`` AND ``--format prometheus`` compose (D9)."""
         metrics_file = tmp_path / "metrics.jsonl"
         now = datetime.now(UTC)
-        _write_jsonl(metrics_file, [
-            {"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)},
-            {"name": "snapshot_prune_total", "fields": {"count": 1}, "ts": _iso(now)},
-            {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
-            {"name": "snapshot_create_total",
-             "fields": {"count": 1},
-             "ts": _iso(now - timedelta(hours=2))},
-        ])
+        _write_jsonl(
+            metrics_file,
+            [
+                {"name": "snapshot_create_total", "fields": {"count": 1}, "ts": _iso(now)},
+                {"name": "snapshot_prune_total", "fields": {"count": 1}, "ts": _iso(now)},
+                {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
+                {
+                    "name": "snapshot_create_total",
+                    "fields": {"count": 1},
+                    "ts": _iso(now - timedelta(hours=2)),
+                },
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
         result = runner.invoke(
-            main, [
-                "metrics", "export", "--format", "prometheus",
-                "--window", "1h", "--domain", "snapshot",
+            main,
+            [
+                "metrics",
+                "export",
+                "--format",
+                "prometheus",
+                "--window",
+                "1h",
+                "--domain",
+                "snapshot",
             ],
         )
 

@@ -59,12 +59,17 @@ class TestDomainByPrefixExpansion:
         """
         unique_values = set(observability.DOMAIN_BY_PREFIX.values())
         expected = {
-            "binding", "backfill", "drift", "vector",
-            "federated", "snapshot", "metadata", "engine",
+            "binding",
+            "backfill",
+            "drift",
+            "vector",
+            "federated",
+            "snapshot",
+            "metadata",
+            "engine",
         }
         assert expected.issubset(unique_values), (
-            f"missing domains: {expected - unique_values}; "
-            f"present: {unique_values}"
+            f"missing domains: {expected - unique_values}; present: {unique_values}"
         )
 
     def test_all_domains_includes_original_four(self) -> None:
@@ -84,8 +89,7 @@ class TestDomainByPrefixExpansion:
         """
         for new_domain in ("backfill", "federated", "metadata", "engine"):
             assert new_domain in observability.ALL_DOMAINS, (
-                f"ALL_DOMAINS missing new domain {new_domain!r}; "
-                f"got {observability.ALL_DOMAINS!r}"
+                f"ALL_DOMAINS missing new domain {new_domain!r}; got {observability.ALL_DOMAINS!r}"
             )
 
     def test_all_domains_has_exactly_eight_entries(self) -> None:
@@ -116,13 +120,9 @@ class TestValidateDomain:
         msg = str(excinfo.value)
         # The error message must reference the invalid value AND list
         # every valid domain so the operator can self-correct.
-        assert "nonexistent" in msg, (
-            f"error message missing invalid value: {msg!r}"
-        )
+        assert "nonexistent" in msg, f"error message missing invalid value: {msg!r}"
         for valid in observability.ALL_DOMAINS:
-            assert valid in msg, (
-                f"valid domain {valid!r} missing from error: {msg!r}"
-            )
+            assert valid in msg, f"valid domain {valid!r} missing from error: {msg!r}"
 
 
 # ---------- read_events_by_domain picks up new entries ----------
@@ -132,7 +132,9 @@ class TestReadEventsByDomainExpansion:
     """read_events_by_domain picks up new entries from DOMAIN_BY_PREFIX."""
 
     def test_read_events_by_domain_filters_correctly_for_backfill(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`--domain=backfill` returns ONLY ``backfill_*`` events.
 
@@ -141,13 +143,16 @@ class TestReadEventsByDomainExpansion:
         excluded from the result.
         """
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("backfill_observations_total"),
-            _event("backfill_with_refs_total"),
-            _event("suggest_invoked_total"),
-            _event("drift_invoked_total"),
-            _event("snapshot_create_total"),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("backfill_observations_total"),
+                _event("backfill_with_refs_total"),
+                _event("suggest_invoked_total"),
+                _event("drift_invoked_total"),
+                _event("snapshot_create_total"),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         result = observability.read_events_by_domain("backfill")
@@ -158,7 +163,9 @@ class TestReadEventsByDomainExpansion:
         ], f"backfill filter leaked non-matching counters: {names!r}"
 
     def test_read_events_by_domain_filters_correctly_for_engine(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`--domain=engine` returns empty list (RESERVED slot, no v1 counters).
 
@@ -166,12 +173,15 @@ class TestReadEventsByDomainExpansion:
         ``engine_*`` counters; v1 emits none, so the filter result is empty.
         """
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("suggest_invoked_total"),
-            _event("drift_invoked_total"),
-            _event("vector_search_invoked_total"),
-            _event("backfill_observations_total"),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("suggest_invoked_total"),
+                _event("drift_invoked_total"),
+                _event("vector_search_invoked_total"),
+                _event("backfill_observations_total"),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         result = observability.read_events_by_domain("engine")
@@ -232,7 +242,9 @@ class TestDomainByPrefixProductionCounters:
         assert observability._domain_for_counter("inspect_render_ms") == "binding"
 
     def test_summarize_production_counters_group_into_binding_domain(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """End-to-end: a real-shape JSONL with production counters groups under ``binding``.
 
@@ -245,14 +257,17 @@ class TestDomainByPrefixProductionCounters:
         ``unknown``.
         """
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("suggest_invoked_total", fields={"count": 1477}),
-            _event("suggest_hit_total", fields={"count": 2532}),
-            _event("bindings_confirmed_total", fields={"count": 2532}),
-            _event("inspect_invoked_total", fields={"count": 1}),
-            _event("inspect_render_ms", fields={"elapsed_ms": 0}),
-            _event("backfill_observations_total", fields={"count": 42}),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("suggest_invoked_total", fields={"count": 1477}),
+                _event("suggest_hit_total", fields={"count": 2532}),
+                _event("bindings_confirmed_total", fields={"count": 2532}),
+                _event("inspect_invoked_total", fields={"count": 1}),
+                _event("inspect_render_ms", fields={"elapsed_ms": 0}),
+                _event("backfill_observations_total", fields={"count": 42}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         events = observability.read_all_metrics()
@@ -273,6 +288,4 @@ class TestDomainByPrefixProductionCounters:
         # The backfill counter lands under its own domain.
         assert summary["backfill"]["backfill_observations_total"] == 42
         # And NO counter landed under ``unknown`` (the pre-C1 regression).
-        assert "unknown" not in summary, (
-            f"unexpected unknown bucket — C1 regression: {summary!r}"
-        )
+        assert "unknown" not in summary, f"unexpected unknown bucket — C1 regression: {summary!r}"

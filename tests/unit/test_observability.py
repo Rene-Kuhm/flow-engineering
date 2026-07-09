@@ -115,14 +115,18 @@ class TestFlush:
 class TestPathResolution:
     """The sink path follows FLOW_METRICS_PATH env when set; otherwise the default."""
 
-    def test_default_path_when_env_unset(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_path_when_env_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from flow_engineering import observability
 
         monkeypatch.delenv(METRICS_PATH_ENV, raising=False)
         default = observability.default_metrics_path()
         assert default == Path.home() / ".flow-engineering" / "metrics.jsonl"
 
-    def test_env_path_overrides_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_env_path_overrides_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from flow_engineering import observability
 
         custom = tmp_path / "custom-metrics.jsonl"
@@ -130,7 +134,9 @@ class TestPathResolution:
         observability.increment("suggest_invoked_total")
         assert custom.exists()
 
-    def test_parent_directory_created(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_parent_directory_created(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from flow_engineering import observability
 
         nested = tmp_path / "deeply" / "nested" / "metrics.jsonl"
