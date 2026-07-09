@@ -11,8 +11,21 @@ A slice is done only when all relevant checks are true:
 - CI passed after push.
 - Health visibility is current when the change touches CI, runner, release, or operations.
 - Documentation changed only when it helps future operators or reviewers.
+- Bug fixes include a regression test in the same commit, unless the exception is documented in the commit body or follow-up audit.
 - Non-obvious decisions, bug fixes, and gotchas are saved to memory.
 - Follow-ups are explicit: closed, promoted, or deliberately deferred.
+
+## Bug fix regression rule
+
+A bug fix is not done until the behavior that failed is protected by a test.
+
+Acceptable evidence:
+
+- a unit or integration test that fails before the fix and passes after it;
+- a BDD scenario when the bug is user-visible workflow behavior;
+- a documented exception when the bug is non-deterministic, environmental, or already covered by a broader regression set.
+
+Do not split a bug fix and its regression test into separate commits. Reviewers should be able to revert one work unit without losing unrelated behavior.
 
 ## Changelog and release notes
 
