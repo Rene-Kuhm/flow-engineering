@@ -54,7 +54,9 @@ class TestReadAllMetrics:
     """read_all_metrics() returns [] when file missing; parses JSONL when present."""
 
     def test_read_all_metrics_returns_empty_list_when_file_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         missing = tmp_path / "missing.jsonl"
         monkeypatch.setenv("FLOW_METRICS_PATH", str(missing))
@@ -62,13 +64,18 @@ class TestReadAllMetrics:
         assert result == []
 
     def test_read_all_metrics_parses_valid_jsonl(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
-            _event("drift_invoked_total", {"change": "observability"}, "2026-06-27T11:00:00Z"),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
+                _event("drift_invoked_total", {"change": "observability"}, "2026-06-27T11:00:00Z"),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         result = observability.read_all_metrics()
@@ -79,7 +86,9 @@ class TestReadAllMetrics:
         assert result[1].counter_name == "drift_invoked_total"
 
     def test_read_all_metrics_skips_malformed_lines(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Malformed lines are silently skipped (best-effort sink contract)."""
         path = tmp_path / "metrics.jsonl"
@@ -105,14 +114,19 @@ class TestReadEventsSince:
     """read_events_since(since_epoch) filters by timestamp (epoch seconds)."""
 
     def test_read_events_since_filters_by_timestamp(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("counter_a", ts="2026-06-27T10:00:00Z"),
-            _event("counter_b", ts="2026-06-27T11:00:00Z"),
-            _event("counter_c", ts="2026-06-27T12:00:00Z"),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("counter_a", ts="2026-06-27T10:00:00Z"),
+                _event("counter_b", ts="2026-06-27T11:00:00Z"),
+                _event("counter_c", ts="2026-06-27T12:00:00Z"),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         since = _iso_to_epoch("2026-06-27T11:00:00Z")
@@ -129,18 +143,23 @@ class TestReadEventsByDomain:
     """read_events_by_domain(prefix) filters by counter-name prefix."""
 
     def test_read_events_by_domain_filters_by_prefix(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("suggest_invoked_total"),
-            _event("bindings_confirmed_total"),
-            _event("inspect_invoked_total"),
-            _event("backfill_observations_total"),
-            _event("drift_invoked_total"),
-            _event("vector_search_invoked_total"),
-            _event("snapshot_create_total"),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("suggest_invoked_total"),
+                _event("bindings_confirmed_total"),
+                _event("inspect_invoked_total"),
+                _event("backfill_observations_total"),
+                _event("drift_invoked_total"),
+                _event("vector_search_invoked_total"),
+                _event("snapshot_create_total"),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         result = observability.read_events_by_domain("binding")
@@ -155,7 +174,9 @@ class TestReadEventsByDomain:
         ]
 
     def test_read_events_by_domain_raises_on_unknown_domain(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
         _write_jsonl(path, [_event("suggest_invoked_total")])
@@ -172,17 +193,22 @@ class TestSummarize:
     """summarize(events) groups events by domain, then by counter_name."""
 
     def test_summarize_groups_by_domain_and_counter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("suggest_invoked_total", {"count": 2}),
-            _event("suggest_invoked_total", {"count": 1}),
-            _event("backfill_observations_total", {"count": 5}),
-            _event("drift_invoked_total", {"count": 1}),
-            _event("vector_search_invoked_total", {"count": 3}),
-            _event("vector_search_invoked_total", {"count": 4}),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("suggest_invoked_total", {"count": 2}),
+                _event("suggest_invoked_total", {"count": 1}),
+                _event("backfill_observations_total", {"count": 5}),
+                _event("drift_invoked_total", {"count": 1}),
+                _event("vector_search_invoked_total", {"count": 3}),
+                _event("vector_search_invoked_total", {"count": 4}),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         events = observability.read_all_metrics()
@@ -211,12 +237,17 @@ class TestPrometheusExposition:
     """prometheus_exposition(events) emits Prometheus textfile format with HELP + TYPE."""
 
     def test_prometheus_exposition_includes_help_and_type(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
-        _write_jsonl(path, [
-            _event("suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _event("suggest_invoked_total", {"count": 1}, "2026-06-27T10:00:00Z"),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         events = observability.read_all_metrics()
@@ -253,7 +284,8 @@ class TestAtomicWriteText:
     """atomic_write_text(path, content) writes content to disk atomically."""
 
     def test_atomic_write_text_creates_file_atomically(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "out.txt"
         observability.atomic_write_text(target, "hello world\n")
