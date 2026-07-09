@@ -39,6 +39,22 @@ $env:FLOW_RUNNER_ALERT_WEBHOOK = "https://example.invalid/webhook"
 | Latest `main` tests run | `gh run list` | Detects red or stale CI when GitHub CLI is available. |
 | Webhook delivery | Optional `FLOW_RUNNER_ALERT_WEBHOOK` | Lets an external monitor receive the alert payload. |
 
+## Install as a scheduled task
+
+Preview the Task Scheduler command without registering anything:
+
+```powershell
+./scripts/install_runner_watchdog_task.ps1 -DryRun
+```
+
+Register the watchdog to run every 15 minutes:
+
+```powershell
+./scripts/install_runner_watchdog_task.ps1
+```
+
+For webhook alerts, set `FLOW_RUNNER_ALERT_WEBHOOK` as a user or machine environment variable before the task runs. Do not pass webhook secrets on the command line because Task Scheduler stores task arguments.
+
 ## Recommended schedule
 
 Use Task Scheduler or an external monitor every 15 minutes. The task should run outside GitHub Actions; otherwise it cannot detect the case where the runner is down and no job starts.
