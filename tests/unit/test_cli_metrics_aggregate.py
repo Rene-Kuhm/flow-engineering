@@ -29,7 +29,7 @@ Tests are written BEFORE the implementation per strict TDD
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -140,7 +140,7 @@ class TestMetricsAggregateFilters:
         )
         stale = _make_events(
             "stale_counter", [float(i) for i in range(51, 101)],
-            ts=now.replace(hour=0),  # ~hours ago; outside 1h window
+            ts=now - timedelta(hours=2),  # outside 1h window
         )
         _write_jsonl(metrics_file, fresh + stale)
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))

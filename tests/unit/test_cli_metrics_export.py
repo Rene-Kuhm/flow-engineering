@@ -27,7 +27,7 @@ REFACTOR).
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -234,7 +234,7 @@ class TestMetricsExportFilters:
         metrics_file = tmp_path / "metrics.jsonl"
         now = datetime.now(UTC)
         _write_jsonl(metrics_file, [
-            _event("old_counter", {"count": 1}, ts=_iso(now.replace(hour=0))),
+            _event("old_counter", {"count": 1}, ts=_iso(now - timedelta(hours=2))),
             _event("fresh_counter", {"count": 1}, ts=_iso(now)),
         ])
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))

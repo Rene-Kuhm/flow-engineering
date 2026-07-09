@@ -22,7 +22,7 @@ Tests are written BEFORE the implementation per strict TDD.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -145,7 +145,7 @@ class TestWindowIntegrationOnExport:
         now = datetime.now(UTC)
         # 4 fresh events (within 60min) + 1 old event (>60min).
         _write_jsonl(metrics_file, [
-            {"name": "old_counter", "fields": {"count": 1}, "ts": _iso(now.replace(hour=0))},
+            {"name": "old_counter", "fields": {"count": 1}, "ts": _iso(now - timedelta(hours=2))},
             {"name": "fresh_a", "fields": {"count": 1}, "ts": _iso(now)},
             {"name": "fresh_b", "fields": {"count": 2}, "ts": _iso(now)},
             {"name": "fresh_c", "fields": {"count": 3}, "ts": _iso(now)},
@@ -183,7 +183,7 @@ class TestWindowIntegrationOnExport:
             {"name": "drift_invoked_total", "fields": {"count": 1}, "ts": _iso(now)},
             {"name": "snapshot_create_total",
              "fields": {"count": 1},
-             "ts": _iso(now.replace(hour=0))},  # outside 1h window
+             "ts": _iso(now - timedelta(hours=2))},
         ])
         monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_file))
 
