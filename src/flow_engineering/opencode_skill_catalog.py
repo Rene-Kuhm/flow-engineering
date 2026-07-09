@@ -17,6 +17,7 @@ Public API:
 - :func:`init_checksums` -- bootstrap the sidecar with current on-disk state.
 - :func:`update_checksums` -- refresh the sidecar with current on-disk state.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -470,7 +471,10 @@ def compute_frontmatter_sha256(path: Path) -> str:
     """
     parsed = parse_frontmatter(path)
     canonical = json.dumps(
-        parsed, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        parsed,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -582,10 +586,12 @@ def check_drift(
     for key, entry in catalog.items():
         sidecar_entry = sidecar.get(key, {})
         expected_checksum = sidecar_entry.get(
-            "checksum", entry.last_verified_checksum,
+            "checksum",
+            entry.last_verified_checksum,
         )
         expected_version = sidecar_entry.get(
-            "version", entry.expected_version,
+            "version",
+            entry.expected_version,
         )
 
         path = Path(entry.expected_path).expanduser()

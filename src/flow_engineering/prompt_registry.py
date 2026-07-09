@@ -257,9 +257,7 @@ def get_prompt(name: str) -> PromptDef:
     for prompt in PROMPT_NAMES:
         if prompt.name == name:
             return prompt
-    raise KeyError(
-        f"unknown prompt {name!r}; valid: {[p.name for p in PROMPT_NAMES]}"
-    )
+    raise KeyError(f"unknown prompt {name!r}; valid: {[p.name for p in PROMPT_NAMES]}")
 
 
 def list_prompts(domain: PromptDomain | None = None) -> list[PromptDef]:
@@ -317,8 +315,7 @@ def register_prompt(prompt: PromptDef) -> None:
     global PROMPT_NAMES
     if any(p.name == prompt.name for p in PROMPT_NAMES):
         raise ValueError(
-            f"prompt {prompt.name!r} already registered; "
-            "use unregister_prompt first to replace"
+            f"prompt {prompt.name!r} already registered; use unregister_prompt first to replace"
         )
     PROMPT_NAMES = PROMPT_NAMES + (prompt,)
 
@@ -493,16 +490,12 @@ def validate_catalog(
                     prompt_name=entry.name,
                     error_code="invalid_version",
                     message=(
-                        f"version {entry.version!r} is not a valid SemVer "
-                        "MAJOR.MINOR.PATCH string"
+                        f"version {entry.version!r} is not a valid SemVer MAJOR.MINOR.PATCH string"
                     ),
                 )
             )
 
     return errors
-
-
-
 
 
 @dataclass(frozen=True)
@@ -555,9 +548,7 @@ class LintReport:
         return {
             "is_clean": self.is_clean,
             "error_count": self.error_count,
-            "errors_by_code": {
-                code: len(self.by_code(code)) for code in self.error_codes
-            },
+            "errors_by_code": {code: len(self.by_code(code)) for code in self.error_codes},
             "errors": [
                 {
                     "prompt_name": e.prompt_name,
@@ -886,10 +877,7 @@ def render_prompt(name: str, **kwargs: Any) -> str:
                         "prompt": name,
                         "reason": "missing_var",
                         "variable": var,
-                        "error": (
-                            f"prompt {name!r} requires undefined variable: "
-                            f"{var}"
-                        ),
+                        "error": (f"prompt {name!r} requires undefined variable: {var}"),
                     }
                 ) from exc
             else:
@@ -1080,4 +1068,3 @@ def render_prompt_canonical(prompt_id: str, **overrides: Any) -> str:
         )
     kwargs: dict[str, Any] = {**_CANONICAL_DEFAULTS[prompt_id], **overrides}
     return render_prompt(prompt_id, **kwargs)
-

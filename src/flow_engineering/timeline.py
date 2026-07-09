@@ -3,6 +3,7 @@
 REQ: visual representation of how a change evolved through phases
 across sessions (when resumed after days/weeks).
 """
+
 from __future__ import annotations
 
 import json
@@ -58,22 +59,26 @@ def build_timeline(change_dirs: list[Path]) -> ProjectTimeline:
             continue
         events = []
         for t in sm.transitions:
-            events.append(TimelineEvent(
+            events.append(
+                TimelineEvent(
+                    change=d.name,
+                    from_status=t.from_status.value,
+                    to_status=t.to_status.value,
+                    at=t.at,
+                    retry=t.retry,
+                    reason=t.reason,
+                )
+            )
+        timelines.append(
+            ChangeTimeline(
                 change=d.name,
-                from_status=t.from_status.value,
-                to_status=t.to_status.value,
-                at=t.at,
-                retry=t.retry,
-                reason=t.reason,
-            ))
-        timelines.append(ChangeTimeline(
-            change=d.name,
-            status=sm.status.value,
-            events=events,
-            created_at=sm.created_at,
-            updated_at=sm.updated_at,
-            total_tokens=sm.token_cost,
-        ))
+                status=sm.status.value,
+                events=events,
+                created_at=sm.created_at,
+                updated_at=sm.updated_at,
+                total_tokens=sm.token_cost,
+            )
+        )
     return ProjectTimeline(changes=timelines)
 
 

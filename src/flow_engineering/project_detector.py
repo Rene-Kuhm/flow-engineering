@@ -43,9 +43,7 @@ if TYPE_CHECKING:
     from flow_engineering.engram_io import EngramBackend
 
 
-DEFAULT_REGISTRY_PATH: Path = (
-    Path.home() / ".config" / "flow-engineering" / "registry.json"
-)
+DEFAULT_REGISTRY_PATH: Path = Path.home() / ".config" / "flow-engineering" / "registry.json"
 
 
 class RegistryParseError(ValueError):
@@ -70,9 +68,7 @@ def load_registry(path: Path | None = None) -> dict[str, str]:
         raw = target.read_text(encoding="utf-8")
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise RegistryParseError(
-            f"failed to parse registry.json at {target}: {exc}"
-        ) from exc
+        raise RegistryParseError(f"failed to parse registry.json at {target}: {exc}") from exc
     if not isinstance(payload, dict):
         raise RegistryParseError(
             f"registry.json at {target} must be a JSON object; got {type(payload).__name__}"
@@ -88,9 +84,7 @@ def load_registry(path: Path | None = None) -> dict[str, str]:
     return {str(k): str(v) for k, v in cwd_to_project.items()}
 
 
-def detect(
-    cwd: Path, *, registry: dict[str, str] | None = None
-) -> str | None:
+def detect(cwd: Path, *, registry: dict[str, str] | None = None) -> str | None:
     """Return the project name for ``cwd`` if it lives under a recognised layout.
 
     Lookup chain (first hit wins):

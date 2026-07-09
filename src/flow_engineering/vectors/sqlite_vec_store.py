@@ -62,8 +62,7 @@ class SqliteVecStore:
     def __init__(self, db_path: Path) -> None:
         if sqlite_vec is None:
             raise ImportError(
-                f"sqlite-vec is required for SqliteVecStore. "
-                f"Install with: {_INSTALL_HINT}"
+                f"sqlite-vec is required for SqliteVecStore. Install with: {_INSTALL_HINT}"
             )
         path_str = str(db_path)
         self._db_path: str = path_str
@@ -149,8 +148,7 @@ class SqliteVecStore:
             )
             if cur.rowcount == 0:
                 conn.execute(
-                    "INSERT INTO vec_observations"
-                    "(observation_id, vector) VALUES (?, ?)",
+                    "INSERT INTO vec_observations(observation_id, vector) VALUES (?, ?)",
                     (obs_id, vec_bytes),
                 )
             conn.commit()
@@ -198,9 +196,7 @@ class SqliteVecStore:
     def count(self) -> int:
         """Return the number of indexed observations."""
         conn = self._ensure_conn()
-        row = conn.execute(
-            "SELECT COUNT(*) FROM observation_embeddings"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) FROM observation_embeddings").fetchone()
         return int(row[0])
 
     # ---------- helpers ----------
@@ -216,9 +212,7 @@ class SqliteVecStore:
         """
         arr = np.asarray(vector, dtype=np.float32).reshape(-1)
         if arr.shape[0] != VECTOR_DIM:
-            raise ValueError(
-                f"vector must be {VECTOR_DIM}-dim float32, got shape {arr.shape}"
-            )
+            raise ValueError(f"vector must be {VECTOR_DIM}-dim float32, got shape {arr.shape}")
         return arr.tobytes()
 
 
