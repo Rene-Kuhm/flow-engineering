@@ -13,6 +13,7 @@ Covers:
 Tests written BEFORE the implementation per strict TDD. They MUST fail
 until the GREEN commit wires the ``drift-events stats`` subcommand.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,32 +43,47 @@ def stats_log(tmp_path: Path) -> Path:
     log = DriftEventLog(path=log_path)
     log.append(
         DriftEvent(
-            change="change-foo", decision_id=42, binding_id="obs-1",
-            event_class="LABEL_DRIFT", detected_at=1_700_000_000.0,
+            change="change-foo",
+            decision_id=42,
+            binding_id="obs-1",
+            event_class="LABEL_DRIFT",
+            detected_at=1_700_000_000.0,
         )
     )
     log.append(
         DriftEvent(
-            change="change-foo", decision_id=42, binding_id="obs-2",
-            event_class="LABEL_DRIFT", detected_at=1_700_000_100.0,
+            change="change-foo",
+            decision_id=42,
+            binding_id="obs-2",
+            event_class="LABEL_DRIFT",
+            detected_at=1_700_000_100.0,
         )
     )
     log.append(
         DriftEvent(
-            change="change-foo", decision_id=100, binding_id="obs-3",
-            event_class="STALE_LOCATION", detected_at=1_700_000_200.0,
+            change="change-foo",
+            decision_id=100,
+            binding_id="obs-3",
+            event_class="STALE_LOCATION",
+            detected_at=1_700_000_200.0,
         )
     )
     log.append(
         DriftEvent(
-            change="change-bar", decision_id=7, binding_id="obs-4",
-            event_class="STALE_LOCATION", detected_at=1_700_000_300.0,
+            change="change-bar",
+            decision_id=7,
+            binding_id="obs-4",
+            event_class="STALE_LOCATION",
+            detected_at=1_700_000_300.0,
         )
     )
     log.append(
         DriftEvent(
-            change="change-bar", decision_id=8, binding_id="obs-5",
-            event_class="STILL_VALID", detected_at=1_700_000_400.0,
+            change="change-bar",
+            decision_id=8,
+            binding_id="obs-5",
+            event_class="STILL_VALID",
+            detected_at=1_700_000_400.0,
         )
     )
     return log_path
@@ -84,9 +100,11 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
+                "--path",
+                str(stats_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -100,9 +118,11 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
+                "--path",
+                str(stats_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -114,9 +134,11 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
+                "--path",
+                str(stats_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -129,10 +151,13 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
-                "--format", "json",
+                "--path",
+                str(stats_log),
+                "--format",
+                "json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -157,11 +182,15 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
-                "--change", "change-foo",
-                "--format", "json",
+                "--path",
+                str(stats_log),
+                "--change",
+                "change-foo",
+                "--format",
+                "json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -178,10 +207,13 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(log_path),
-                "--format", "json",
+                "--path",
+                str(log_path),
+                "--format",
+                "json",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -195,9 +227,11 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(tmp_path / "nope.jsonl"),
+                "--path",
+                str(tmp_path / "nope.jsonl"),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -207,10 +241,13 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
-                "--since", "yesterday",
+                "--path",
+                str(stats_log),
+                "--since",
+                "yesterday",
             ],
         )
         assert result.exit_code == 2, result.output
@@ -220,10 +257,13 @@ class TestStatsCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "stats",
-                "--path", str(stats_log),
-                "--format", "invalid",
+                "--path",
+                str(stats_log),
+                "--format",
+                "invalid",
             ],
         )
         assert result.exit_code == 2, result.output

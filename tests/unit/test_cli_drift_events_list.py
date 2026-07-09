@@ -12,6 +12,7 @@ Covers:
 Tests written BEFORE the implementation per strict TDD. They MUST fail
 until the GREEN commit wires the ``drift-events list`` subcommand.
 """
+
 from __future__ import annotations
 
 import csv
@@ -69,13 +70,15 @@ def seeded_log(tmp_path: Path) -> Path:
 def _seed_legacy_str_line(tmp_path: Path) -> Path:
     """Write a legacy pre-v1.0 str-decision_id line to a tmp_path JSONL."""
     log_path = tmp_path / "drift_events_legacy.jsonl"
-    legacy_line = json.dumps({
-        "change": "legacy-change",
-        "decision_id": "42",
-        "binding_id": "obs-42",
-        "class": "STALE_ID",
-        "detected_at": 1_700_000_000.0,
-    })
+    legacy_line = json.dumps(
+        {
+            "change": "legacy-change",
+            "decision_id": "42",
+            "binding_id": "obs-42",
+            "class": "STALE_ID",
+            "detected_at": 1_700_000_000.0,
+        }
+    )
     log_path.write_text(legacy_line + "\n", encoding="utf-8")
     return log_path
 
@@ -91,10 +94,12 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -108,11 +113,14 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_log),
-                "--change", "change-foo",
+                "--path",
+                str(seeded_log),
+                "--change",
+                "change-foo",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -124,11 +132,14 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_log),
-                "--event-class", "STALE_LOCATION",
+                "--path",
+                str(seeded_log),
+                "--event-class",
+                "STALE_LOCATION",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -140,11 +151,14 @@ class TestListCommandExists:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_log),
-                "--limit", "1",
+                "--path",
+                str(seeded_log),
+                "--limit",
+                "1",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -159,17 +173,17 @@ class TestListCommandExists:
 class TestListJsonFormat:
     """--format=json emits the events as a JSON array with int decision_id."""
 
-    def test_drift_events_list_json_format_int_decision_id(
-        self, seeded_log: Path
-    ) -> None:
+    def test_drift_events_list_json_format_int_decision_id(self, seeded_log: Path) -> None:
         """--format=json returns a parseable JSON envelope with int decision_id."""
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=json",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -194,10 +208,12 @@ class TestListCsvFormat:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=csv",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -222,10 +238,12 @@ class TestListPrometheusFormat:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=prometheus",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -245,10 +263,12 @@ class TestListErrorExitCodes:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=invalid",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 2, result.output
@@ -258,10 +278,13 @@ class TestListErrorExitCodes:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
-                "--since", "yesterday",
-                "--path", str(seeded_log),
+                "--since",
+                "yesterday",
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 2, result.output
@@ -288,10 +311,12 @@ class TestListLegacyCompat:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=json",
-                "--path", str(log_path),
+                "--path",
+                str(log_path),
             ],
         )
         # Exit 0: legacy line was skipped, no events returned.
@@ -299,30 +324,30 @@ class TestListLegacyCompat:
         stdout = result.stdout if hasattr(result, "stdout") else result.output
         payload = json.loads(stdout)
         assert payload == [], "legacy line should have been skipped in default mode"
-        stderr = (getattr(result, "stderr", "") or "")
+        stderr = getattr(result, "stderr", "") or ""
         assert "legacy" in stderr.lower() or "skipped" in stderr.lower(), (
             f"expected stderr to mention legacy/skip; got: {stderr!r}"
         )
 
-    def test_drift_events_list_strict_mode_aborts_on_legacy_line(
-        self, tmp_path: Path
-    ) -> None:
+    def test_drift_events_list_strict_mode_aborts_on_legacy_line(self, tmp_path: Path) -> None:
         """``--strict`` mode aborts on first legacy line with exit code 4 (REQ-V1.1.2)."""
         log_path = _seed_legacy_str_line(tmp_path)
 
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--strict",
                 "--format=json",
-                "--path", str(log_path),
+                "--path",
+                str(log_path),
             ],
         )
         # Exit 4 = malformed input / migration needed.
         assert result.exit_code == 4, result.output
-        stderr = (getattr(result, "stderr", "") or "")
+        stderr = getattr(result, "stderr", "") or ""
         assert "sed" in stderr.lower() or "changelog" in stderr.lower(), (
             f"expected stderr to mention sed/changelog; got: {stderr!r}"
         )
@@ -342,10 +367,12 @@ class TestListEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(log_path),
+                "--path",
+                str(log_path),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -355,10 +382,12 @@ class TestListEmptyLog:
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(tmp_path / "nope.jsonl"),
+                "--path",
+                str(tmp_path / "nope.jsonl"),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -382,9 +411,7 @@ class TestFormatDriftEventsTextHelper:
         out = _format_drift_events_text([])
         assert out == "(no drift events)\n"
 
-    def test_format_drift_events_text_helper_3_rows(
-        self, seeded_log: Path
-    ) -> None:
+    def test_format_drift_events_text_helper_3_rows(self, seeded_log: Path) -> None:
         """3 events -> header + rule + 3 data rows in input order."""
         from flow_engineering.cli import _format_drift_events_text
 
@@ -411,17 +438,17 @@ class TestFormatDriftEventsTextHelper:
         assert "2" in lines[3]
         assert "3" in lines[4]
 
-    def test_drift_events_list_text_table_mirrors_metrics_summary(
-        self, seeded_log: Path
-    ) -> None:
+    def test_drift_events_list_text_table_mirrors_metrics_summary(self, seeded_log: Path) -> None:
         """`flow drift-events list --format=text` aligns columns (mirrors flow metrics summary)."""
         result = runner.invoke(
             main,
             [
-                "drift", "events",
+                "drift",
+                "events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
