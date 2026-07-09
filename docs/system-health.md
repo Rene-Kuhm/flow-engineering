@@ -10,6 +10,12 @@ and is memory helping instead of adding noise.
 .\scripts\system_health.ps1
 ```
 
+For offline structure checks without GitHub CLI calls, use:
+
+```powershell
+.\scripts\system_health.ps1 -SkipGitHub
+```
+
 GitHub also runs `health-monitor` every six hours. It fails visibly if the
 latest `main` tests run is not green or if the latest green run is older than
 the configured stale threshold.
