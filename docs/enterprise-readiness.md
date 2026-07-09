@@ -73,7 +73,7 @@ Goal: prevent regressions without testing everything blindly.
 
 - [x] Add smoke test for CLI installation and basic commands. See `tests/integration/test_cli_smoke.py`.
 - [x] Add tests for `scripts/system_health.ps1` output expectations where practical. See `tests/integration/test_system_health_script.py`.
-- [ ] Define minimum regression test set for drift-detection changes.
+- [x] Define minimum regression test set for drift-detection changes. See `docs/drift-detection-regression-set.md`.
 - [ ] Keep bug fixes paired with regression tests.
 - [x] Document supported platforms and Python versions. See `docs/support-matrix.md`.
 
