@@ -5,7 +5,7 @@ This repository must be handled as an AI Engineering OS, not as a simple chatbot
 ## Quick path
 
 1. Read `docs/operating-manual.md` first.
-2. Load only the task-relevant context listed in its **Agent context loading** section.
+2. Load only the task-relevant context listed in its **Agent context loading** section, including `docs/stack-tooling-policy.md` when choosing commands.
 3. Run `./scripts/system_health.ps1` before non-trivial work when the environment matters.
 4. Plan the slice before editing.
 5. Implement in small phases with tests and verification.
