@@ -49,18 +49,18 @@ Goal: failures should find us before users do.
 
 Goal: secrets and supply chain mistakes should be hard to miss.
 
-- [ ] Enable or document secret scanning.
-- [ ] Define token rotation rules for GitHub, OpenAI, OpenCode, and runner credentials.
+- [x] Document secret handling and security reporting. See `SECURITY.md` and `docs/security-baseline.md`.
+- [x] Define token rotation rules for GitHub, OpenAI, OpenCode, and runner credentials. See `docs/security-baseline.md`.
 - [x] Add dependency update policy. See `docs/dependency-updates.md`.
 - [ ] Add lightweight SAST/security scan for changed code.
-- [ ] Require extra review for changes touching secrets, runner setup, filesystem access, auth, or external command execution.
+- [x] Require extra review for changes touching secrets, runner setup, filesystem access, auth, or external command execution. See `docs/security-baseline.md`.
 
 ## Priority 3 — governance of change
 
 Goal: every change should be understandable, reversible, and auditable.
 
 - [ ] Add a project Definition of Done.
-- [ ] Add session start/close checklist.
+- [x] Add session start/close checklist. See `docs/session-checklist.md`.
 - [ ] Add release checklist.
 - [ ] Add changelog or release notes process.
 - [ ] Use ADRs for durable architecture decisions.

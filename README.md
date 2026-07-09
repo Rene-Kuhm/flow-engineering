@@ -117,6 +117,8 @@ See [System Health](docs/system-health.md) for the lightweight runner/CI/follow-
 See [Memory Maintenance](docs/memory-maintenance.md) for keeping Engram/SDD context useful instead of noisy.
 See [Enterprise Readiness](docs/enterprise-readiness.md) for the operational, security, governance, and recovery checklist.
 See [Dependency Updates](docs/dependency-updates.md) for Dependabot scope and review rules.
+See [Security Baseline](docs/security-baseline.md) and [Security Policy](SECURITY.md) for secret handling, token rotation, and sensitive-change gates.
+See [Session Checklist](docs/session-checklist.md) for the start/close routine agents should follow.
 
 ## License
 
