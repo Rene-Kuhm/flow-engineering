@@ -16,9 +16,9 @@ This project is healthy for a small advanced team. Enterprise readiness means ma
 
 | Area | Current state | Enterprise gap |
 |------|---------------|----------------|
-| CI | GitHub Actions is green on Python 3.12 and 3.13. | Add proactive failure alerts. |
-| Runner | Self-hosted Windows runner runs as an Automatic service. | Add scheduled health monitoring and recovery notes. |
-| Health | `scripts/system_health.ps1` gives manual system status. | Run it automatically and record history. |
+| CI | GitHub Actions is green on Python 3.12 and 3.13. | Keep failure signals visible and investigated. |
+| Runner | Self-hosted Windows runner runs as an Automatic service. | Add out-of-band runner-down alert after GitHub-hosted billing or an external monitor is available. |
+| Health | `scripts/system_health.ps1` gives manual system status; `health-monitor` runs scheduled checks. | Keep recording recent health history. |
 | Memory | Engram/SDD memory policy exists. | Add periodic review cadence and stale-memory triage. |
 | Follow-ups | Follow-up audit exists and has no urgent blockers. | Keep a single live follow-up register. |
 | Drift detection | Active change exists with review-budget guardrail. | Continue only via small, tested slices. |
@@ -44,7 +44,7 @@ Goal: failures should find us before users do.
 - [x] Add stale-green alert when no successful CI run exists after a threshold. `health-monitor` uses `HEALTH_MAX_CI_AGE_HOURS`.
 - [ ] Add out-of-band runner-down alert after GitHub-hosted billing or an external monitor is available.
 - [ ] Document incident response: symptom, diagnosis, fix, prevention.
-- [ ] Record recent health-check result history.
+- [x] Record recent health-check result history. See `docs/system-health.md`.
 
 ## Priority 2 — security baseline
 
@@ -81,7 +81,7 @@ Goal: prevent regressions without testing everything blindly.
 
 Goal: system state should be easy to inspect in one minute.
 
-- [ ] Keep the lightweight health command as the source of truth.
+- [x] Keep the lightweight health command as the source of truth. See `docs/system-health.md`.
 - [ ] Add CI status, runner status, active specs, follow-ups, and memory hygiene to one dashboard view.
 - [ ] Avoid a large dashboard until the manual health workflow proves stable.
 - [ ] Add structured logs only where they answer real operational questions.
