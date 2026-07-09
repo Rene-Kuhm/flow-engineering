@@ -152,7 +152,7 @@ d2d6810 refactor(drift): hoist imports + replace __import__ hack (REFACTOR T1.3)
 
 1. **sdd-verify (T7.1 + T7.2)**: Run the spec/design drift gate to confirm all 8 ADDED Requirements have at least 1 scenario OR explicit "covered by existing test" pointer. Verify the 9 existing root capability REQs (REQ-9..16 + REQ-55..59) in `openspec/specs/decision-drift/spec.md` are NOT modified. Verify `_DummyBackend` is REMOVED (`grep -c` returns 0). Verify `SnapshotGraphMissing.__module__ == "flow_engineering.snapshot_manager"`. Verify `scan_change` LOC reduced (net -43 LOC from the v1.2.0 baseline — the body shrank from 250 → ~30 LOC, but the `_legacy_scan_change_body` wrapper + `_scan_with_protocols` helper add back ~190 LOC).
 2. **sdd-archive**: Apply the 2-PR chained split per design.md §13 (PR1 = the new modules + tests; PR2 = the `decision_drift.py` refactor). The split is REQUIRED given the 1997-LOC actual vs 395-LOC forecast.
-3. **drift-detection-spec-align (FOLLOW-UP)**: The D6 deviation (flat module names vs locked spec's `drift/_graph_loader.py` package) needs a follow-up micro-change to align the spec wording with the implementation. Out of scope for this slice.
+3. **drift-detection-spec-align**: Resolved. The active delta spec now names the shipped flat modules and the standalone `drift_exceptions.py` hierarchy; older D6 notes are historical context only.
 
 ## Files Changed (cumulative across all batches — will be filled as sdd-apply lands batches)
 
@@ -262,7 +262,7 @@ N/N PASSED
 ## Notes (pre-apply)
 
 - **Single-PR posture** is CONSTITUTIONAL — 380 → 395 LOC forecast is under the 400-LOC budget. The REQ-CLI-SPLIT-5 size:exception justification paragraph is included in the PR body for auditability even though no exception is technically required.
-- **D6 deviation** (flat module names vs locked spec's `drift/_graph_loader.py` package) is documented at `design.md` §11 D6 + flagged in the PR description for reviewer awareness. A follow-up `drift-detection-spec-align` micro-change is recommended AFTER Slice 1 verifies to align the spec wording with the implementation.
+- **D6 deviation** (flat module names vs earlier `drift/_graph_loader.py` planning) is resolved in the active delta spec. Keep older design notes as historical context; do not reopen `drift-detection-spec-align` unless a new spec/implementation mismatch is found.
 - **`_DummyBackend` removal** is internal-only — design's pre-flight `grep -rn "_DummyBackend" tests/` returned 0 matches. T5.2 re-verifies before the REFACTOR commit lands.
 - **`SnapshotGraphMissing` re-export** is a 1-line PEP 562 `from ... import ... as ...` in `decision_drift.py`. The canonical class is unchanged at `snapshot_manager.py:81-101`. `cli/drift.py:351`'s `except decision_drift.SnapshotGraphMissing` block continues to work byte-identically.
 - **D2 graceful degradation** (`raise SnapshotGraphMissing` when snapshot has no graph content) is PRESERVED as a `raise` at the scan boundary. It does NOT map to `unable_reason` per REQ-33 contract.

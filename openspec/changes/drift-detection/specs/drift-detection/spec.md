@@ -149,7 +149,7 @@ The 4 distinct `except Exception: continue/pass` blocks at lines 602-603, 671-67
 
 ### Requirement: REQ-DRIFT-DETECTION-4 — Typed exception hierarchy
 
-The system SHALL provide a 4-class typed exception hierarchy at `src/flow_engineering/drift_graph_loader.py`, each inheriting from `Exception` (NOT bare `RuntimeError` or `ValueError`), with a common base `GraphLoadError(Exception)`:
+The system SHALL provide a 4-class typed exception hierarchy at `src/flow_engineering/drift_exceptions.py`, each inheriting from `Exception` (NOT bare `RuntimeError` or `ValueError`), with a common base `GraphLoadError(Exception)`:
 
 | Exception | Raised when | Replaces |
 |---|---|---|
@@ -299,7 +299,7 @@ The adapter-compat layer SHALL live as 2 private helpers in `decision_drift.py`:
 #### Scenario: New unit tests cover the adapter's kwarg→Protocol dispatch
 
 - GIVEN the new test file `tests/unit/test_decision_drift_graph_loader.py` (NEW, ~120 LOC)
-- WHEN it imports `flow_engineering.drift._graph_loader` and exercises `_build_loader` via mock kwargs
+- WHEN it imports `flow_engineering.drift_graph_loader` and exercises `_build_loader` via mock kwargs
 - THEN the test asserts that `snap_id` activates `SnapshotGraphLoader` and `graph_json_path` activates `LiveDiskGraphLoader`
 - AND the test asserts the mutual-exclusion `ValueError` (`scan_change: snap_id and backend are mutually exclusive`) fires when both `snap_id` AND `backend` are non-None
 
