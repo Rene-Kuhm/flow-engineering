@@ -103,7 +103,7 @@ Goal: the project should be restorable on another machine.
 - [x] Document how to rebuild the runner service. See `docs/release-recovery.md`.
 - [x] Document what critical Codex/OpenCode/Engram configuration must be preserved. See `docs/release-recovery.md`.
 - [x] Document disaster recovery steps. See `docs/release-recovery.md`.
-- [ ] Tag stable releases.
+- [x] Tag stable releases. `v1.3.0` is published at https://github.com/Rene-Kuhm/flow-engineering/releases/tag/v1.3.0.
 - [x] Define rollback strategy for shipped changes. See `docs/release-recovery.md`.
 
 ## Definition of Done
