@@ -23,6 +23,20 @@ unless it is explicitly re-promoted.
 | Old warnings | Drop unless they still block CI, spec parity, or the next concrete slice. |
 | Token use | Search memory/code first; avoid loading broad docs or many files without a specific question. |
 
+## Monthly audit command
+
+Run the operator maintenance routine from the repo root:
+
+```powershell
+./scripts/monthly_maintenance.ps1
+```
+
+Use offline mode when GitHub CLI/network access is unavailable:
+
+```powershell
+./scripts/monthly_maintenance.ps1 -SkipGitHub
+```
+
 ## Monthly audit checklist
 
 - [ ] Latest `main` CI is green.

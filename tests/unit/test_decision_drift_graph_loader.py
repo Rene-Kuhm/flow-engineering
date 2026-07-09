@@ -561,6 +561,21 @@ class TestUnableReasonMapping:
         assert report.graph_unavailable is True
         assert report.unable_reason == "graph_file_missing"
 
+    def test_unable_reason_is_graph_file_malformed_for_invalid_json(
+        self, tmp_path,
+    ) -> None:
+        from flow_engineering import decision_drift
+
+        malformed = tmp_path / "graph.json"
+        malformed.write_text("{not-json", encoding="utf-8")
+
+        report = decision_drift.scan_change(
+            "my-change", graph_json_path=malformed,
+        )
+
+        assert report.graph_unavailable is True
+        assert report.unable_reason == "graph_file_malformed"
+
     def test_unable_reason_is_snapshot_envelope_corrupt_for_bad_sha(
         self, tmp_path, monkeypatch,
     ) -> None:
