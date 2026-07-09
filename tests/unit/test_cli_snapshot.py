@@ -29,6 +29,7 @@ Coverage map (REQ-28..33 CLI surface):
 12. ``flow drift --snapshot=<id> <change>`` uses frozen state (REQ-33)
 13. ``flow drift <change>`` without ``--snapshot`` byte-identical (REQ-33)
 """
+
 from __future__ import annotations
 
 import json
@@ -86,9 +87,7 @@ def seeded_backend(monkeypatch: pytest.MonkeyPatch):
                 topic_key="sdd/test/spec",
             )
 
-    monkeypatch.setattr(
-        "flow_engineering.cli._default_save_backend", lambda: backend
-    )
+    monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
     return backend, _seed
 
 
@@ -105,7 +104,9 @@ def _seed_obs(backend: InMemoryBackend, *, n: int, topic_key: str = "sdd/test/sp
     ids: list[int] = []
     for i in range(n):
         obs = backend.mem_save(
-            title=f"obs {i}", content=f"content {i}", topic_key=topic_key,
+            title=f"obs {i}",
+            content=f"content {i}",
+            topic_key=topic_key,
         )
         ids.append(int(obs["id"]))
     return ids
@@ -153,14 +154,13 @@ class TestSnapshotCreateCli:
         backend, _ = seeded_backend
         _seed_obs(backend, n=2)
 
-        result = runner.invoke(
-            main, ["snapshot", "create", "--description", "pre-deploy-v0.6"]
-        )
+        result = runner.invoke(main, ["snapshot", "create", "--description", "pre-deploy-v0.6"])
 
         assert result.exit_code == 0, result.output
         files = sorted(snapshots_dir.glob("snap_*.json.gz"))
         assert len(files) == 1
         import gzip
+
         with gzip.open(files[0], "rt", encoding="utf-8") as fh:
             envelope = json.loads(fh.read())
         assert envelope["description"] == "pre-deploy-v0.6"
@@ -199,9 +199,7 @@ class TestSnapshotCreateCli:
 class TestSnapshotListCli:
     """``flow snapshot list [--since=<iso>] [--limit N]`` returns newest-first JSON."""
 
-    def test_snapshot_list_cli_empty(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_snapshot_list_cli_empty(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         result = runner.invoke(main, ["snapshot", "list"])
 
         assert result.exit_code == 0, result.output
@@ -217,9 +215,7 @@ class TestSnapshotListCli:
         # Create 3 snapshots.
         snap_ids: list[str] = []
         for i in range(3):
-            res = runner.invoke(
-                main, ["snapshot", "create", "--description", f"snap-{i}"]
-            )
+            res = runner.invoke(main, ["snapshot", "create", "--description", f"snap-{i}"])
             assert res.exit_code == 0, res.output
             # The stdout contains the snap_id (or the file name).
             # Extract from the output OR from the dir.
@@ -237,7 +233,14 @@ class TestSnapshotListCli:
         assert [entry["snap_id"] for entry in payload] == list(reversed(snap_ids))
         # Required keys present.
         for entry in payload:
-            for key in ("snap_id", "created_at", "trigger", "description", "obs_count", "size_bytes"):
+            for key in (
+                "snap_id",
+                "created_at",
+                "trigger",
+                "description",
+                "obs_count",
+                "size_bytes",
+            ):
                 assert key in entry, f"Missing key {key} in {entry!r}"
 
     def test_snapshot_list_with_since_filter(
@@ -253,6 +256,7 @@ class TestSnapshotListCli:
         first_id = _snap_id_from_path(first_files[0])
         # Read the first envelope's created_at to use as a since cutoff.
         import gzip as _gzip
+
         with _gzip.open(first_files[0], "rt", encoding="utf-8") as fh:
             first_envelope = json.loads(fh.read())
         since_iso = first_envelope["created_at"]
@@ -263,18 +267,14 @@ class TestSnapshotListCli:
 
         # Filter with --since equal to the first snapshot's created_at —
         # both snapshots should be included (>= inclusive).
-        result = runner.invoke(
-            main, ["snapshot", "list", "--since", since_iso]
-        )
+        result = runner.invoke(main, ["snapshot", "list", "--since", since_iso])
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         ids = {entry["snap_id"] for entry in payload}
         assert first_id in ids, f"first snapshot {first_id!r} should be included; got {ids}"
         assert len(payload) == 2
 
-    def test_snapshot_list_json_output(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_snapshot_list_json_output(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         """REQ-29 spec mandate: ``--json`` flag is accepted on ``flow snapshot list``.
 
         W22 from the sdd-verify report — the flag is missing from the
@@ -304,8 +304,12 @@ class TestSnapshotListCli:
         # Each entry has the 6 required keys from REQ-29 spec.
         for entry in payload:
             for key in (
-                "snap_id", "created_at", "trigger", "description",
-                "obs_count", "size_bytes",
+                "snap_id",
+                "created_at",
+                "trigger",
+                "description",
+                "obs_count",
+                "size_bytes",
             ):
                 assert key in entry, f"missing {key!r} in {entry!r}"
 
@@ -322,9 +326,7 @@ class TestSnapshotShowCli:
         backend, _ = seeded_backend
         _seed_obs(backend, n=3)
 
-        res = runner.invoke(
-            main, ["snapshot", "create", "--description", "show-me"]
-        )
+        res = runner.invoke(main, ["snapshot", "create", "--description", "show-me"])
         assert res.exit_code == 0, res.output
         files = sorted(snapshots_dir.glob("snap_*.json.gz"))
         snap_id = _snap_id_from_path(files[0])
@@ -337,8 +339,13 @@ class TestSnapshotShowCli:
         assert envelope["description"] == "show-me"
         # All top-level keys from D2.
         for key in (
-            "schema", "id", "created_at", "trigger", "description",
-            "graph_state", "metadata",
+            "schema",
+            "id",
+            "created_at",
+            "trigger",
+            "description",
+            "graph_state",
+            "metadata",
         ):
             assert key in envelope
 
@@ -360,9 +367,7 @@ class TestSnapshotShowCli:
 class TestSnapshotDiffCli:
     """``flow snapshot diff <a> [<b>]`` two-arg / one-arg forms."""
 
-    def test_snapshot_diff_cli_two_arg(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_snapshot_diff_cli_two_arg(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         backend, _ = seeded_backend
         _seed_obs(backend, n=3)
 
@@ -413,9 +418,7 @@ class TestSnapshotDiffCli:
         assert payload["removed"] == []
         assert payload["modified"] == []
 
-    def test_snapshot_diff_json_output(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_snapshot_diff_json_output(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         """REQ-31 spec mandate: ``--json`` flag is accepted on ``flow snapshot diff``.
 
         W22 from the sdd-verify report — same as list, the flag is missing
@@ -443,9 +446,7 @@ class TestSnapshotDiffCli:
         b_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[-1])
 
         # --json MUST be accepted (no 'no such option' error).
-        result = runner.invoke(
-            main, ["snapshot", "diff", a_id, b_id, "--json"]
-        )
+        result = runner.invoke(main, ["snapshot", "diff", a_id, b_id, "--json"])
         assert result.exit_code == 0, (
             f"--json flag must be accepted on snapshot diff; "
             f"exit={result.exit_code} output={result.output!r} stderr={result.stderr!r}"
@@ -497,9 +498,7 @@ class TestSnapshotRollbackCli:
         snap_id = _snap_id_from_path(sorted(snapshots_dir.glob("snap_*.json.gz"))[0])
 
         # WITH --confirm.
-        result = runner.invoke(
-            main, ["snapshot", "rollback", snap_id, "--confirm"]
-        )
+        result = runner.invoke(main, ["snapshot", "rollback", snap_id, "--confirm"])
         assert result.exit_code == 0, (
             f"rollback --confirm failed: {result.output!r} stderr={result.stderr!r}"
         )
@@ -527,9 +526,7 @@ class TestSnapshotRollbackCli:
         _seed_obs(backend, n=3)
 
         # WITH --confirm but no --force → conflict refusal.
-        result = runner.invoke(
-            main, ["snapshot", "rollback", snap_id, "--confirm"]
-        )
+        result = runner.invoke(main, ["snapshot", "rollback", snap_id, "--confirm"])
         assert result.exit_code == 2, f"expected exit 2, got {result.exit_code}; {result.stderr}"
         # JSON error on stderr listing conflicts.
         assert result.stderr, "expected stderr JSON error"
@@ -553,9 +550,7 @@ class TestSnapshotRollbackCli:
         _seed_obs(backend, n=1)
 
         # WITH --confirm AND --force → applies with forced=True.
-        result = runner.invoke(
-            main, ["snapshot", "rollback", snap_id, "--confirm", "--force"]
-        )
+        result = runner.invoke(main, ["snapshot", "rollback", snap_id, "--confirm", "--force"])
         assert result.exit_code == 0, f"rollback --force failed: {result.stderr}"
         payload = json.loads(result.stdout)
         assert payload["forced"] is True
@@ -581,18 +576,14 @@ class TestPruneCommand:
     6. ``--force`` flag — stderr warning emitted; most-recent deleted.
     """
 
-    def test_prune_cli_dry_run_default(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_prune_cli_dry_run_default(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         """No ``--confirm`` ⇒ no deletes; stdout prints the would-delete list."""
         backend, _ = seeded_backend
         _seed_obs(backend, n=2)
 
         # Create 4 snapshots with 1.05s spacing so created_at differs.
         for i in range(4):
-            res = runner.invoke(
-                main, ["snapshot", "create", "--description", f"snap-{i}"]
-            )
+            res = runner.invoke(main, ["snapshot", "create", "--description", f"snap-{i}"])
             assert res.exit_code == 0, res.output
             if i < 3:
                 time.sleep(1.05)
@@ -607,36 +598,26 @@ class TestPruneCommand:
         files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
         assert len(files) == 4, f"dry-run MUST NOT delete; got {files!r}"
 
-    def test_prune_cli_with_keep_last(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_prune_cli_with_keep_last(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         """``--keep-last 2 --confirm`` keeps the 2 newest, deletes the rest."""
         backend, _ = seeded_backend
         _seed_obs(backend, n=2)
 
         for i in range(5):
-            res = runner.invoke(
-                main, ["snapshot", "create", "--description", f"snap-{i}"]
-            )
+            res = runner.invoke(main, ["snapshot", "create", "--description", f"snap-{i}"])
             assert res.exit_code == 0, res.output
             if i < 4:
                 time.sleep(1.05)
 
-        result = runner.invoke(
-            main, ["snapshot", "prune", "--keep-last", "2", "--confirm"]
-        )
-        assert result.exit_code == 0, (
-            f"prune --confirm failed: stderr={result.stderr!r}"
-        )
+        result = runner.invoke(main, ["snapshot", "prune", "--keep-last", "2", "--confirm"])
+        assert result.exit_code == 0, f"prune --confirm failed: stderr={result.stderr!r}"
         # 5 - 2 = 3 files removed.
         files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
         assert len(files) == 2, (
             f"expected 2 files remaining after keep_last=2; got {len(files)}: {files!r}"
         )
 
-    def test_prune_cli_with_keep_days(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_prune_cli_with_keep_days(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         """``--keep-days N`` keeps snapshots newer than N days."""
         backend, _ = seeded_backend
         _seed_obs(backend, n=2)
@@ -647,17 +628,15 @@ class TestPruneCommand:
         old_path = sorted(snapshots_dir.glob("snap_*.json.gz"))[0]
         import gzip as _gzip
         import hashlib as _hashlib
+
         with _gzip.open(old_path, "rt", encoding="utf-8") as fh:
             envelope = json.loads(fh.read())
         envelope["created_at"] = "2020-01-01T00:00:00Z"
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         envelope["metadata"]["sha256"] = _hashlib.sha256(
-            json.dumps(envelope_for_hash, sort_keys=True, separators=(",", ":"))
-            .encode("utf-8")
+            json.dumps(envelope_for_hash, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
         with _gzip.open(old_path, "wt", encoding="utf-8") as fh:
             fh.write(json.dumps(envelope, sort_keys=True, separators=(",", ":")))
@@ -667,9 +646,7 @@ class TestPruneCommand:
         assert res2.exit_code == 0, res2.output
 
         # Dry-run with --keep-days=30 — only the backdated old one is a candidate.
-        result = runner.invoke(
-            main, ["snapshot", "prune", "--keep-days", "30"]
-        )
+        result = runner.invoke(main, ["snapshot", "prune", "--keep-days", "30"])
         assert result.exit_code == 0, result.output
         assert "DRY-RUN" in result.stdout
         # Both files still exist (dry-run).
@@ -684,9 +661,7 @@ class TestPruneCommand:
         _seed_obs(backend, n=2)
 
         for i in range(3):
-            res = runner.invoke(
-                main, ["snapshot", "create", "--description", f"snap-{i}"]
-            )
+            res = runner.invoke(main, ["snapshot", "create", "--description", f"snap-{i}"])
             assert res.exit_code == 0, res.output
             if i < 2:
                 time.sleep(1.05)
@@ -694,44 +669,43 @@ class TestPruneCommand:
         # Force-evict by setting the budget to ~1 byte (unrealistic but
         # deterministic — the newest is still protected by the safety net).
         result = runner.invoke(
-            main, [
-                "snapshot", "prune",
-                "--max-total-size-mb", "1",
+            main,
+            [
+                "snapshot",
+                "prune",
+                "--max-total-size-mb",
+                "1",
                 "--confirm",
-            ]
+            ],
         )
         # Exit 0 even if nothing was deleted (1 MB budget may already
         # accommodate the 3 tiny snapshots); we only assert the wiring.
-        assert result.exit_code == 0, (
-            f"prune --max-total-size-mb failed: stderr={result.stderr!r}"
-        )
+        assert result.exit_code == 0, f"prune --max-total-size-mb failed: stderr={result.stderr!r}"
         # At least the newest is preserved (safety net).
         assert len(list(snapshots_dir.glob("snap_*.json.gz"))) >= 1
 
-    def test_prune_cli_json_output(
-        self, seeded_backend, snapshots_dir, metrics_path
-    ) -> None:
+    def test_prune_cli_json_output(self, seeded_backend, snapshots_dir, metrics_path) -> None:
         """``--json`` emits a parseable PruneResult JSON on stdout."""
         backend, _ = seeded_backend
         _seed_obs(backend, n=2)
 
         for i in range(3):
-            res = runner.invoke(
-                main, ["snapshot", "create", "--description", f"snap-{i}"]
-            )
+            res = runner.invoke(main, ["snapshot", "create", "--description", f"snap-{i}"])
             assert res.exit_code == 0, res.output
             if i < 2:
                 time.sleep(1.05)
 
-        result = runner.invoke(
-            main, ["snapshot", "prune", "--keep-last", "1", "--json"]
-        )
+        result = runner.invoke(main, ["snapshot", "prune", "--keep-last", "1", "--json"])
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         # The 6 fields from PruneResult.to_dict().
         for field in (
-            "deleted", "would_delete", "would_keep",
-            "freed_bytes", "dry_run", "reason",
+            "deleted",
+            "would_delete",
+            "would_keep",
+            "freed_bytes",
+            "dry_run",
+            "reason",
         ):
             assert field in payload, f"missing field {field!r} in {payload!r}"
         assert payload["dry_run"] is True
@@ -745,34 +719,29 @@ class TestPruneCommand:
         _seed_obs(backend, n=2)
 
         for i in range(3):
-            res = runner.invoke(
-                main, ["snapshot", "create", "--description", f"snap-{i}"]
-            )
+            res = runner.invoke(main, ["snapshot", "create", "--description", f"snap-{i}"])
             assert res.exit_code == 0, res.output
             if i < 2:
                 time.sleep(1.05)
 
         # --keep-last=0 --confirm --force overrides the most-recent safety.
         result = runner.invoke(
-            main, [
-                "snapshot", "prune",
-                "--keep-last", "0",
+            main,
+            [
+                "snapshot",
+                "prune",
+                "--keep-last",
+                "0",
                 "--confirm",
                 "--force",
-            ]
+            ],
         )
-        assert result.exit_code == 0, (
-            f"prune --force failed: stderr={result.stderr!r}"
-        )
+        assert result.exit_code == 0, f"prune --force failed: stderr={result.stderr!r}"
         # All 3 snapshots should be deleted.
         files = sorted(p.name for p in snapshots_dir.glob("snap_*.json.gz"))
-        assert files == [], (
-            f"--force should delete all with keep-last=0; remaining={files!r}"
-        )
+        assert files == [], f"--force should delete all with keep-last=0; remaining={files!r}"
         # Stderr warning emitted (matches the SnapshotManager.prune() warning).
-        assert "--force" in (result.stderr or "") or "override" in (
-            result.stderr or ""
-        ).lower(), (
+        assert "--force" in (result.stderr or "") or "override" in (result.stderr or "").lower(), (
             f"expected --force warning on stderr; got stderr={result.stderr!r}"
         )
 
@@ -793,16 +762,26 @@ class TestDriftSnapshotFlag:
         captured: dict = {}
 
         def _stub(
-            change_name, *, graph_json_path, backend=None,
-            include_obsolete=False, since=None, snap_id=None,
+            change_name,
+            *,
+            graph_json_path,
+            backend=None,
+            include_obsolete=False,
+            since=None,
+            snap_id=None,
         ):
             captured["change_name"] = change_name
             captured["snap_id"] = snap_id
             captured["graph_json_path"] = graph_json_path
             return DriftReport(
-                change_name=change_name, scanned_at=1000.0, graph_mtime=42.0,
-                decisions_total=0, bindings_total=0,
-                class_counts={}, findings=[], graph_unavailable=False,
+                change_name=change_name,
+                scanned_at=1000.0,
+                graph_mtime=42.0,
+                decisions_total=0,
+                bindings_total=0,
+                class_counts={},
+                findings=[],
+                graph_unavailable=False,
             )
 
         monkeypatch.setattr(cli_mod.decision_drift, "scan_change", _stub)
@@ -816,7 +795,12 @@ class TestDriftSnapshotFlag:
         assert captured["change_name"] == "vector-semantic-search"
 
     def test_drift_without_snapshot_flag_unchanged(
-        self, seeded_backend, snapshots_dir, metrics_path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self,
+        seeded_backend,
+        snapshots_dir,
+        metrics_path,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """Without ``--snapshot``, ``scan_change`` is called with snap_id=None (NON-BREAKING)."""
         from flow_engineering import cli as cli_mod
@@ -825,16 +809,26 @@ class TestDriftSnapshotFlag:
         captured: dict = {}
 
         def _stub(
-            change_name, *, graph_json_path, backend=None,
-            include_obsolete=False, since=None, snap_id=None,
+            change_name,
+            *,
+            graph_json_path,
+            backend=None,
+            include_obsolete=False,
+            since=None,
+            snap_id=None,
         ):
             captured["change_name"] = change_name
             captured["snap_id"] = snap_id
             captured["graph_json_path"] = graph_json_path
             return DriftReport(
-                change_name=change_name, scanned_at=1000.0, graph_mtime=42.0,
-                decisions_total=0, bindings_total=0,
-                class_counts={}, findings=[], graph_unavailable=False,
+                change_name=change_name,
+                scanned_at=1000.0,
+                graph_mtime=42.0,
+                decisions_total=0,
+                bindings_total=0,
+                class_counts={},
+                findings=[],
+                graph_unavailable=False,
             )
 
         monkeypatch.setattr(cli_mod.decision_drift, "scan_change", _stub)
