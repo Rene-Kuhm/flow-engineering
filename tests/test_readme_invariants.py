@@ -10,6 +10,7 @@ Pure-Python assertions on the README file. Enforces:
 - No stale "PR #1 bootstrap" status line
 - Quickstart references all 8 SDD phases in the documented order
 """
+
 from __future__ import annotations
 
 import re
@@ -49,7 +50,7 @@ def test_capabilities_section_has_status_table() -> None:
     text = _read_readme()
     capabilities_match = re.search(r"^##\s+Capabilities\s*$", text, re.MULTILINE)
     assert capabilities_match, "README must include an '## Capabilities' section"
-    tail = text[capabilities_match.end(): capabilities_match.end() + 30 * 80]
+    tail = text[capabilities_match.end() : capabilities_match.end() + 30 * 80]
     assert "status" in tail.lower(), (
         "Capabilities section must be followed by a table containing a 'status' column"
     )
@@ -59,7 +60,7 @@ def test_compatibility_section_has_table() -> None:
     text = _read_readme()
     compat_match = re.search(r"^##\s+Compatibility\s*$", text, re.MULTILINE)
     assert compat_match, "README must include an '## Compatibility' section"
-    tail = text[compat_match.end(): compat_match.end() + 30 * 80]
+    tail = text[compat_match.end() : compat_match.end() + 30 * 80]
     table_match = re.search(r"\|\s*---", tail)
     assert table_match, "Compatibility section must be followed by a Markdown table"
 
@@ -67,9 +68,7 @@ def test_compatibility_section_has_table() -> None:
 def test_at_least_three_status_badges() -> None:
     text = _read_readme()
     shields = re.findall(r"!\[[^\]]*\]\(https://img\.shields\.io/[^\)]+\)", text)
-    actions = re.findall(
-        r"!\[[^\]]*\]\(https://github\.com/[^/]+/[^/]+/actions/[^\)]+\)", text
-    )
+    actions = re.findall(r"!\[[^\]]*\]\(https://github\.com/[^/]+/[^/]+/actions/[^\)]+\)", text)
     total = len(shields) + len(actions)
     assert total >= 3, (
         "README must contain at least 3 shields.io / github-actions badges; "
@@ -79,9 +78,7 @@ def test_at_least_three_status_badges() -> None:
 
 def test_mentions_opencode_plugin_path() -> None:
     text = _read_readme()
-    assert "plugins/flow-engineering.js" in text, (
-        "README must mention plugins/flow-engineering.js"
-    )
+    assert "plugins/flow-engineering.js" in text, "README must mention plugins/flow-engineering.js"
 
 
 def test_mentions_contributing_link_target() -> None:

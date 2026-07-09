@@ -110,10 +110,7 @@ class TestAggregatePercentile:
         - p95: idx = 94 → samples[94] = 95.0
         - p99: idx = 98 → samples[98] = 99.0
         """
-        events = [
-            _make_event("drift_invoked_total", {"value": float(i)})
-            for i in range(1, 101)
-        ]
+        events = [_make_event("drift_invoked_total", {"value": float(i)}) for i in range(1, 101)]
 
         result = observability.aggregate_percentile(events)
 
@@ -168,13 +165,12 @@ class TestAggregatePercentile:
         self,
     ) -> None:
         """1000 events into a reservoir of size 100 with seed=1 → deterministic percentiles."""
-        events = [
-            _make_event("big_counter", {"value": float(i)})
-            for i in range(1, 1001)
-        ]
+        events = [_make_event("big_counter", {"value": float(i)}) for i in range(1, 1001)]
 
         result = observability.aggregate_percentile(
-            events, reservoir_size=100, seed=1,
+            events,
+            reservoir_size=100,
+            seed=1,
         )
 
         # The reservoir holds 100 distinct samples from 1..1000. The
@@ -184,14 +180,10 @@ class TestAggregatePercentile:
         # GREEN requires the reservoir path to actually execute and
         # produce a sample, not a degenerate constant.
         p50 = result["big_counter_p50"]
-        assert 400.0 <= p50 <= 600.0, (
-            f"expected reservoir-derived p50 near 500; got {p50}"
-        )
+        assert 400.0 <= p50 <= 600.0, f"expected reservoir-derived p50 near 500; got {p50}"
         # P95 should land in the upper portion of the sorted sample.
         p95 = result["big_counter_p95"]
-        assert p95 > p50, (
-            f"expected p95 > p50 (counter-monotonic); got p50={p50}, p95={p95}"
-        )
+        assert p95 > p50, f"expected p95 > p50 (counter-monotonic); got p50={p50}, p95={p95}"
 
 
 # ---------- format_percentile_report ----------
@@ -226,9 +218,7 @@ class TestFormatPercentileReport:
         # Each counter name appears once on its own line.
         for counter in ("drift_invoked_total", "snapshot_create_total", "vector_latency_ms"):
             matching = [line for line in lines if counter in line]
-            assert len(matching) == 1, (
-                f"expected exactly 1 row for {counter!r}; got {matching!r}"
-            )
+            assert len(matching) == 1, f"expected exactly 1 row for {counter!r}; got {matching!r}"
             row = matching[0]
             assert any(ch.isdigit() for ch in row), (
                 f"expected at least one digit in row for {counter!r}; got {row!r}"

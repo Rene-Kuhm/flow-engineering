@@ -26,10 +26,7 @@ from flow_engineering.binding import (
 # ---------- Fixtures ----------
 
 PROSE_ONLY = "## Decision\n\nUse JWT for auth.\n"
-EMPTY_BLOCK = (
-    f"{CODE_REFS_MARKER}\n"
-    '{"schema": 1, "nodes": [], "source": "unbound"}\n'
-)
+EMPTY_BLOCK = f'{CODE_REFS_MARKER}\n{{"schema": 1, "nodes": [], "source": "unbound"}}\n'
 SINGLE_BLOCK = (
     "## Decision\n\nUse JWT for auth.\n\n"
     f"{CODE_REFS_MARKER}\n"
@@ -54,17 +51,12 @@ BACKFILL_BLOCK = (
     '"label":"A","file":"a.py","line":1,"confidence":0.3,'
     '"source":"backfill"}], "source": "backfill"}\n'
 )
-MALFORMED_BLOCK = (
-    f"{CODE_REFS_MARKER}\n"
-    "{this is not json}\n"
-)
-SCHEMA_MISMATCH_BLOCK = (
-    f"{CODE_REFS_MARKER}\n"
-    '{"schema": 99, "nodes": []}\n'
-)
+MALFORMED_BLOCK = f"{CODE_REFS_MARKER}\n{{this is not json}}\n"
+SCHEMA_MISMATCH_BLOCK = f'{CODE_REFS_MARKER}\n{{"schema": 99, "nodes": []}}\n'
 
 
 # ---------- REQ-1: format ----------
+
 
 class TestExtractFormat:
     """REQ-1: extract returns CodeRef list, preserves order, handles marker absence."""
@@ -115,13 +107,19 @@ class TestExtractFormat:
 
 # ---------- REQ-2: format + round-trip ----------
 
+
 class TestFormatRoundtrip:
     """REQ-2: format produces canonical block; extract∘format∘extract is identity."""
 
     def test_format_starts_with_marker_and_includes_schema(self):
         ref = CodeRef(
-            project="p", id="x", label="X", file="x.py", line=1,
-            confidence=0.9, source="manual",
+            project="p",
+            id="x",
+            label="X",
+            file="x.py",
+            line=1,
+            confidence=0.9,
+            source="manual",
         )
         out = format_code_refs_block([ref], source="manual")
         assert out.startswith(f"{CODE_REFS_MARKER}\n")
@@ -130,8 +128,13 @@ class TestFormatRoundtrip:
 
     def test_format_rejects_unknown_source(self):
         ref = CodeRef(
-            project="p", id="x", label="X", file="x.py", line=1,
-            confidence=0.9, source="made_up",  # type: ignore[arg-type]
+            project="p",
+            id="x",
+            label="X",
+            file="x.py",
+            line=1,
+            confidence=0.9,
+            source="made_up",  # type: ignore[arg-type]
         )
         with pytest.raises(ValueError, match="unknown source") as exc_info:
             format_code_refs_block([ref], source="made_up")  # type: ignore[arg-type]
@@ -156,6 +159,7 @@ class TestFormatRoundtrip:
 
 
 # ---------- Helpers ----------
+
 
 class TestSplitProseAndRefs:
     def test_split_prose_only_yields_empty_block(self):

@@ -74,6 +74,7 @@ def graphify_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def graphify_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patch graphify_query.query_nodes to raise an unexpected exception."""
+
     def boom(text: str, **kw: Any) -> list[CodeRef]:
         raise RuntimeError("graphify crashed")
 
@@ -93,7 +94,10 @@ class TestHappyPath:
         result = auto_suggest_code_refs("jwt auth", with_suggest=True)
         assert result.source == "auto_suggest"
         assert len(result.refs) == 2
-        assert [r.id for r in result.refs] == ["src_auth_jwt_tokenmgr", "src_auth_oauth_oauthhandler"]
+        assert [r.id for r in result.refs] == [
+            "src_auth_jwt_tokenmgr",
+            "src_auth_oauth_oauthhandler",
+        ]
 
     def test_returns_auto_suggest_when_env_var_activates(self, graphify_available, monkeypatch):
         from flow_engineering.auto_suggest_code_refs import auto_suggest_code_refs
@@ -170,9 +174,7 @@ class TestFailOpen:
         names = [e["name"] for e in events]
         assert "suggest_hit_total" in names
         assert "bindings_confirmed_total" in names
-        confirmed = next(
-            e for e in events if e["name"] == "bindings_confirmed_total"
-        )
+        confirmed = next(e for e in events if e["name"] == "bindings_confirmed_total")
         assert confirmed["fields"].get("count") == 2
 
     def test_records_suggest_miss_when_no_candidates(self, graphify_unavailable, metrics_path):
@@ -224,6 +226,7 @@ class TestInteractivePrompt:
         assert result.refs == []
 
         from flow_engineering import observability
+
         events = observability.read_all()
         assert "suggest_miss_total" in [e["name"] for e in events]
 
