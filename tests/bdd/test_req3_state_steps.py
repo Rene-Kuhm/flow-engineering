@@ -1,4 +1,5 @@
 """BDD step definitions for req3_state.feature."""
+
 from __future__ import annotations
 
 import pytest
@@ -43,9 +44,10 @@ def fresh_change_status(change_context, change):
     fresh_change(change_context, change)
 
 
-@when("the watcher detects a write to \"explore/exploration.md\"")
+@when('the watcher detects a write to "explore/exploration.md"')
 def watcher_detects(change_context):
     from flow_engineering.watcher import make_exploration_watcher
+
     make_exploration_watcher(change_context["change_dir"])(
         change_context["change_dir"] / "explore" / "exploration.md"
     )
@@ -81,9 +83,10 @@ def status_explored(change_context):
     assert sm.status == ChangeStatus.EXPLORED
 
 
-@then(parsers.parse("state.json should record the transition with artifact \"{artifact}\""))
+@then(parsers.parse('state.json should record the transition with artifact "{artifact}"'))
 def artifact_recorded(change_context, artifact):
     import json
+
     data = json.loads((change_context["change_dir"] / "state.json").read_text())
     assert data["transitions"][-1]["artifact"] == artifact
 

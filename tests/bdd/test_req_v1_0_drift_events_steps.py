@@ -12,6 +12,7 @@ The step bodies invoke the ``flow drift-events`` CLI via Click's ``CliRunner``
 against a tmp_path JSONL so the tests are isolated from the real
 ``~/.flow-engineering/drift_events.jsonl``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -132,25 +133,28 @@ def when_operator_runs_list(drift_events_world: dict[str, Any]) -> None:
     drift_events_world["result"] = runner.invoke(
         cli_main,
         [
-            "drift", "events",
+            "drift",
+            "events",
             "list",
-            "--path", str(drift_events_world["log_path"]),
+            "--path",
+            str(drift_events_world["log_path"]),
         ],
     )
 
 
 @when(parsers.parse("the operator runs `flow drift-events tail --limit={limit:d}`"))
-def when_operator_runs_tail_with_limit(
-    drift_events_world: dict[str, Any], limit: int
-) -> None:
+def when_operator_runs_tail_with_limit(drift_events_world: dict[str, Any], limit: int) -> None:
     """Invoke ``flow drift-events tail --limit=N`` against the tmp log."""
     drift_events_world["result"] = runner.invoke(
         cli_main,
         [
-            "drift", "events",
+            "drift",
+            "events",
             "tail",
-            "--path", str(drift_events_world["log_path"]),
-            "--limit", str(limit),
+            "--path",
+            str(drift_events_world["log_path"]),
+            "--limit",
+            str(limit),
         ],
     )
 
@@ -161,9 +165,11 @@ def when_operator_runs_stats(drift_events_world: dict[str, Any]) -> None:
     drift_events_world["result"] = runner.invoke(
         cli_main,
         [
-            "drift", "events",
+            "drift",
+            "events",
             "stats",
-            "--path", str(drift_events_world["log_path"]),
+            "--path",
+            str(drift_events_world["log_path"]),
         ],
     )
 
@@ -171,11 +177,7 @@ def when_operator_runs_stats(drift_events_world: dict[str, Any]) -> None:
 # ---------- Then ----------
 
 
-@then(
-    parsers.parse(
-        'the output contains a fixed-width table with columns "{columns}"'
-    )
-)
+@then(parsers.parse('the output contains a fixed-width table with columns "{columns}"'))
 def then_output_contains_table_with_columns(
     drift_events_world: dict[str, Any], columns: str
 ) -> None:
@@ -192,26 +194,16 @@ def then_output_contains_table_with_columns(
 def then_table_contains_5_data_rows(drift_events_world: dict[str, Any]) -> None:
     """Assert exactly 5 data rows (change-* prefix)."""
     result = drift_events_world["result"]
-    data_rows = [
-        ln for ln in result.output.splitlines()
-        if ln.startswith("change-")
-    ]
-    assert len(data_rows) == 5, (
-        f"expected 5 data rows; got {len(data_rows)}: {data_rows!r}"
-    )
+    data_rows = [ln for ln in result.output.splitlines() if ln.startswith("change-")]
+    assert len(data_rows) == 5, f"expected 5 data rows; got {len(data_rows)}: {data_rows!r}"
 
 
 @then("the output contains exactly 5 rows")
 def then_output_contains_5_rows(drift_events_world: dict[str, Any]) -> None:
     """Tail --limit=5 returns exactly 5 data rows."""
     result = drift_events_world["result"]
-    data_rows = [
-        ln for ln in result.output.splitlines()
-        if ln.startswith("change-")
-    ]
-    assert len(data_rows) == 5, (
-        f"expected 5 rows; got {len(data_rows)}: {data_rows!r}"
-    )
+    data_rows = [ln for ln in result.output.splitlines() if ln.startswith("change-")]
+    assert len(data_rows) == 5, f"expected 5 rows; got {len(data_rows)}: {data_rows!r}"
 
 
 @then("the rows are ordered newest-first by detected_at")
@@ -254,4 +246,3 @@ def then_output_contains_per_event_class_counts(
     assert "LABEL_DRIFT" in result.output or "STALE_LOCATION" in result.output, (
         f"expected per-event-class labels in stats output; got {result.output!r}"
     )
-

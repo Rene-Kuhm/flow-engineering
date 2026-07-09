@@ -1,4 +1,5 @@
 """BDD step definitions for req4_drift.feature."""
+
 from __future__ import annotations
 
 import pytest
@@ -50,6 +51,7 @@ def then_failure_class(drift_context, cls):
 @then("the system should never retry")
 def never_retry(drift_context):
     from flow_engineering.retries import should_retry
+
     decision = should_retry(drift_context["failure_class"], attempt=0)
     assert decision.should_retry is False
 
@@ -57,6 +59,7 @@ def never_retry(drift_context):
 @then("the system should never auto-retry")
 def never_auto_retry(drift_context):
     from flow_engineering.retries import should_retry
+
     decision = should_retry(drift_context["failure_class"], attempt=0)
     assert decision.should_retry is False
 
@@ -64,6 +67,7 @@ def never_auto_retry(drift_context):
 @then("the system should retry up to 2 times")
 def retry_up_to_2(drift_context):
     from flow_engineering.retries import RetryPolicy, should_retry
+
     policy = RetryPolicy(max_transient_retries=2)
     d0 = should_retry(drift_context["failure_class"], attempt=0, policy=policy)
     d2 = should_retry(drift_context["failure_class"], attempt=2, policy=policy)
@@ -74,6 +78,7 @@ def retry_up_to_2(drift_context):
 @then("the wait between retries should follow exponential backoff")
 def exp_backoff(drift_context):
     from flow_engineering.retries import RetryPolicy, should_retry
+
     policy = RetryPolicy(max_transient_retries=3, backoff_base_seconds=1.0, backoff_multiplier=2.0)
     d0 = should_retry(drift_context["failure_class"], attempt=0, policy=policy)
     d1 = should_retry(drift_context["failure_class"], attempt=1, policy=policy)
@@ -83,6 +88,7 @@ def exp_backoff(drift_context):
 @then(parsers.parse('the user should see "{text}"'))
 def user_sees(drift_context, text):
     from flow_engineering.retries import should_retry
+
     decision = should_retry(drift_context["failure_class"], attempt=0)
     # Check the reason mentions the failure class and the right action keyword
     text_lower = text.lower()
@@ -116,6 +122,7 @@ def _apply_progress_step(apply_progress_in_progress):
 @when("the system checks for spec drift")
 def checks_drift(tmp_path, apply_progress_in_progress):
     from flow_engineering.drift import check_spec_drift
+
     drift_context_result = check_spec_drift(tmp_path / "tasks.md", apply_progress_in_progress)
     assert drift_context_result is True
 
