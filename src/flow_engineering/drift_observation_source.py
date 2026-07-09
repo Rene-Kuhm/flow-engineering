@@ -10,8 +10,8 @@ Three concrete adapters:
   the ``topic_key`` prefix + ``since`` cutoff filter chain.
 - ``FrozenBackendObservationSource`` — rebuilds an ``InMemoryBackend``
   from a snapshot's frozen ``graph_state.observations``.
-- ``StaticObservationSource`` — test-only canned-data adapter that
-  replaces the legacy ``_DummyBackend`` fixture (REQ-DRIFT-DETECTION-5).
+- ``StaticObservationSource`` — test-only canned-data adapter for fixtures
+  that need a direct observation stream (REQ-DRIFT-DETECTION-5).
 
 Design: ``openspec/changes/drift-detection/design.md`` §3.
 """
@@ -33,9 +33,9 @@ if TYPE_CHECKING:
 class ObservationSource(Protocol):
     """Narrow contract for an observation-stream collaborator.
 
-    Replaces the ``_DummyBackend`` fixture-as-type seam. Declares ONLY
-    ``iter_observations`` (no ``mem_search`` — the orphaned method that
-    ``_DummyBackend`` carried with ``# pragma: no cover`` markers).
+    Replaces the legacy fixture-as-type seam. Declares ONLY
+    ``iter_observations`` (no orphaned ``mem_search`` method with
+    ``# pragma: no cover`` markers).
     """
 
     def iter_observations(self) -> Iterable[dict]:  # type: ignore[type-arg]
@@ -148,8 +148,7 @@ class FrozenBackendObservationSource:
 class StaticObservationSource:
     """Test-only canned-data adapter.
 
-    REPLACES the legacy ``_DummyBackend`` for test fixtures that need
-    a canned observation stream (e.g., unit tests, BDD step glue).
+    Provides a small canned observation stream for tests and BDD step glue.
     Excluded from ``__all__`` so the public API surface stays clean.
 
     Iteration is identity (no filtering, no backend, no I/O).

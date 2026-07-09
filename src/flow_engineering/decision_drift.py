@@ -368,7 +368,8 @@ def _load_graph_from_snapshot(
     return (None, None, None)
 
 
-# ``_DummyBackend\` was removed at T5.2 GREEN (REQ-DRIFT-DETECTION-5).
+# The former fixture-only backend was removed at T5.2 GREEN
+# (REQ-DRIFT-DETECTION-5).
 # The SnapshotGraphLoader + FrozenBackendObservationSource Protocol
 # adapters pass ``backend=None`` to ``SnapshotManager`` because
 # ``show()`` never touches the backend (see design §3 / §7 for the
@@ -764,7 +765,7 @@ def _legacy_scan_change_body(  # noqa: C901  # pragma: no cover
     """Legacy v1.2.0 ``scan_change`` body.
 
     Kept as a forwarder so the legacy ``load_graph`` /
-    ``_load_graph_from_snapshot`` / ``_DummyBackend`` /
+    ``_load_graph_from_snapshot`` / the former fixture-only backend /
     ``_frozen_backend_from_snapshot`` symbols (defined below) stay
     reachable from external callers. The post-T5.1 path goes through
     ``_scan_with_protocols`` instead.
