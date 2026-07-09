@@ -71,6 +71,8 @@ jobs:
       - name: Upload coverage
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v7
+        timeout-minutes: 5
+        continue-on-error: true
         env:
           GIT_CONFIG_GLOBAL: ${{ runner.temp }}\codecov-gitconfig
           HOME: ${{ runner.temp }}
