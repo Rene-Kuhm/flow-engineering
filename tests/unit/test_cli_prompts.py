@@ -14,6 +14,7 @@ The tests are written BEFORE the implementation per strict TDD (RED).
 They MUST fail with ``AttributeError`` (no ``flow_prompts_check`` Click
 command) until the GREEN commit lands.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,7 +36,8 @@ runner = CliRunner()
 
 @pytest.fixture
 def clean_catalog(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, SkillEntry]:
     """Build a 1-entry catalog with a file whose checksum matches the catalog.
 
@@ -73,7 +75,8 @@ def clean_catalog(
 
 @pytest.fixture
 def drifted_catalog(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, SkillEntry]:
     """Build a 1-entry catalog with an intentionally wrong checksum.
 
@@ -119,15 +122,16 @@ class TestFlowPromptsGroup:
         """
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0, (
-            f"flow --help failed: stdout={result.output!r} "
-            f"exit={result.exit_code}"
+            f"flow --help failed: stdout={result.output!r} exit={result.exit_code}"
         )
         assert "prompts" in result.output, (
             f"expected 'prompts' in flow --help output; got {result.output!r}"
         )
 
     def test_prompts_check_exits_zero_on_clean_state(
-        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        clean_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check` returns exit 0 when no drift is detected.
 
@@ -144,12 +148,13 @@ class TestFlowPromptsGroup:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         assert "3.0" in result.stdout or "verified" in result.stdout, (
-            f"expected version or 'verified' marker in stdout; "
-            f"got {result.stdout!r}"
+            f"expected version or 'verified' marker in stdout; got {result.stdout!r}"
         )
 
     def test_prompts_check_exits_one_on_drift(
-        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        drifted_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check` returns exit 1 when drift is detected.
 
@@ -165,8 +170,7 @@ class TestFlowPromptsGroup:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         assert "sdd-test" in result.stdout or "drift" in result.stdout.lower(), (
-            f"expected skill name or drift marker in stdout; "
-            f"got {result.stdout!r}"
+            f"expected skill name or drift marker in stdout; got {result.stdout!r}"
         )
 
 
@@ -175,7 +179,9 @@ class TestFlowPromptsGroup:
 
 class TestPromptsCheckInit:
     def test_prompts_check_init_writes_sidecar(
-        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        clean_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check --init` writes the sidecar JSON and exits 0.
 
@@ -194,9 +200,7 @@ class TestPromptsCheckInit:
         # Sidecar path mirrors the SKILL.md location: same parent dir.
         skill_path = Path(clean_catalog["sdd-test/skill"].expected_path)
         sidecar_file = skill_path.parent / ".flow-engineering" / "prompt_checksums.json"
-        assert sidecar_file.exists(), (
-            f"expected sidecar JSON at {sidecar_file}; file not found"
-        )
+        assert sidecar_file.exists(), f"expected sidecar JSON at {sidecar_file}; file not found"
         loaded = json.loads(sidecar_file.read_text(encoding="utf-8"))
         assert "sdd-test/skill" in loaded, (
             f"expected 'sdd-test/skill' key in sidecar; got keys {list(loaded)!r}"
@@ -211,7 +215,9 @@ class TestPromptsCheckInit:
 
 class TestCheckFlags:
     def test_update_flag_refreshes_sidecar(
-        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        clean_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check --update` refreshes the sidecar JSON and exits 0.
 
@@ -234,12 +240,12 @@ class TestCheckFlags:
         # The sidecar file MUST exist on disk after --update.
         skill_path = Path(clean_catalog["sdd-test/skill"].expected_path)
         sidecar_file = skill_path.parent / ".flow-engineering" / "prompt_checksums.json"
-        assert sidecar_file.exists(), (
-            f"expected sidecar at {sidecar_file}; file not found"
-        )
+        assert sidecar_file.exists(), f"expected sidecar at {sidecar_file}; file not found"
 
     def test_no_fail_flag_exits_zero_on_drift(
-        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        drifted_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check --no-fail` exits 0 even when drift is detected.
 
@@ -256,12 +262,13 @@ class TestCheckFlags:
         )
         # Drift is still surfaced in stdout for visibility.
         assert "sdd-test" in result.stdout or "drift" in result.stdout.lower(), (
-            f"expected drift marker in stdout even with --no-fail; "
-            f"got {result.stdout!r}"
+            f"expected drift marker in stdout even with --no-fail; got {result.stdout!r}"
         )
 
     def test_skill_flag_filters_to_named_skill(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check --skill sdd-apply` filters to a single skill.
 
@@ -351,6 +358,7 @@ class _CounterCapture:
 
     def __init__(self) -> None:
         from flow_engineering import observability
+
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self._original = observability.increment
         self._module = observability
@@ -358,6 +366,7 @@ class _CounterCapture:
     def __enter__(self) -> _CounterCapture:
         def _capture(name: str, **fields: Any) -> None:
             self.calls.append((name, dict(fields)))
+
         self._module.increment = _capture
         return self
 
@@ -367,7 +376,9 @@ class _CounterCapture:
 
 class TestCheckStderrWarn:
     def test_writes_warn_to_stderr_on_drift(
-        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        drifted_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check` writes a `[WARN]` line to stderr when drift is detected.
 
@@ -390,7 +401,9 @@ class TestCheckStderrWarn:
         )
 
     def test_no_warn_on_clean_state(
-        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        clean_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts check` does NOT write a `[WARN]` line on clean state.
 
@@ -405,14 +418,15 @@ class TestCheckStderrWarn:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         assert "[WARN]" not in result.stderr, (
-            f"unexpected '[WARN]' in stderr on clean state; "
-            f"got {result.stderr!r}"
+            f"unexpected '[WARN]' in stderr on clean state; got {result.stderr!r}"
         )
 
 
 class TestCheckObservability:
     def test_emits_check_total_clean(
-        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        clean_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Clean state emits `prompts_check_total{result="clean"}` exactly once.
 
@@ -429,8 +443,9 @@ class TestCheckObservability:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         clean_calls = [
-            (n, f) for (n, f) in cap.calls if n == "prompts_check_total"
-            and f.get("result") == "clean"
+            (n, f)
+            for (n, f) in cap.calls
+            if n == "prompts_check_total" and f.get("result") == "clean"
         ]
         assert len(clean_calls) == 1, (
             f"expected exactly 1 prompts_check_total{{result=clean}} call; "
@@ -438,18 +453,19 @@ class TestCheckObservability:
         )
 
     def test_emits_check_total_drift(
-        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        drifted_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Drift state emits `prompts_check_total{result="drift"}` exactly once."""
         monkeypatch.setattr(osc, "SKILL_CATALOG", drifted_catalog)
         with _CounterCapture() as cap:
             result = runner.invoke(main, ["prompts", "check"])
-        assert result.exit_code == 1, (
-            f"expected exit 1 on drift; got {result.exit_code}."
-        )
+        assert result.exit_code == 1, f"expected exit 1 on drift; got {result.exit_code}."
         drift_calls = [
-            (n, f) for (n, f) in cap.calls if n == "prompts_check_total"
-            and f.get("result") == "drift"
+            (n, f)
+            for (n, f) in cap.calls
+            if n == "prompts_check_total" and f.get("result") == "drift"
         ]
         assert len(drift_calls) == 1, (
             f"expected exactly 1 prompts_check_total{{result=drift}} call; "
@@ -457,7 +473,9 @@ class TestCheckObservability:
         )
 
     def test_emits_drift_total_per_skill(
-        self, drifted_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        drifted_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Each drift finding emits `prompts_check_drift_total{skill=<name>}`.
 
@@ -469,24 +487,20 @@ class TestCheckObservability:
         with _CounterCapture() as cap:
             result = runner.invoke(main, ["prompts", "check"])
         assert result.exit_code == 1
-        drift_total_calls = [
-            (n, f) for (n, f) in cap.calls
-            if n == "prompts_check_drift_total"
-        ]
+        drift_total_calls = [(n, f) for (n, f) in cap.calls if n == "prompts_check_drift_total"]
         assert len(drift_total_calls) >= 1, (
             f"expected at least 1 prompts_check_drift_total call; "
             f"got {drift_total_calls!r} (all calls: {cap.calls!r})"
         )
         # The drift fixture is a single-entry catalog with skill_name='sdd-test'.
-        assert any(
-            f.get("skill") == "sdd-test" for (n, f) in drift_total_calls
-        ), (
-            f"expected skill='sdd-test' label in drift_total call; "
-            f"got {drift_total_calls!r}"
+        assert any(f.get("skill") == "sdd-test" for (n, f) in drift_total_calls), (
+            f"expected skill='sdd-test' label in drift_total call; got {drift_total_calls!r}"
         )
 
     def test_emits_duration_seconds(
-        self, clean_catalog: dict[str, SkillEntry], monkeypatch: pytest.MonkeyPatch,
+        self,
+        clean_catalog: dict[str, SkillEntry],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Each `flow prompts check` invocation emits `prompts_check_duration_seconds`.
 
@@ -497,17 +511,14 @@ class TestCheckObservability:
         monkeypatch.setattr(osc, "SKILL_CATALOG", clean_catalog)
         with _CounterCapture() as cap:
             runner.invoke(main, ["prompts", "check"])
-        duration_calls = [
-            (n, f) for (n, f) in cap.calls if n == "prompts_check_duration_seconds"
-        ]
+        duration_calls = [(n, f) for (n, f) in cap.calls if n == "prompts_check_duration_seconds"]
         assert len(duration_calls) == 1, (
             f"expected exactly 1 prompts_check_duration_seconds call; "
             f"got {duration_calls!r} (all calls: {cap.calls!r})"
         )
         value = duration_calls[0][1].get("value")
         assert isinstance(value, (int, float)), (
-            f"expected numeric value in duration counter; "
-            f"got {duration_calls[0][1]!r}"
+            f"expected numeric value in duration counter; got {duration_calls[0][1]!r}"
         )
         assert value >= 0, (
             f"expected non-negative numeric value in duration counter; "
@@ -520,7 +531,8 @@ class TestCheckObservability:
 
 class TestPromptsLint:
     def test_prompts_lint_clean_registry_exits_zero(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts lint` exits 0 when the registry is clean.
 
@@ -536,12 +548,11 @@ class TestPromptsLint:
         assert "0 warnings" in result.stdout, (
             f"expected '0 warnings' in footer; got {result.stdout!r}"
         )
-        assert "0 errors" in result.stdout, (
-            f"expected '0 errors' in footer; got {result.stdout!r}"
-        )
+        assert "0 errors" in result.stdout, f"expected '0 errors' in footer; got {result.stdout!r}"
 
     def test_prompts_lint_warnings_only_exits_one(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts lint` exits 1 when only warnings are present.
 
@@ -575,7 +586,8 @@ class TestPromptsLint:
             prompt_registry.unregister_prompt("bdd_test_warning")
 
     def test_prompts_lint_jinja_syntax_error_exits_two(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts lint` exits 2 on jinja_syntax validation errors.
 
@@ -604,7 +616,8 @@ class TestPromptsLint:
             prompt_registry.unregister_prompt("bdd_test_jinja_error")
 
     def test_prompts_lint_json_flag_emits_json(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`flow prompts lint --json` emits a structured JSON report.
 
@@ -619,15 +632,11 @@ class TestPromptsLint:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         loaded = json.loads(result.stdout)
-        assert "is_clean" in loaded, (
-            f"expected 'is_clean' key in JSON; got keys {list(loaded)!r}"
-        )
+        assert "is_clean" in loaded, f"expected 'is_clean' key in JSON; got keys {list(loaded)!r}"
         assert "error_count" in loaded, (
             f"expected 'error_count' key in JSON; got keys {list(loaded)!r}"
         )
-        assert "errors" in loaded, (
-            f"expected 'errors' key in JSON; got keys {list(loaded)!r}"
-        )
+        assert "errors" in loaded, f"expected 'errors' key in JSON; got keys {list(loaded)!r}"
         assert loaded["is_clean"] is True, (
             f"expected is_clean=True on clean registry; got {loaded!r}"
         )
@@ -666,8 +675,12 @@ class TestPromptsList:
             f"expected exit 0; got {result.exit_code}. "
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
-        for pid in ("strict_tdd", "auto_suggest_header",
-                    "auto_suggest_footer", "auto_suggest_empty"):
+        for pid in (
+            "strict_tdd",
+            "auto_suggest_header",
+            "auto_suggest_footer",
+            "auto_suggest_empty",
+        ):
             assert pid in result.stdout, (
                 f"expected prompt_id={pid!r} in stdout; got {result.stdout!r}"
             )
@@ -684,8 +697,7 @@ class TestPromptsList:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         assert "4 prompt entries" in result.stdout, (
-            f"expected '4 prompt entries' footer in stdout; "
-            f"got {result.stdout!r}"
+            f"expected '4 prompt entries' footer in stdout; got {result.stdout!r}"
         )
 
     def test_prompts_list_owner_groups_strict_tdd_observability(self) -> None:
@@ -698,8 +710,7 @@ class TestPromptsList:
         """
         result = runner.invoke(main, ["prompts", "list"])
         assert result.exit_code == 0, (
-            f"expected exit 0; got {result.exit_code}. "
-            f"stdout={result.stdout!r}"
+            f"expected exit 0; got {result.exit_code}. stdout={result.stdout!r}"
         )
         # Find the strict_tdd row; expect owner=flow/observability on same line.
         strict_tdd_line = next(
@@ -707,8 +718,7 @@ class TestPromptsList:
             None,
         )
         assert strict_tdd_line is not None, (
-            f"expected a row containing 'strict_tdd'; "
-            f"got lines={result.stdout.splitlines()!r}"
+            f"expected a row containing 'strict_tdd'; got lines={result.stdout.splitlines()!r}"
         )
         assert "flow/observability" in strict_tdd_line, (
             f"expected strict_tdd row to carry owner=flow/observability; "
@@ -723,8 +733,7 @@ class TestPromptsList:
         """
         result = runner.invoke(main, ["prompts", "list"])
         assert result.exit_code == 0, (
-            f"expected exit 0; got {result.exit_code}. "
-            f"stdout={result.stdout!r}"
+            f"expected exit 0; got {result.exit_code}. stdout={result.stdout!r}"
         )
         for pid in ("auto_suggest_header", "auto_suggest_footer", "auto_suggest_empty"):
             row = next(
@@ -732,8 +741,7 @@ class TestPromptsList:
                 None,
             )
             assert row is not None, (
-                f"expected a row for {pid!r}; "
-                f"got lines={result.stdout.splitlines()!r}"
+                f"expected a row for {pid!r}; got lines={result.stdout.splitlines()!r}"
             )
             assert "flow/binding" in row, (
                 f"expected {pid} row to carry owner=flow/binding; got {row!r}"
@@ -754,15 +762,11 @@ class TestPromptsList:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         loaded = json.loads(result.stdout)
-        assert "prompts" in loaded, (
-            f"expected 'prompts' key in JSON; got keys {list(loaded)!r}"
-        )
+        assert "prompts" in loaded, f"expected 'prompts' key in JSON; got keys {list(loaded)!r}"
         assert len(loaded["prompts"]) == 4, (
             f"expected 4 entries in 'prompts' array; got {len(loaded['prompts'])}"
         )
-        assert loaded["count"] == 4, (
-            f"expected count=4 in JSON; got {loaded.get('count')!r}"
-        )
+        assert loaded["count"] == 4, f"expected count=4 in JSON; got {loaded.get('count')!r}"
 
     def test_prompts_list_json_per_entry_has_required_fields(self) -> None:
         """`flow prompts list --json` per-entry dict has name+version+owner+location.
@@ -787,8 +791,7 @@ class TestPromptsList:
             f"expected strict_tdd in JSON output; got names={[e['name'] for e in loaded['prompts']]!r}"
         )
         assert strict_tdd["owner"] == "flow/observability", (
-            f"expected strict_tdd owner=flow/observability; "
-            f"got {strict_tdd['owner']!r}"
+            f"expected strict_tdd owner=flow/observability; got {strict_tdd['owner']!r}"
         )
         assert strict_tdd["version"] == "1.0.0", (
             f"expected strict_tdd version=1.0.0; got {strict_tdd['version']!r}"
@@ -820,30 +823,28 @@ class TestPromptsList:
         )
         loaded = json.loads(result.stdout)
         for entry in loaded["prompts"]:
-            assert "variables" in entry, (
-                f"expected 'variables' key in {entry!r} (W-A1 spec drift)"
-            )
+            assert "variables" in entry, f"expected 'variables' key in {entry!r} (W-A1 spec drift)"
             assert isinstance(entry["variables"], list), (
                 f"expected 'variables' to be a list per spec REQ-50 S1; "
                 f"got {type(entry['variables']).__name__} in {entry!r}"
             )
         strict_tdd = next(
-            (e for e in loaded["prompts"] if e.get("name") == "strict_tdd"
-             or e.get("prompt_id") == "strict_tdd"),
+            (
+                e
+                for e in loaded["prompts"]
+                if e.get("name") == "strict_tdd" or e.get("prompt_id") == "strict_tdd"
+            ),
             None,
         )
         assert strict_tdd is not None, (
             f"expected strict_tdd in JSON output; got names={[e.get('name') or e.get('prompt_id') for e in loaded['prompts']]!r}"
         )
         assert strict_tdd["variables"] == ["test_command"], (
-            f"expected strict_tdd variables=['test_command']; "
-            f"got {strict_tdd['variables']!r}"
+            f"expected strict_tdd variables=['test_command']; got {strict_tdd['variables']!r}"
         )
-        for pid in ("auto_suggest_header", "auto_suggest_footer",
-                    "auto_suggest_empty"):
+        for pid in ("auto_suggest_header", "auto_suggest_footer", "auto_suggest_empty"):
             entry = next(
-                (e for e in loaded["prompts"]
-                 if e.get("name") == pid or e.get("prompt_id") == pid),
+                (e for e in loaded["prompts"] if e.get("name") == pid or e.get("prompt_id") == pid),
                 None,
             )
             assert entry is not None, (
@@ -914,8 +915,7 @@ class TestPromptsShow:
             ["prompts", "show", "strict_tdd", "--var", "test_command=pytest"],
         )
         assert result.exit_code == 0, (
-            f"expected exit 0; got {result.exit_code}. "
-            f"stdout={result.stdout!r}"
+            f"expected exit 0; got {result.exit_code}. stdout={result.stdout!r}"
         )
         assert "prompt_id:" in result.stdout, (
             f"expected 'prompt_id:' header line; got {result.stdout!r}"
@@ -926,9 +926,7 @@ class TestPromptsShow:
         assert "version:" in result.stdout, (
             f"expected 'version:' header line; got {result.stdout!r}"
         )
-        assert "1.0.0" in result.stdout, (
-            f"expected '1.0.0' version stamp; got {result.stdout!r}"
-        )
+        assert "1.0.0" in result.stdout, f"expected '1.0.0' version stamp; got {result.stdout!r}"
         assert "variables:" in result.stdout, (
             f"expected 'variables:' header line; got {result.stdout!r}"
         )
@@ -950,8 +948,7 @@ class TestPromptsShow:
             f"stdout={result.stdout!r} stderr={result.stderr!r}"
         )
         assert "<test_command>" in result.stdout, (
-            f"expected '<test_command>' sentinel in stdout for missing var; "
-            f"got {result.stdout!r}"
+            f"expected '<test_command>' sentinel in stdout for missing var; got {result.stdout!r}"
         )
 
     def test_show_unknown_id_exits_five(self) -> None:
@@ -974,9 +971,7 @@ class TestPromptsShow:
         assert loaded["prompt_id"] == "no_such_prompt_xyz", (
             f"expected prompt_id in error payload; got {loaded!r}"
         )
-        assert "hint" in loaded, (
-            f"expected 'hint' key for remediation; got {loaded!r}"
-        )
+        assert "hint" in loaded, f"expected 'hint' key for remediation; got {loaded!r}"
 
     def test_show_var_repeatable_last_write_wins(self) -> None:
         """`flow prompts show --var KEY=VALUE --var KEY=OTHER` last-write-wins.
@@ -988,14 +983,17 @@ class TestPromptsShow:
         result = runner.invoke(
             main,
             [
-                "prompts", "show", "strict_tdd",
-                "--var", "test_command=first",
-                "--var", "test_command=second",
+                "prompts",
+                "show",
+                "strict_tdd",
+                "--var",
+                "test_command=first",
+                "--var",
+                "test_command=second",
             ],
         )
         assert result.exit_code == 0, (
-            f"expected exit 0; got {result.exit_code}. "
-            f"stdout={result.stdout!r}"
+            f"expected exit 0; got {result.exit_code}. stdout={result.stdout!r}"
         )
         assert "second" in result.stdout, (
             f"expected 'second' (last-write-wins) in stdout; got {result.stdout!r}"
@@ -1021,8 +1019,7 @@ class TestPromptsShow:
             ["prompts", "show", "strict_tdd", "--var", "test_command=pytest"],
         )
         assert result.exit_code == 0, (
-            f"expected exit 0; got {result.exit_code}. "
-            f"stdout={result.stdout!r}"
+            f"expected exit 0; got {result.exit_code}. stdout={result.stdout!r}"
         )
         assert "autoescape" in result.stdout, (
             f"expected 'autoescape' marker in footer; got {result.stdout!r}"

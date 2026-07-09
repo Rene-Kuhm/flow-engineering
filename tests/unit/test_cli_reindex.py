@@ -81,13 +81,9 @@ def _seed(backend: InMemoryBackend, n: int) -> None:
         backend.next_id = max(backend.next_id, i + 1)
 
 
-def _patch_default_backend(
-    monkeypatch: pytest.MonkeyPatch, backend: InMemoryBackend
-) -> None:
+def _patch_default_backend(monkeypatch: pytest.MonkeyPatch, backend: InMemoryBackend) -> None:
     """Patch ``_default_save_backend`` to return the test backend unchanged."""
-    monkeypatch.setattr(
-        "flow_engineering.cli._default_save_backend", lambda: backend
-    )
+    monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
 
 
 def _patch_sqlite_vec_available(monkeypatch: pytest.MonkeyPatch, available: bool) -> None:
