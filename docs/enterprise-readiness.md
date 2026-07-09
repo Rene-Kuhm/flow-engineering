@@ -61,7 +61,7 @@ Goal: every change should be understandable, reversible, and auditable.
 
 - [ ] Add a project Definition of Done.
 - [x] Add session start/close checklist. See `docs/session-checklist.md`.
-- [ ] Add release checklist.
+- [x] Add release checklist. See `docs/release-recovery.md`.
 - [ ] Add changelog or release notes process.
 - [ ] Use ADRs for durable architecture decisions.
 - [ ] Keep SDD/OpenSpec active only when it guides real current work.
@@ -99,11 +99,11 @@ Goal: AI should remember useful context and forget stale noise.
 
 Goal: the project should be restorable on another machine.
 
-- [ ] Document how to rebuild the runner service.
-- [ ] Back up critical Codex/OpenCode/Engram configuration.
-- [ ] Document disaster recovery steps.
+- [x] Document how to rebuild the runner service. See `docs/release-recovery.md`.
+- [x] Document what critical Codex/OpenCode/Engram configuration must be preserved. See `docs/release-recovery.md`.
+- [x] Document disaster recovery steps. See `docs/release-recovery.md`.
 - [ ] Tag stable releases.
-- [ ] Define rollback strategy for shipped changes.
+- [x] Define rollback strategy for shipped changes. See `docs/release-recovery.md`.
 
 ## Definition of Done
 
