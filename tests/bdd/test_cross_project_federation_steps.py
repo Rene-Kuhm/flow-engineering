@@ -24,6 +24,7 @@ Test isolation:
   ``observability.read_all`` after invoking the CLI; scenario 4 inspects
   the catalog constant directly.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -241,9 +242,7 @@ def seed_three_projects(federated_world):
     federated_world["backend"] = backend
 
 
-@given(
-    "an InMemoryBackend seeded with 5 observations in flow-engineering and 3 in mockup-2-blog"
-)
+@given("an InMemoryBackend seeded with 5 observations in flow-engineering and 3 in mockup-2-blog")
 def seed_five_three_across_two_projects(federated_world):
     backend = InMemoryBackend()
     for i in range(5):
@@ -265,9 +264,7 @@ def seed_five_three_across_two_projects(federated_world):
     federated_world["backend"] = backend
 
 
-@given(
-    "an InMemoryBackend with observations on 2026-05-15 and 2026-06-15 in flow-engineering"
-)
+@given("an InMemoryBackend with observations on 2026-05-15 and 2026-06-15 in flow-engineering")
 def seed_two_obs_on_different_dates(federated_world):
     backend = InMemoryBackend()
     older = backend.mem_save(
@@ -397,9 +394,7 @@ def n_results_returned(federated_world, n: int):
         f"{federated_world['raised']}"
     )
     results = federated_world["results"]
-    assert len(results) == n, (
-        f"Expected {n} results, got {len(results)}: {results!r}"
-    )
+    assert len(results) == n, f"Expected {n} results, got {len(results)}: {results!r}"
 
 
 @then("each result has a non-null project field matching one of the queried projects")
@@ -410,12 +405,8 @@ def each_result_has_queried_project(federated_world):
         "tecnodespegue-landing",
     }
     for r in federated_world["results"]:
-        assert r.get("project") is not None, (
-            f"Missing project field in row: {r!r}"
-        )
-        assert r["project"] in allowed, (
-            f"Unexpected project {r['project']!r} in row: {r!r}"
-        )
+        assert r.get("project") is not None, f"Missing project field in row: {r!r}"
+        assert r["project"] in allowed, f"Unexpected project {r['project']!r} in row: {r!r}"
 
 
 @then(parsers.parse('every result has project == "{expected}"'))
@@ -524,14 +515,13 @@ def seed_one_tagged(cli_world: dict[str, Any], project: str) -> None:
     _seed_tagged(cli_world["backend"], project=project)
 
 
-@given(
-    parsers.parse(
-        'a project-aliases config mapping "{old_key} -> {new_key}"'
-    )
-)
+@given(parsers.parse('a project-aliases config mapping "{old_key} -> {new_key}"'))
 def seed_alias_config(
-    cli_world: dict[str, Any], tmp_path, monkeypatch: pytest.MonkeyPatch,
-    old_key: str, new_key: str,
+    cli_world: dict[str, Any],
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    old_key: str,
+    new_key: str,
 ) -> None:
     """Seed ``~/.config/flow-engineering/project-aliases.json`` for the scenario."""
     from flow_engineering import project_aliases as _aliases
@@ -560,9 +550,7 @@ def _run_backfill(cli_world: dict[str, Any], cli_args: list[str]) -> None:
     result = runner.invoke(main, ["projects", "backfill", *cli_args])
     cli_world["exit_code"] = result.exit_code
     cli_world["output"] = result.output
-    cli_world["stdout"] = (
-        result.output if result.stdout is None else f"{result.stdout}"
-    )
+    cli_world["stdout"] = result.output if result.stdout is None else f"{result.stdout}"
     # If the CLI streams to stderr, the combined ``output`` still has it;
     # pytest's CliRunner joins them. We try to parse JSON from stdout first.
     if result.stdout:
@@ -615,8 +603,7 @@ def then_exit_code_zero(cli_world: dict[str, Any]) -> None:
 @then("the alias exit code is 0")
 def then_alias_exit_code_zero(alias_world: dict[str, Any]) -> None:
     assert alias_world["exit_code"] == 0, (
-        f"Expected alias exit 0, got {alias_world['exit_code']}; "
-        f"output={alias_world['output']!r}"
+        f"Expected alias exit 0, got {alias_world['exit_code']}; output={alias_world['output']!r}"
     )
 
 
@@ -638,20 +625,14 @@ def then_exit_code_nonzero(cli_world: dict[str, Any]) -> None:
 @then("the observation is still untagged")
 def then_observation_still_untagged(cli_world: dict[str, Any]) -> None:
     backend = cli_world["backend"]
-    untagged = [
-        obs for obs in backend.observations.values() if obs.get("project") in (None, "")
-    ]
-    assert untagged, (
-        f"Expected at least one untagged observation; backend={backend.observations!r}"
-    )
+    untagged = [obs for obs in backend.observations.values() if obs.get("project") in (None, "")]
+    assert untagged, f"Expected at least one untagged observation; backend={backend.observations!r}"
 
 
 @then(parsers.parse('the observation is tagged with "{project}"'))
 def then_observation_tagged_with(cli_world: dict[str, Any], project: str) -> None:
     backend = cli_world["backend"]
-    tagged = [
-        obs for obs in backend.observations.values() if obs.get("project") == project
-    ]
+    tagged = [obs for obs in backend.observations.values() if obs.get("project") == project]
     assert tagged, (
         f"Expected at least one observation tagged {project!r}; "
         f"observations={[(o['id'], o.get('project')) for o in backend.observations.values()]!r}"
@@ -678,7 +659,9 @@ def then_json_mentions_obs_id(cli_world: dict[str, Any]) -> None:
         ids = [int(item.get("observation_id")) for item in parsed if isinstance(item, dict)]
     else:
         changes = parsed.get("changes") if isinstance(parsed, dict) else None
-        ids = [int(item.get("observation_id")) for item in (changes or []) if isinstance(item, dict)]
+        ids = [
+            int(item.get("observation_id")) for item in (changes or []) if isinstance(item, dict)
+        ]
     assert ids, f"Expected at least one observation_id in JSON report, got {parsed!r}"
 
 
@@ -812,18 +795,13 @@ def run_search_cli(cli_world: dict[str, Any], args: str) -> None:
 # ---------- Then steps (REQ-25) ----------
 
 
-
-
-
 @then(parsers.parse("the JSON has results from {n:d} distinct projects"))
 def then_json_has_n_distinct_projects(cli_world: dict[str, Any], n: int) -> None:
     payload = cli_world["payload"]
     assert payload is not None, f"Expected JSON payload; stdout={cli_world['stdout']!r}"
     results = payload.get("results", [])
     projects = {r.get("project") for r in results}
-    assert len(projects) == n, (
-        f"Expected {n} distinct projects, got {len(projects)} ({projects!r})"
-    )
+    assert len(projects) == n, f"Expected {n} distinct projects, got {len(projects)} ({projects!r})"
 
 
 @then(parsers.parse('every result has project "{a}" or "{b}"'))
@@ -930,9 +908,7 @@ def catalog_world() -> dict[str, Any]:
 
 
 @pytest.fixture
-def metrics_path(
-    tmp_path, monkeypatch: pytest.MonkeyPatch, cli_world: dict[str, Any]
-) -> Path:
+def metrics_path(tmp_path, monkeypatch: pytest.MonkeyPatch, cli_world: dict[str, Any]) -> Path:
     """Point ``FLOW_METRICS_PATH`` at a tmp JSONL file so tests do not pollute ~/.flow."""
     path = tmp_path / "metrics.jsonl"
     monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
@@ -972,11 +948,16 @@ def _read_metrics_events(metrics_path: Path) -> list[dict[str, Any]]:
     return out
 
 
-@then(parsers.parse("the metrics file contains a federated_search_invoked_total event with trigger={trigger}"))
+@then(
+    parsers.parse(
+        "the metrics file contains a federated_search_invoked_total event with trigger={trigger}"
+    )
+)
 def then_invoked_event_with_trigger(cli_world: dict[str, Any], trigger: str) -> None:
     events = _read_metrics_events(cli_world["metrics_path"])
     matches = [
-        e for e in events
+        e
+        for e in events
         if e.get("name") == "federated_search_invoked_total"
         and e.get("fields", {}).get("trigger") == trigger
     ]
@@ -997,17 +978,21 @@ def then_invoked_count_is(cli_world: dict[str, Any], n: int) -> None:
     assert total == n, f"Expected invoked total {n}, got {total}; events={events!r}"
 
 
-@then(parsers.parse("the metrics file contains a federated_search_projects_queried event with count={n:d}"))
+@then(
+    parsers.parse(
+        "the metrics file contains a federated_search_projects_queried event with count={n:d}"
+    )
+)
 def then_projects_queried_event_count(cli_world: dict[str, Any], n: int) -> None:
     events = _read_metrics_events(cli_world["metrics_path"])
     matches = [
-        e for e in events
+        e
+        for e in events
         if e.get("name") == "federated_search_projects_queried"
         and int(e.get("fields", {}).get("count", 0)) == n
     ]
     assert matches, (
-        f"Expected federated_search_projects_queried event with count={n}; "
-        f"got events={events!r}"
+        f"Expected federated_search_projects_queried event with count={n}; got events={events!r}"
     )
 
 
@@ -1031,15 +1016,11 @@ def then_catalog_length_is_three(catalog_world: dict[str, Any]) -> None:
 
 
 @then(parsers.parse('the catalog names are "{a}", "{b}", "{c}"'))
-def then_catalog_names_are(
-    catalog_world: dict[str, Any], a: str, b: str, c: str
-) -> None:
+def then_catalog_names_are(catalog_world: dict[str, Any], a: str, b: str, c: str) -> None:
     observability = catalog_world["observability"]
     names = observability.FEDERATED_COUNTER_NAMES
     expected = [a, b, c]
-    assert sorted(names) == sorted(expected), (
-        f"Expected catalog names {expected}, got {names!r}"
-    )
+    assert sorted(names) == sorted(expected), f"Expected catalog names {expected}, got {names!r}"
 
 
 # ---------- REQ-27 scenario bindings ----------
@@ -1089,9 +1070,7 @@ def test_req27_alias_malformed_fails_fast(alias_world):
 
 
 @pytest.fixture
-def alias_world(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def alias_world(tmp_path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for REQ-27 scenarios.
 
     Points ``project_aliases.DEFAULT_ALIASES_PATH`` at a tmp JSONL file so
@@ -1128,24 +1107,18 @@ def given_malformed_config(alias_world: dict[str, Any]) -> None:
 
 
 @when(parsers.parse('I append the alias "{old_key} -> {new_key}"'))
-def when_run_alias_cli(
-    alias_world: dict[str, Any], old_key: str, new_key: str
-) -> None:
+def when_run_alias_cli(alias_world: dict[str, Any], old_key: str, new_key: str) -> None:
     from flow_engineering.cli import main
 
     runner_local = CliRunner()
-    result = runner_local.invoke(
-        main, ["projects", "alias", old_key, new_key]
-    )
+    result = runner_local.invoke(main, ["projects", "alias", old_key, new_key])
     alias_world["exit_code"] = result.exit_code
     alias_world["output"] = result.output or ""
     # In Click 8 the default is ``mix_stderr=True`` so stderr shows up in
     # ``result.output``. We still pull ``result.stdout`` for assertions on
     # the alias confirmation message.
     alias_world["stdout"] = (result.stdout or "") if result.stdout is not None else ""
-    alias_world["stderr"] = (
-        result.stderr if result.stderr is not None else alias_world["output"]
-    )
+    alias_world["stderr"] = result.stderr if result.stderr is not None else alias_world["output"]
 
 
 @then("the project-aliases config contains 1 record")
@@ -1153,31 +1126,23 @@ def then_aliases_config_has_one(alias_world: dict[str, Any]) -> None:
     path = alias_world["path"]
     assert path.exists(), f"Expected config file at {path}; got nothing"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert len(payload["aliases"]) == 1, (
-        f"Expected 1 alias record, got {payload!r}"
-    )
+    assert len(payload["aliases"]) == 1, f"Expected 1 alias record, got {payload!r}"
 
 
 @then(parsers.parse('the project-aliases config record maps "{old_key}" to "{new_key}"'))
-def then_aliases_record_maps(
-    alias_world: dict[str, Any], old_key: str, new_key: str
-) -> None:
+def then_aliases_record_maps(alias_world: dict[str, Any], old_key: str, new_key: str) -> None:
     path = alias_world["path"]
     payload = json.loads(path.read_text(encoding="utf-8"))
     records = payload.get("aliases", [])
     matches = [r for r in records if r.get("old") == old_key and r.get("new") == new_key]
-    assert matches, (
-        f"Expected alias record {old_key} -> {new_key}; got records={records!r}"
-    )
+    assert matches, f"Expected alias record {old_key} -> {new_key}; got records={records!r}"
 
 
 @then(parsers.parse('stdout contains "{needle}"'))
 def then_stdout_contains(alias_world: dict[str, Any], needle: str) -> None:
     """Generic stdout-contains assertion (used by REQ-27 alias CLI checks)."""
     stdout = alias_world.get("stdout") or ""
-    assert needle in stdout, (
-        f"Expected {needle!r} in stdout; got {stdout!r}"
-    )
+    assert needle in stdout, f"Expected {needle!r} in stdout; got {stdout!r}"
 
 
 @then("the output mentions the project-aliases file path")

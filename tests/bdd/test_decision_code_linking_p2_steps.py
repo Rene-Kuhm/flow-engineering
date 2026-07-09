@@ -53,12 +53,17 @@ def world(tmp_path: Path) -> dict[str, Any]:
 # ---------- Scenario bindings ----------
 
 
-@scenario("../bdd/req6_auto_suggest.feature", "Auto-suggest surfaces chosen candidates after user confirmation")
+@scenario(
+    "../bdd/req6_auto_suggest.feature",
+    "Auto-suggest surfaces chosen candidates after user confirmation",
+)
 def test_auto_suggest_user_confirms(world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req6_auto_suggest.feature", "Threshold filter keeps only candidates at or above 0.3")
+@scenario(
+    "../bdd/req6_auto_suggest.feature", "Threshold filter keeps only candidates at or above 0.3"
+)
 def test_auto_suggest_threshold_filter(world):  # noqa: F811
     pass
 
@@ -118,10 +123,10 @@ def graphify_two_candidates(world, a: str, b: str, monkeypatch: pytest.MonkeyPat
     _patch_query_nodes(monkeypatch, world)
 
 
-@given(parsers.parse(
-    "graphify returns three candidates with confidence {a}, {b}, and {c}"
-))
-def graphify_three_candidates(world, a: str, b: str, c: str, monkeypatch: pytest.MonkeyPatch) -> None:
+@given(parsers.parse("graphify returns three candidates with confidence {a}, {b}, and {c}"))
+def graphify_three_candidates(
+    world, a: str, b: str, c: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     a_f, b_f, c_f = float(a), float(b), float(c)
     world["candidates"] = [
         CodeRef(
@@ -221,9 +226,9 @@ def save_phase_with_suggest_and_tty(world, phase: str) -> None:
     world["saved_content"] = world["saved_obs"]["content"]
 
 
-@when(parsers.parse(
-    'save_phase is called for "{phase}" with with_suggest and threshold {threshold}'
-))
+@when(
+    parsers.parse('save_phase is called for "{phase}" with with_suggest and threshold {threshold}')
+)
 def save_phase_with_threshold(world, phase: str, threshold: str) -> None:
     world["phase"] = phase
     world["threshold"] = float(threshold)
@@ -253,9 +258,7 @@ def save_phase_with_suggest(world, phase: str) -> None:
 def save_phase_with_is_tty(world, phase: str) -> None:
     world["phase"] = phase
     prompt = world.get("prompt_returns")
-    prompt_fn = (
-        (lambda refs: list(prompt)) if prompt is not None else None
-    )
+    prompt_fn = (lambda refs: list(prompt)) if prompt is not None else None
     world["client"].save_phase(
         phase,
         world["content"] or "## Decision\n\nUse JWT.\n",
@@ -339,9 +342,7 @@ def counter_incremented(world, counter: str, n: int) -> None:
     events = observability.read_all()
     matches = [e for e in events if e["name"] == counter]
     assert matches, f"no events for counter {counter}"
-    assert len(matches) == n, (
-        f"counter {counter} had {len(matches)} events, expected {n}"
-    )
+    assert len(matches) == n, f"counter {counter} had {len(matches)} events, expected {n}"
 
 
 @then(parsers.parse("the {counter} counter recorded {n:d} confirmed bindings"))
@@ -406,7 +407,9 @@ def test_inspect_freshness_recent(inspect_world):  # noqa: F811
     pass
 
 
-@scenario("../bdd/req7_inspect.feature", "Freshness column shows stale warning when older than 30 days")
+@scenario(
+    "../bdd/req7_inspect.feature", "Freshness column shows stale warning when older than 30 days"
+)
 def test_inspect_freshness_stale(inspect_world):  # noqa: F811
     pass
 
@@ -435,8 +438,15 @@ def seed_two_bindings(inspect_world, monkeypatch: pytest.MonkeyPatch) -> None:
 
     backend = InMemoryBackend()
     refs = [
-        CodeRef(project="insyd", id=f"node_{i}", label=f"L{i}",
-                file=f"src/{i}.py", line=i, confidence=0.9, source="manual")
+        CodeRef(
+            project="insyd",
+            id=f"node_{i}",
+            label=f"L{i}",
+            file=f"src/{i}.py",
+            line=i,
+            confidence=0.9,
+            source="manual",
+        )
         for i in range(2)
     ]
     content = "## D\n\nMulti.\n" + format_code_refs_block(refs, source="manual")
@@ -449,7 +459,7 @@ def seed_two_bindings(inspect_world, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
 
 
-@given("an in-memory Engram backend with one decision carrying source \"unbound\"")
+@given('an in-memory Engram backend with one decision carrying source "unbound"')
 def seed_unbound(inspect_world, monkeypatch: pytest.MonkeyPatch) -> None:
     backend = InMemoryBackend()
     content = "## D\n\nNo refs.\n" + format_code_refs_block([], source="unbound")
@@ -467,8 +477,15 @@ def seed_recent(inspect_world, monkeypatch: pytest.MonkeyPatch) -> None:
     from flow_engineering.binding import CodeRef
 
     backend = InMemoryBackend()
-    cref = CodeRef(project="insyd", id="node_recent", label="R",
-                   file="src/r.py", line=1, confidence=0.9, source="manual")
+    cref = CodeRef(
+        project="insyd",
+        id="node_recent",
+        label="R",
+        file="src/r.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
+    )
     content = "## D\n\nR.\n" + format_code_refs_block([cref], source="manual")
     now_ms = int(_time.time() * 1000)
     obs = backend.mem_save(
@@ -487,8 +504,15 @@ def seed_stale(inspect_world, monkeypatch: pytest.MonkeyPatch) -> None:
     from flow_engineering.binding import CodeRef
 
     backend = InMemoryBackend()
-    cref = CodeRef(project="insyd", id="node_old", label="O",
-                   file="src/o.py", line=1, confidence=0.9, source="manual")
+    cref = CodeRef(
+        project="insyd",
+        id="node_old",
+        label="O",
+        file="src/o.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
+    )
     content = "## D\n\nO.\n" + format_code_refs_block([cref], source="manual")
     sixty_days_ms = 60 * 24 * 60 * 60 * 1000
     obs = backend.mem_save(
@@ -526,8 +550,15 @@ def seed_one_binding(inspect_world, monkeypatch: pytest.MonkeyPatch) -> None:
     from flow_engineering.binding import CodeRef
 
     backend = InMemoryBackend()
-    cref = CodeRef(project="insyd", id="node_y", label="Y",
-                   file="src/y.py", line=5, confidence=0.8, source="manual")
+    cref = CodeRef(
+        project="insyd",
+        id="node_y",
+        label="Y",
+        file="src/y.py",
+        line=5,
+        confidence=0.8,
+        source="manual",
+    )
     content = "## D\n\nY.\n" + format_code_refs_block([cref], source="manual")
     backend.mem_save(
         title="my-change/propose",
@@ -701,7 +732,7 @@ def test_obs_inspect_render_ms(obs_world):  # noqa: F811
 # ---------- REQ-8 Given steps ----------
 
 
-@given("an in-memory Engram backend with one observation carrying source \"manual\"")
+@given('an in-memory Engram backend with one observation carrying source "manual"')
 def seed_one_manual(obs_world) -> None:
     backend = InMemoryBackend()
     content = "## D\n\nM.\n" + format_code_refs_block([], source="manual")
@@ -713,9 +744,7 @@ def seed_one_manual(obs_world) -> None:
     obs_world["backend"] = backend
 
 
-@given(
-    "an in-memory Engram backend with 46 backfill observations and 57 manual observations"
-)
+@given("an in-memory Engram backend with 46 backfill observations and 57 manual observations")
 def seed_46_57(obs_world) -> None:
     backend = InMemoryBackend()
     for i in range(46):
@@ -733,9 +762,7 @@ def seed_46_57(obs_world) -> None:
     obs_world["backend"] = backend
 
 
-@given(
-    "an in-memory Engram backend with 3 backfill observations and 0 other observations"
-)
+@given("an in-memory Engram backend with 3 backfill observations and 0 other observations")
 def seed_3_backfill(obs_world) -> None:
     backend = InMemoryBackend()
     for i in range(3):
@@ -757,8 +784,15 @@ def seed_obs_one(obs_world, monkeypatch: pytest.MonkeyPatch) -> None:
     from flow_engineering.binding import CodeRef
 
     backend = InMemoryBackend()
-    cref = CodeRef(project="insyd", id="node_one", label="O",
-                   file="src/o.py", line=1, confidence=0.9, source="manual")
+    cref = CodeRef(
+        project="insyd",
+        id="node_one",
+        label="O",
+        file="src/o.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
+    )
     content = "## D\n\nO.\n" + format_code_refs_block([cref], source="manual")
     backend.mem_save(
         title="my-change/propose",
@@ -783,9 +817,7 @@ def compute_coverage(obs_world) -> None:
     )
 )
 def call_record_coverage(obs_world, total: int, refs: int) -> None:
-    observability.record_backfill_coverage(
-        observations_total=total, with_refs=refs
-    )
+    observability.record_backfill_coverage(observations_total=total, with_refs=refs)
 
 
 @when(parsers.parse('the flow inspect command runs for change "{change}" once'))
@@ -809,11 +841,7 @@ def counter_was_incremented(obs_world, counter: str) -> None:
     assert matches, f"no events for counter {counter}"
 
 
-@then(
-    parsers.parse(
-        "the {counter} counter was incremented with count={count:d}"
-    )
-)
+@then(parsers.parse("the {counter} counter was incremented with count={count:d}"))
 def counter_was_incremented_with_count(obs_world, counter: str, count: int) -> None:
     events = observability.read_all()
     matches = [e for e in events if e["name"] == counter]
