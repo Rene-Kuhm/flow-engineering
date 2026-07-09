@@ -29,18 +29,9 @@ VALID_BLOCK = (
     '"file":"x.py","line":1,"confidence":0.9,"source":"manual"}],'
     ' "source": "manual"}\n'
 )
-EMPTY_BLOCK = (
-    f"{CODE_REFS_MARKER}\n"
-    '{"schema": 1, "nodes": [], "source": "unbound"}\n'
-)
-MALFORMED_BLOCK = (
-    f"{CODE_REFS_MARKER}\n"
-    "{not json}\n"
-)
-SCHEMA_MISMATCH_BLOCK = (
-    f"{CODE_REFS_MARKER}\n"
-    '{"schema": 99, "nodes": []}\n'
-)
+EMPTY_BLOCK = f'{CODE_REFS_MARKER}\n{{"schema": 1, "nodes": [], "source": "unbound"}}\n'
+MALFORMED_BLOCK = f"{CODE_REFS_MARKER}\n{{not json}}\n"
+SCHEMA_MISMATCH_BLOCK = f'{CODE_REFS_MARKER}\n{{"schema": 99, "nodes": []}}\n'
 
 
 def _ref(node_id: str, confidence: float) -> object:
@@ -94,6 +85,7 @@ class TestSavePhaseHook:
         backend = InMemoryBackend()
         client = EngramClient("my-change", backend)
         from flow_engineering.binding import ParseError
+
         with pytest.raises(ParseError):
             client.save_phase("propose", PROSE_ONLY + MALFORMED_BLOCK)
         assert len(backend.observations) == 0
@@ -102,6 +94,7 @@ class TestSavePhaseHook:
         backend = InMemoryBackend()
         client = EngramClient("my-change", backend)
         from flow_engineering.binding import ParseError
+
         with pytest.raises(ParseError):
             client.save_phase("propose", PROSE_ONLY + SCHEMA_MISMATCH_BLOCK)
         assert len(backend.observations) == 0
@@ -172,9 +165,7 @@ class TestSavePhaseAutoSuggest:
         assert "suggest_invoked_total" in names
         assert "suggest_hit_total" in names
 
-    def test_save_phase_skips_auto_suggest_when_explicit_marker(
-        self, monkeypatch, metrics_path
-    ):
+    def test_save_phase_skips_auto_suggest_when_explicit_marker(self, monkeypatch, metrics_path):
         def should_not_be_called(text, **kw):
             raise AssertionError("auto_suggest must NOT run when explicit marker")
 
@@ -232,6 +223,7 @@ class TestSavePhaseAutoSuggest:
 
     def test_save_phase_no_suggest_writes_manual_source_block(self, monkeypatch, metrics_path):
         """When --no-suggest is passed, the saved block source is 'manual'."""
+
         def should_not_be_called(text, **kw):
             raise AssertionError("graphify must NOT be called when no_suggest=True")
 
@@ -276,9 +268,7 @@ class TestUpdateObservationMetadata:
         client.save_phase("propose", PROSE_ONLY + VALID_BLOCK)
         obs_id = next(iter(backend.observations))
 
-        client.update_observation_metadata(
-            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
-        )
+        client.update_observation_metadata(obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"})
 
         saved = backend.observations[obs_id]["content"]
         assert METADATA_MARKER in saved
@@ -295,9 +285,7 @@ class TestUpdateObservationMetadata:
         client.save_phase("propose", PROSE_ONLY + VALID_BLOCK)
         obs_id = next(iter(backend.observations))
 
-        client.update_observation_metadata(
-            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
-        )
+        client.update_observation_metadata(obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"})
 
         saved = backend.observations[obs_id]["content"]
         marker_idx = saved.rfind(CODE_REFS_MARKER)
@@ -345,9 +333,7 @@ class TestUpdateObservationMetadata:
 
         monkeypatch.setattr(backend, "mem_get_observation", boom)
 
-        client.update_observation_metadata(
-            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
-        )
+        client.update_observation_metadata(obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"})
 
         events = observability.read_all()
         names = [e["name"] for e in events]
@@ -370,9 +356,7 @@ class TestUpdateObservationMetadata:
 
         backend.update_observation = counting_update
 
-        client.update_observation_metadata(
-            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
-        )
+        client.update_observation_metadata(obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"})
 
         assert call_count["n"] == 1, (
             f"expected exactly 1 update_observation call, got {call_count['n']}"
@@ -386,10 +370,7 @@ class TestUpdateObservationMetadata:
         """
         backend = InMemoryBackend()
         client = EngramClient("my-change", backend)
-        corrupt_meta = (
-            f"{METADATA_MARKER}\n"
-            "{not valid json whatsoever}\n"
-        )
+        corrupt_meta = f"{METADATA_MARKER}\n{{not valid json whatsoever}}\n"
         obs = backend.mem_save(
             title="seed",
             content=PROSE_ONLY + VALID_BLOCK + corrupt_meta,
@@ -397,14 +378,10 @@ class TestUpdateObservationMetadata:
         )
         obs_id = obs["id"]
 
-        client.update_observation_metadata(
-            obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"}
-        )
+        client.update_observation_metadata(obs_id, {"last_verified_at": "2026-06-25T22:30:00Z"})
 
         saved = backend.observations[obs_id]["content"]
-        assert "not valid json whatsoever" not in saved, (
-            "corrupt metadata body should be replaced"
-        )
+        assert "not valid json whatsoever" not in saved, "corrupt metadata body should be replaced"
         assert '"last_verified_at"' in saved
         assert '"2026-06-25T22:30:00Z"' in saved
         assert saved.count(METADATA_MARKER) == 1

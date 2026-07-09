@@ -18,6 +18,7 @@ Strict TDD: tests written BEFORE the generator script. They MUST fail
 with ImportError (script module not found) until the GREEN commit
 creates scripts/generate_prompts_doc.py.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -32,9 +33,7 @@ DOC_PATH = REPO_ROOT / "docs" / "prompts.md"
 
 def _load_script_module():
     """Load scripts/generate_prompts_doc.py as a module (no pip install)."""
-    spec = importlib.util.spec_from_file_location(
-        "generate_prompts_doc", SCRIPT_PATH
-    )
+    spec = importlib.util.spec_from_file_location("generate_prompts_doc", SCRIPT_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load spec for {SCRIPT_PATH}")
     module = importlib.util.module_from_spec(spec)
@@ -46,9 +45,7 @@ class TestScriptExists:
     """The generator script exists at scripts/generate_prompts_doc.py."""
 
     def test_script_path_exists(self) -> None:
-        assert SCRIPT_PATH.is_file(), (
-            f"generator script missing at {SCRIPT_PATH}"
-        )
+        assert SCRIPT_PATH.is_file(), f"generator script missing at {SCRIPT_PATH}"
 
 
 class TestBuildSectionContract:
@@ -116,9 +113,7 @@ class TestBuildDocContract:
 
         body = mod.build_doc()
         for prompt in PROMPT_NAMES:
-            assert f"## `{prompt.name}`" in body, (
-                f"missing section for prompt {prompt.name!r}"
-            )
+            assert f"## `{prompt.name}`" in body, f"missing section for prompt {prompt.name!r}"
 
     def test_build_doc_includes_template_body(self) -> None:
         mod = _load_script_module()
@@ -154,9 +149,7 @@ class TestMainEndToEnd:
             "auto_suggest_footer",
             "auto_suggest_empty",
         ):
-            assert f"## `{prompt_id}`" in body, (
-                f"docs/prompts.md missing section for {prompt_id!r}"
-            )
+            assert f"## `{prompt_id}`" in body, f"docs/prompts.md missing section for {prompt_id!r}"
 
 
 class TestDocReproducibility:

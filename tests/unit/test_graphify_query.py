@@ -26,6 +26,7 @@ from flow_engineering.graphify_query import (
 
 # ---------- Fixtures ----------
 
+
 def _make_graph_json(tmp_path: Path, nodes: list[dict]) -> Path:
     """Write a minimal graph.json with the given nodes."""
     graph_path = tmp_path / "graph.json"
@@ -34,20 +35,51 @@ def _make_graph_json(tmp_path: Path, nodes: list[dict]) -> Path:
 
 
 NODES_5 = [
-    {"id": "src_auth_jwt_tokenmgr", "label": "TokenManager", "file_type": "code",
-     "source_file": "src/auth/jwt.py", "source_location": "L42", "community_name": "Token Service"},
-    {"id": "src_auth_oauth_oauthhandler", "label": "OAuthHandler", "file_type": "code",
-     "source_file": "src/auth/oauth.py", "source_location": "L10", "community_name": "Auth Providers"},
-    {"id": "src_db_sqlite_connector", "label": "SqliteConnector", "file_type": "code",
-     "source_file": "src/db/sqlite.py", "source_location": "L1", "community_name": "Database"},
-    {"id": "src_models_user", "label": "User", "file_type": "code",
-     "source_file": "src/models/user.py", "source_location": "L5", "community_name": "Models"},
-    {"id": "src_views_user_view", "label": "UserView", "file_type": "code",
-     "source_file": "src/views/user_view.py", "source_location": "L1", "community_name": "Views"},
+    {
+        "id": "src_auth_jwt_tokenmgr",
+        "label": "TokenManager",
+        "file_type": "code",
+        "source_file": "src/auth/jwt.py",
+        "source_location": "L42",
+        "community_name": "Token Service",
+    },
+    {
+        "id": "src_auth_oauth_oauthhandler",
+        "label": "OAuthHandler",
+        "file_type": "code",
+        "source_file": "src/auth/oauth.py",
+        "source_location": "L10",
+        "community_name": "Auth Providers",
+    },
+    {
+        "id": "src_db_sqlite_connector",
+        "label": "SqliteConnector",
+        "file_type": "code",
+        "source_file": "src/db/sqlite.py",
+        "source_location": "L1",
+        "community_name": "Database",
+    },
+    {
+        "id": "src_models_user",
+        "label": "User",
+        "file_type": "code",
+        "source_file": "src/models/user.py",
+        "source_location": "L5",
+        "community_name": "Models",
+    },
+    {
+        "id": "src_views_user_view",
+        "label": "UserView",
+        "file_type": "code",
+        "source_file": "src/views/user_view.py",
+        "source_location": "L1",
+        "community_name": "Views",
+    },
 ]
 
 
 # ---------- query_nodes tests ----------
+
 
 class TestQueryNodesFailOpen:
     """query_nodes MUST return [] on every error path — never raise."""
@@ -83,16 +115,27 @@ class TestQueryNodesCache:
     def test_cache_hit_avoids_subprocess(self, tmp_path):
         # Pre-seed the cache file with a known payload.
         cache_file = tmp_path / DEFAULT_CACHE_FILE
-        cache_file.write_text(json.dumps({
-            "key_abc": {
-                "refs": [
-                    {"project": "insyd", "id": "src_auth_jwt_tokenmgr",
-                     "label": "TokenManager", "file": "src/auth/jwt.py",
-                     "line": 42, "confidence": 0.8, "source": "auto_suggest"}
-                ],
-                "mtime": 0,
-            }
-        }), encoding="utf-8")
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "key_abc": {
+                        "refs": [
+                            {
+                                "project": "insyd",
+                                "id": "src_auth_jwt_tokenmgr",
+                                "label": "TokenManager",
+                                "file": "src/auth/jwt.py",
+                                "line": 42,
+                                "confidence": 0.8,
+                                "source": "auto_suggest",
+                            }
+                        ],
+                        "mtime": 0,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
 
         # Pretend the cache key derivation returns 'key_abc' for this input.
         with patch(
@@ -105,18 +148,30 @@ class TestQueryNodesCache:
 
     def test_cache_miss_calls_subprocess(self, tmp_path):
         # Empty cache; subprocess returns a successful payload.
-        cli_payload = json.dumps({
-            "nodes": [
-                {"project": "insyd", "id": "x", "label": "X", "file": "x.py",
-                 "line": 1, "confidence": 0.5, "source": "auto_suggest"}
-            ]
-        })
-        with patch(
-            "flow_engineering.graphify_query._run_graphify_cli",
-            return_value=(0, cli_payload, ""),
-        ), patch(
-            "flow_engineering.graphify_query._graph_json_mtime",
-            return_value=12345,
+        cli_payload = json.dumps(
+            {
+                "nodes": [
+                    {
+                        "project": "insyd",
+                        "id": "x",
+                        "label": "X",
+                        "file": "x.py",
+                        "line": 1,
+                        "confidence": 0.5,
+                        "source": "auto_suggest",
+                    }
+                ]
+            }
+        )
+        with (
+            patch(
+                "flow_engineering.graphify_query._run_graphify_cli",
+                return_value=(0, cli_payload, ""),
+            ),
+            patch(
+                "flow_engineering.graphify_query._graph_json_mtime",
+                return_value=12345,
+            ),
         ):
             result = query_nodes("jwt auth", cache_dir=tmp_path)
         assert len(result) == 1
@@ -124,6 +179,7 @@ class TestQueryNodesCache:
 
 
 # ---------- jaccard_fallback tests ----------
+
 
 class TestJaccardFallback:
     """jaccard_fallback scores nodes by token overlap with the query text."""
@@ -149,6 +205,7 @@ class TestJaccardFallback:
 
 
 # ---------- Default constants ----------
+
 
 class TestDefaults:
     def test_default_threshold_is_0_3(self):
