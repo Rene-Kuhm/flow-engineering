@@ -82,19 +82,19 @@ Goal: prevent regressions without testing everything blindly.
 Goal: system state should be easy to inspect in one minute.
 
 - [x] Keep the lightweight health command as the source of truth. See `docs/system-health.md`.
-- [ ] Add CI status, runner status, active specs, follow-ups, and memory hygiene to one dashboard view.
-- [ ] Avoid a large dashboard until the manual health workflow proves stable.
-- [ ] Add structured logs only where they answer real operational questions.
+- [x] Add CI status, runner status, active specs, follow-ups, and memory hygiene to one dashboard view. See `docs/system-health.md` and `scripts/system_health.ps1`.
+- [x] Avoid a large dashboard until the manual health workflow proves stable. The lightweight health command remains the source of truth.
+- [x] Add structured logs only where they answer real operational questions. Current decision: no extra logs until a concrete incident or operator question requires them.
 
 ## Priority 6 — AI and memory governance
 
 Goal: AI should remember useful context and forget stale noise.
 
-- [ ] Run memory maintenance on a regular cadence.
-- [ ] Separate active decisions from historical notes.
-- [ ] Promote only validated follow-ups into current work.
-- [ ] Mark stale SDD artifacts as historical instead of letting agents reopen them silently.
-- [ ] Save important user constraints and workflow conventions.
+- [x] Run memory maintenance on a regular cadence. See the monthly audit checklist in `docs/memory-maintenance.md`.
+- [x] Separate active decisions from historical notes. See `docs/follow-up-audit.md` and `docs/memory-maintenance.md`.
+- [x] Promote only validated follow-ups into current work. See `docs/follow-up-audit.md` promotion rules.
+- [x] Mark stale SDD artifacts as historical instead of letting agents reopen them silently. See `docs/memory-maintenance.md`.
+- [x] Save important user constraints and workflow conventions. Use Engram session summaries plus `docs/change-governance.md` for durable team rules.
 
 ## Priority 7 — release and recovery
 
