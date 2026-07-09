@@ -21,9 +21,9 @@ latest `main` tests run is not green or if the latest green run is older than
 the configured stale threshold.
 
 The current repository cannot use GitHub-hosted runners because the account
-billing gate prevents those jobs from starting. Until billing or an external
-monitor is available, runner-down detection remains manual through this health
-command.
+billing gate prevents those jobs from starting. Runner-down detection can run
+outside GitHub Actions through `scripts/runner_watchdog.ps1`; the manual health
+command remains the one-minute operator dashboard.
 
 ## Last verified status
 
@@ -58,10 +58,11 @@ The monitor checks:
 
 This workflow currently uses the self-hosted runner because GitHub-hosted jobs
 are blocked by account billing. That means it verifies CI freshness and runner
-reachability by successfully starting on the runner, but a fully out-of-band
-runner-down alert requires GitHub-hosted billing to be fixed or an external
-monitor. The default `GITHUB_TOKEN` cannot list repository runners through the
-runner API, so the monitor does not call that endpoint.
+reachability by successfully starting on the runner. A fully out-of-band
+runner-down alert can be handled outside GitHub Actions with
+`scripts/runner_watchdog.ps1`; see `docs/runner-watchdog.md`. The default
+`GITHUB_TOKEN` cannot list repository runners through the runner API, so the
+monitor does not call that endpoint.
 
 ## Manual runner health
 
