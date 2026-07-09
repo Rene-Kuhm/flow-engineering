@@ -21,6 +21,7 @@ Strict TDD: tests written BEFORE the implementation. They MUST fail
 with ``AssertionError`` (counter line not found in the sink) until the
 GREEN commit wires the counters + extends the prefix table.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,9 +33,7 @@ from flow_engineering.prompt_registry import render_prompt
 
 
 @pytest.fixture
-def metrics_sink(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def metrics_sink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect the metrics sink to a tmp file so the test never touches
     the real ``~/.flow-engineering/metrics.jsonl``."""
     sink_path = tmp_path / "metrics.jsonl"
@@ -44,9 +43,7 @@ def metrics_sink(
 
 
 @pytest.fixture
-def render_sink(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def render_sink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect the prompt render sink so render_prompt() doesn't touch disk."""
     sink_path = tmp_path / "prompt_renders.jsonl"
     from flow_engineering import prompt_render_log as log_mod
@@ -116,9 +113,7 @@ class TestRecordPromptRenderSummary:
         assert "prompts_render_failed_total" not in names
 
         # The total counter has status=ok.
-        ok_event = next(
-            e for e in events if e["name"] == "prompts_render_total"
-        )
+        ok_event = next(e for e in events if e["name"] == "prompts_render_total")
         assert ok_event["fields"].get("status") == "ok"
         assert ok_event["fields"].get("prompt_id") == "strict_tdd"
         assert ok_event["fields"].get("domain") == "binding"
@@ -145,15 +140,11 @@ class TestRecordPromptRenderSummary:
         assert "prompts_render_failed_total" in names
 
         # Total counter has status=fail.
-        total_event = next(
-            e for e in events if e["name"] == "prompts_render_total"
-        )
+        total_event = next(e for e in events if e["name"] == "prompts_render_total")
         assert total_event["fields"].get("status") == "fail"
 
         # Failure counter has the error label.
-        fail_event = next(
-            e for e in events if e["name"] == "prompts_render_failed_total"
-        )
+        fail_event = next(e for e in events if e["name"] == "prompts_render_failed_total")
         assert fail_event["fields"].get("error") == "missing_var"
         assert fail_event["fields"].get("prompt_id") == "x"
 
@@ -171,34 +162,24 @@ class TestRenderPromptEmitsCounters:
     ) -> None:
         render_prompt("strict_tdd", test_command="pytest")
         events = observability.read_all(path=metrics_sink)
-        ok_events = [
-            e for e in events if e["name"] == "prompts_render_total"
-        ]
+        ok_events = [e for e in events if e["name"] == "prompts_render_total"]
         assert len(ok_events) >= 1
         assert ok_events[-1]["fields"].get("status") == "ok"
 
-    def test_render_failure_emits_failed_total(
-        self, metrics_sink: Path, render_sink: Path
-    ) -> None:
+    def test_render_failure_emits_failed_total(self, metrics_sink: Path, render_sink: Path) -> None:
         with pytest.raises(Exception):  # noqa: B017, PT011
             render_prompt("definitely_not_in_catalog_zzz")
         events = observability.read_all(path=metrics_sink)
-        fail_events = [
-            e for e in events if e["name"] == "prompts_render_failed_total"
-        ]
+        fail_events = [e for e in events if e["name"] == "prompts_render_failed_total"]
         assert len(fail_events) >= 1
         assert fail_events[-1]["fields"].get("error") == "unknown"
 
-    def test_render_emits_real_domain_label(
-        self, metrics_sink: Path, render_sink: Path
-    ) -> None:
+    def test_render_emits_real_domain_label(self, metrics_sink: Path, render_sink: Path) -> None:
         """REQ-V1.1.4 REFACTOR: domain label surfaces the prompt's
         PromptDomain.value, not the 'unknown' fallback (T4.4)."""
         render_prompt("strict_tdd", test_command="pytest")
         events = observability.read_all(path=metrics_sink)
-        ok_events = [
-            e for e in events if e["name"] == "prompts_render_total"
-        ]
+        ok_events = [e for e in events if e["name"] == "prompts_render_total"]
         assert len(ok_events) >= 1
         # strict_tdd is registered under PromptDomain.OBSERVABILITY.
         assert ok_events[-1]["fields"].get("domain") == "observability"

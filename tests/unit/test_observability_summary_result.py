@@ -77,7 +77,9 @@ class TestReadAndSummarizeEmptyHandling:
     """
 
     def test_read_and_summarize_returns_empty_result_when_file_missing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         missing = tmp_path / "missing.jsonl"
         monkeypatch.setenv("FLOW_METRICS_PATH", str(missing))
@@ -91,7 +93,9 @@ class TestReadAndSummarizeEmptyHandling:
         assert result.source_path == missing
 
     def test_read_and_summarize_returns_empty_result_when_file_empty(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "empty.jsonl"
         path.write_text("", encoding="utf-8")
@@ -106,7 +110,9 @@ class TestReadAndSummarizeEmptyHandling:
         assert result.source_path == path
 
     def test_read_and_summarize_returns_all_malformed_when_lines_unparseable(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "garbage.jsonl"
         path.write_text("not json at all\nthis is also not json\n", encoding="utf-8")
@@ -128,19 +134,23 @@ class TestReadAndSummarizeFilterComposition:
     """read_and_summarize composes --window (cheap, in-memory) THEN --domain."""
 
     def test_read_and_summarize_applies_window_then_domain_filters(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "metrics.jsonl"
         now = datetime.now(UTC)
-        _write_jsonl(path, [
-            # In-window binding event (kept)
-            _event("suggest_invoked_total", {"count": 5}, _iso(now)),
-            # In-window drift event (kept)
-            _event("drift_invoked_total", {"count": 2}, _iso(now)),
-            # Out-of-window binding event (window filter excludes)
-            _event("suggest_invoked_total", {"count": 99},
-                   _iso(now - timedelta(days=10))),
-        ])
+        _write_jsonl(
+            path,
+            [
+                # In-window binding event (kept)
+                _event("suggest_invoked_total", {"count": 5}, _iso(now)),
+                # In-window drift event (kept)
+                _event("drift_invoked_total", {"count": 2}, _iso(now)),
+                # Out-of-window binding event (window filter excludes)
+                _event("suggest_invoked_total", {"count": 99}, _iso(now - timedelta(days=10))),
+            ],
+        )
         monkeypatch.setenv("FLOW_METRICS_PATH", str(path))
 
         # Filter chain: window=7d keeps all 3 events (the 10d-old one is excluded),
@@ -187,7 +197,9 @@ class TestMetricsSummaryCliExitCodes:
     """
 
     def test_metrics_summary_cli_exits_zero_on_missing_file_with_friendly_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         missing = tmp_path / "missing.jsonl"
         monkeypatch.setenv("FLOW_METRICS_PATH", str(missing))
@@ -198,7 +210,9 @@ class TestMetricsSummaryCliExitCodes:
         assert "No metrics recorded yet." in result.output
 
     def test_metrics_summary_cli_exits_3_on_malformed_metrics_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         path = tmp_path / "garbage.jsonl"
         path.write_text("definitely not json\nstill not json\n", encoding="utf-8")

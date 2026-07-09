@@ -38,7 +38,9 @@ def _read_events(path: Path) -> list[dict]:
 
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _make_obs(obs_id: int, *, content: str, created_at: int = 1000) -> dict:
@@ -78,9 +80,7 @@ class TestNewCounterNames:
         assert events[-1]["name"] == name
         assert events[-1]["fields"].get("payload") == 1
 
-    def test_inspect_render_ms_records_elapsed(
-        self, metrics_path: Path
-    ) -> None:
+    def test_inspect_render_ms_records_elapsed(self, metrics_path: Path) -> None:
         from flow_engineering import observability
 
         observability.increment("inspect_render_ms", elapsed_ms=12)

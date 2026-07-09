@@ -23,6 +23,7 @@ Integration with ``SnapshotManager.create`` / ``rollback`` / ``prune`` and with
 that exercise the snapshot lifecycle observe the counter batch fire on every
 operation.
 """
+
 from __future__ import annotations
 
 import json
@@ -111,9 +112,7 @@ class TestSnapshotCounterCatalog:
             "snapshot_rollback_total",
             "snapshot_prune_total",
             "snapshot_load_failed_total",
-        ), (
-            f"SNAPSHOT_COUNTER_NAMES order/content mismatch; got {names!r}"
-        )
+        ), f"SNAPSHOT_COUNTER_NAMES order/content mismatch; got {names!r}"
 
     def test_snapshot_counter_names_subject_event_total_pattern(self) -> None:
         # REQ-8: ``_total`` suffix required for counters (verb-style events).
@@ -129,9 +128,7 @@ class TestSnapshotCounterCatalog:
 class TestRecordSnapshotEvent:
     """``record_snapshot_event`` emits one JSONL event per call."""
 
-    def test_record_snapshot_event_appends_to_metrics_json(
-        self, metrics_path: Path
-    ) -> None:
+    def test_record_snapshot_event_appends_to_metrics_json(self, metrics_path: Path) -> None:
         observability.record_snapshot_event("snapshot_create_total")
         events = _read_metrics(metrics_path)
         assert len(events) == 1
@@ -154,9 +151,7 @@ class TestRecordSnapshotEvent:
         assert events[0]["fields"]["safety_snapshot_id"] == "snap_abc"
         assert events[0]["fields"]["target_snapshot_id"] == "snap_xyz"
 
-    def test_record_snapshot_event_unknown_name_still_emits(
-        self, metrics_path: Path
-    ) -> None:
+    def test_record_snapshot_event_unknown_name_still_emits(self, metrics_path: Path) -> None:
         # Helper is fail-open: unknown name is still emitted (no validation
         # gate). Production code paths always use the catalog, but the
         # helper MUST NOT raise when called with a custom name.
@@ -294,16 +289,12 @@ class TestSnapshotLoadFailedCounter:
         manager = SnapshotManager(snapshots_dir=snapshots_dir, backend=backend)
         snap_id = manager.create(description="no-graph", include_graph=False)
 
-        before = len(
-            _events_for(_read_metrics(metrics_path), "snapshot_load_failed_total")
-        )
+        before = len(_events_for(_read_metrics(metrics_path), "snapshot_load_failed_total"))
 
         with pytest.raises(SnapshotGraphMissing):
             scan_change("test-change", snap_id=snap_id)
 
-        after = len(
-            _events_for(_read_metrics(metrics_path), "snapshot_load_failed_total")
-        )
+        after = len(_events_for(_read_metrics(metrics_path), "snapshot_load_failed_total"))
         assert after - before == 1, (
             f"expected 1 snapshot_load_failed_total event; "
             f"got delta {after - before} (before={before}, after={after})"

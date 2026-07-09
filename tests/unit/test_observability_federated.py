@@ -103,9 +103,7 @@ class TestFederatedCounterNaming:
 class TestRecordFederatedSummary:
     """``record_federated_summary`` emits 3 JSONL events in a single call."""
 
-    def test_emits_three_events_with_correct_fields(
-        self, metrics_path: Path
-    ) -> None:
+    def test_emits_three_events_with_correct_fields(self, metrics_path: Path) -> None:
         observability.record_federated_summary(
             invoked=1,
             projects_queried=3,
@@ -120,140 +118,82 @@ class TestRecordFederatedSummary:
         assert "federated_search_projects_queried" in names
         assert "federated_search_results_returned_total" in names
 
-    def test_invoked_event_has_trigger_field(
-        self, metrics_path: Path
-    ) -> None:
+    def test_invoked_event_has_trigger_field(self, metrics_path: Path) -> None:
         observability.record_federated_summary(
             invoked=1,
             projects_queried=2,
             results_returned=1,
             trigger="programmatic",
         )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_invoked_total"
-        )
+        events = _events_for(_read_metrics(metrics_path), "federated_search_invoked_total")
         assert len(events) == 1
         assert events[0]["fields"]["trigger"] == "programmatic"
         assert events[0]["fields"]["count"] == 1
 
-    def test_projects_queried_event_records_count(
-        self, metrics_path: Path
-    ) -> None:
-        observability.record_federated_summary(
-            invoked=1, projects_queried=3, results_returned=0
-        )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_projects_queried"
-        )
+    def test_projects_queried_event_records_count(self, metrics_path: Path) -> None:
+        observability.record_federated_summary(invoked=1, projects_queried=3, results_returned=0)
+        events = _events_for(_read_metrics(metrics_path), "federated_search_projects_queried")
         assert len(events) == 1
         assert events[0]["fields"]["count"] == 3
 
-    def test_results_returned_event_records_count(
-        self, metrics_path: Path
-    ) -> None:
-        observability.record_federated_summary(
-            invoked=1, projects_queried=2, results_returned=7
-        )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_results_returned_total"
-        )
+    def test_results_returned_event_records_count(self, metrics_path: Path) -> None:
+        observability.record_federated_summary(invoked=1, projects_queried=2, results_returned=7)
+        events = _events_for(_read_metrics(metrics_path), "federated_search_results_returned_total")
         assert len(events) == 1
         assert events[0]["fields"]["count"] == 7
 
-    def test_results_returned_cumulative_across_calls(
-        self, metrics_path: Path
-    ) -> None:
+    def test_results_returned_cumulative_across_calls(self, metrics_path: Path) -> None:
         # Scenario 3: a second call returning 3 rows increments the counter by another 3.
-        observability.record_federated_summary(
-            invoked=1, projects_queried=2, results_returned=5
-        )
-        observability.record_federated_summary(
-            invoked=1, projects_queried=2, results_returned=3
-        )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_results_returned_total"
-        )
+        observability.record_federated_summary(invoked=1, projects_queried=2, results_returned=5)
+        observability.record_federated_summary(invoked=1, projects_queried=2, results_returned=3)
+        events = _events_for(_read_metrics(metrics_path), "federated_search_results_returned_total")
         total = _sum_count(events)
         assert total == 8
 
-    def test_projects_queried_histogram_records_each_bucket(
-        self, metrics_path: Path
-    ) -> None:
+    def test_projects_queried_histogram_records_each_bucket(self, metrics_path: Path) -> None:
         # Scenario 2: histogram of project-bucket sizes — each call adds one event.
-        observability.record_federated_summary(
-            invoked=1, projects_queried=1, results_returned=0
-        )
-        observability.record_federated_summary(
-            invoked=1, projects_queried=3, results_returned=0
-        )
-        observability.record_federated_summary(
-            invoked=1, projects_queried=4, results_returned=0
-        )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_projects_queried"
-        )
+        observability.record_federated_summary(invoked=1, projects_queried=1, results_returned=0)
+        observability.record_federated_summary(invoked=1, projects_queried=3, results_returned=0)
+        observability.record_federated_summary(invoked=1, projects_queried=4, results_returned=0)
+        events = _events_for(_read_metrics(metrics_path), "federated_search_projects_queried")
         buckets = [e["fields"]["count"] for e in events]
         assert buckets == [1, 3, 4]
 
-    def test_invoked_cumulative_across_calls(
-        self, metrics_path: Path
-    ) -> None:
+    def test_invoked_cumulative_across_calls(self, metrics_path: Path) -> None:
         # Scenario 1: invoked counter increments by 1 per call.
-        observability.record_federated_summary(
-            invoked=1, projects_queried=1, results_returned=0
-        )
-        observability.record_federated_summary(
-            invoked=1, projects_queried=1, results_returned=0
-        )
-        observability.record_federated_summary(
-            invoked=1, projects_queried=1, results_returned=0
-        )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_invoked_total"
-        )
+        observability.record_federated_summary(invoked=1, projects_queried=1, results_returned=0)
+        observability.record_federated_summary(invoked=1, projects_queried=1, results_returned=0)
+        observability.record_federated_summary(invoked=1, projects_queried=1, results_returned=0)
+        events = _events_for(_read_metrics(metrics_path), "federated_search_invoked_total")
         total = _sum_count(events)
         assert total == 3
 
     def test_default_trigger_is_programmatic(self, metrics_path: Path) -> None:
-        observability.record_federated_summary(
-            invoked=1, projects_queried=1, results_returned=0
-        )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_invoked_total"
-        )
+        observability.record_federated_summary(invoked=1, projects_queried=1, results_returned=0)
+        events = _events_for(_read_metrics(metrics_path), "federated_search_invoked_total")
         assert events[0]["fields"]["trigger"] == "programmatic"
 
-    def test_invalid_trigger_falls_back_to_programmatic(
-        self, metrics_path: Path
-    ) -> None:
+    def test_invalid_trigger_falls_back_to_programmatic(self, metrics_path: Path) -> None:
         observability.record_federated_summary(
             invoked=1,
             projects_queried=1,
             results_returned=0,
             trigger="background",  # not in {cli, programmatic}
         )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_invoked_total"
-        )
+        events = _events_for(_read_metrics(metrics_path), "federated_search_invoked_total")
         assert events[0]["fields"]["trigger"] == "programmatic"
 
-    def test_projects_queried_none_normalized_to_zero(
-        self, metrics_path: Path
-    ) -> None:
+    def test_projects_queried_none_normalized_to_zero(self, metrics_path: Path) -> None:
         # Search-all case: ``projects=None`` ⇒ ``count=0`` for the histogram bucket.
         observability.record_federated_summary(
             invoked=1,
             projects_queried=None,  # type: ignore[arg-type]
             results_returned=0,
         )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_projects_queried"
-        )
+        events = _events_for(_read_metrics(metrics_path), "federated_search_projects_queried")
         assert events[0]["fields"]["count"] == 0
 
-    def test_negative_inputs_clamped_to_zero(
-        self, metrics_path: Path
-    ) -> None:
+    def test_negative_inputs_clamped_to_zero(self, metrics_path: Path) -> None:
         # Defensive clamping — bad sample cannot produce NaN / negative JSON.
         observability.record_federated_summary(
             invoked=-5,  # type: ignore[arg-type]
@@ -281,9 +221,7 @@ class TestInMemoryBackendFederatedEmitsCounters:
             obs["project"] = project
             obs["created_at"] = "2026-06-15 12:00:00"
 
-    def test_mem_search_federated_emits_three_events(
-        self, metrics_path: Path
-    ) -> None:
+    def test_mem_search_federated_emits_three_events(self, metrics_path: Path) -> None:
         backend = InMemoryBackend()
         self._seed(backend)
         backend.mem_search_federated("drift", projects=None, limit=10)
@@ -293,21 +231,15 @@ class TestInMemoryBackendFederatedEmitsCounters:
         assert "federated_search_projects_queried" in names
         assert "federated_search_results_returned_total" in names
 
-    def test_mem_search_federated_invoked_increments_by_one(
-        self, metrics_path: Path
-    ) -> None:
+    def test_mem_search_federated_invoked_increments_by_one(self, metrics_path: Path) -> None:
         backend = InMemoryBackend()
         self._seed(backend)
         before = _sum_count(
-            _events_for(
-                _read_metrics(metrics_path), "federated_search_invoked_total"
-            )
+            _events_for(_read_metrics(metrics_path), "federated_search_invoked_total")
         )
         backend.mem_search_federated("drift", projects=None, limit=10)
         after = _sum_count(
-            _events_for(
-                _read_metrics(metrics_path), "federated_search_invoked_total"
-            )
+            _events_for(_read_metrics(metrics_path), "federated_search_invoked_total")
         )
         assert after - before == 1
 
@@ -317,34 +249,24 @@ class TestInMemoryBackendFederatedEmitsCounters:
         backend = InMemoryBackend()
         self._seed(backend)
         results = backend.mem_search_federated("drift", projects=None, limit=10)
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_results_returned_total"
-        )
+        events = _events_for(_read_metrics(metrics_path), "federated_search_results_returned_total")
         assert _sum_count(events) == len(results)
         assert len(results) == 3
 
-    def test_mem_search_federated_projects_count_matches_query(
-        self, metrics_path: Path
-    ) -> None:
+    def test_mem_search_federated_projects_count_matches_query(self, metrics_path: Path) -> None:
         backend = InMemoryBackend()
         self._seed(backend)
         backend.mem_search_federated(
             "drift", projects=["flow-engineering", "mockup-2-blog"], limit=10
         )
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_projects_queried"
-        )
+        events = _events_for(_read_metrics(metrics_path), "federated_search_projects_queried")
         # One event per call (histogram), count = number of projects queried.
         assert len(events) == 1
         assert events[0]["fields"]["count"] == 2
 
-    def test_mem_search_federated_projects_none_yields_count_zero(
-        self, metrics_path: Path
-    ) -> None:
+    def test_mem_search_federated_projects_none_yields_count_zero(self, metrics_path: Path) -> None:
         backend = InMemoryBackend()
         self._seed(backend)
         backend.mem_search_federated("drift", projects=None, limit=10)
-        events = _events_for(
-            _read_metrics(metrics_path), "federated_search_projects_queried"
-        )
+        events = _events_for(_read_metrics(metrics_path), "federated_search_projects_queried")
         assert events[0]["fields"]["count"] == 0
