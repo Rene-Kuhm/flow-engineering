@@ -27,6 +27,7 @@ jobs:
           Write-Host "Job startup proves the runner can pick up work; GitHub runner-list API requires broader repository administration permissions than GITHUB_TOKEN provides."
 
           Write-Host "Checking latest completed main push run for tests workflow"
+          $jqFilter = 'map(select(.status == "completed"))[0] | [.databaseId,.status,.conclusion,.createdAt,.url] | @tsv'
           $latestRunFields = gh run list `
             --repo "$env:REPO" `
             --workflow tests `
@@ -34,7 +35,7 @@ jobs:
             --event push `
             --limit 10 `
             --json databaseId,status,conclusion,createdAt,url `
-            --jq 'map(select(.status == "completed"))[0] | [.databaseId,.status,.conclusion,.createdAt,.url] | @tsv'
+            --jq $jqFilter
 
           if ([string]::IsNullOrWhiteSpace($latestRunFields)) {
             Write-Error "No completed main push run found for tests workflow."
