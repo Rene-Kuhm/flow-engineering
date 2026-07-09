@@ -204,9 +204,7 @@ class TestProjectsBackfillAliasIteration:
     alias ``old`` key.
     """
 
-    def _seed_multi_alias_corpus(
-        self, alias_backend: InMemoryBackend
-    ) -> None:
+    def _seed_multi_alias_corpus(self, alias_backend: InMemoryBackend) -> None:
         _seed(
             alias_backend,
             [
@@ -231,20 +229,11 @@ class TestProjectsBackfillAliasIteration:
         assert result.exit_code == 0, result.output
 
         # Both alias-matching observations are re-tagged.
-        tagged = {
-            obs["id"]: obs.get("project")
-            for obs in alias_backend.observations.values()
-        }
-        assert tagged[1] == "new-key-A", (
-            f"Expected obs 1 re-tagged to new-key-A, got {tagged[1]!r}"
-        )
-        assert tagged[2] == "new-key-B", (
-            f"Expected obs 2 re-tagged to new-key-B, got {tagged[2]!r}"
-        )
+        tagged = {obs["id"]: obs.get("project") for obs in alias_backend.observations.values()}
+        assert tagged[1] == "new-key-A", f"Expected obs 1 re-tagged to new-key-A, got {tagged[1]!r}"
+        assert tagged[2] == "new-key-B", f"Expected obs 2 re-tagged to new-key-B, got {tagged[2]!r}"
         # Unrelated observation is UNCHANGED.
-        assert tagged[3] == "unrelated-project", (
-            f"Expected obs 3 unchanged, got {tagged[3]!r}"
-        )
+        assert tagged[3] == "unrelated-project", f"Expected obs 3 unchanged, got {tagged[3]!r}"
 
     def test_dry_run_without_project_iterates_alias_map_no_writes(
         self,

@@ -92,15 +92,11 @@ def empty_backend(monkeypatch: pytest.MonkeyPatch) -> InMemoryBackend:
 class TestBackfillDryRunDefault:
     """``flow projects backfill`` with no flags defaults to dry-run (no writes)."""
 
-    def test_no_flags_exits_zero(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_no_flags_exits_zero(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(main, ["projects", "backfill"])
         assert result.exit_code == 0, result.output
 
-    def test_no_flags_does_not_mutate(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_no_flags_does_not_mutate(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(main, ["projects", "backfill"])
         assert result.exit_code == 0, result.output
         # Observation 1 (untagged) MUST remain untagged.
@@ -108,9 +104,7 @@ class TestBackfillDryRunDefault:
         # Observation 2 (already tagged) MUST remain tagged "insyd".
         assert backfill_backend.observations[2]["project"] == "insyd"
 
-    def test_explicit_dry_run_is_same_as_default(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_explicit_dry_run_is_same_as_default(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(main, ["projects", "backfill", "--dry-run"])
         assert result.exit_code == 0, result.output
         # No mutation under explicit --dry-run either.
@@ -123,9 +117,7 @@ class TestBackfillDryRunDefault:
 class TestBackfillConfirmWithProject:
     """``flow projects backfill --confirm --project=<key>`` writes tags."""
 
-    def test_confirm_with_project_tags_untagged(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_confirm_with_project_tags_untagged(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["projects", "backfill", "--confirm", "--project=flow-engineering"],
@@ -136,9 +128,7 @@ class TestBackfillConfirmWithProject:
         # Observation 2 (already tagged insyd) MUST remain unchanged.
         assert backfill_backend.observations[2]["project"] == "insyd"
 
-    def test_confirm_emits_json_report(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_confirm_emits_json_report(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["projects", "backfill", "--confirm", "--project=flow-engineering"],
@@ -149,17 +139,14 @@ class TestBackfillConfirmWithProject:
         assert "changes" in report
         # At least one change entry should exist (the previously-untagged obs).
         tagged_changes = [
-            c for c in report["changes"]
+            c
+            for c in report["changes"]
             if c.get("action") in ("rename", "tagged")
             and c.get("proposed_tag") == "flow-engineering"
         ]
-        assert tagged_changes, (
-            f"Expected at least one tagged change; got {report['changes']!r}"
-        )
+        assert tagged_changes, f"Expected at least one tagged change; got {report['changes']!r}"
 
-    def test_dry_run_with_project_preview_only(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_dry_run_with_project_preview_only(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["projects", "backfill", "--dry-run", "--project=flow-engineering"],
@@ -207,9 +194,7 @@ class TestBackfillConfirmWithoutProjectIteratesAliases:
 class TestBackfillDryRunJsonReport:
     """``flow projects backfill --dry-run`` emits JSON report to stdout."""
 
-    def test_dry_run_emits_json_envelope(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_dry_run_emits_json_envelope(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(main, ["projects", "backfill", "--dry-run"])
         assert result.exit_code == 0, result.output
         report = json.loads(result.stdout)
@@ -221,9 +206,7 @@ class TestBackfillDryRunJsonReport:
         assert isinstance(report["would_skip"], int)
         assert isinstance(report["changes"], list)
 
-    def test_dry_run_change_entry_shape(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_dry_run_change_entry_shape(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             ["projects", "backfill", "--dry-run", "--project=flow-engineering"],
@@ -256,13 +239,9 @@ class TestBackfillExitCodes:
             f"Expected exit 0 (empty corpus is no-op success); got {result.exit_code}; output={result.output!r}"
         )
 
-    def test_invalid_since_exits_two(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_invalid_since_exits_two(self, backfill_backend: InMemoryBackend) -> None:
         # Invalid --since string is the remaining case that exits 2.
-        result = runner.invoke(
-            main, ["projects", "backfill", "--since=not-a-date"]
-        )
+        result = runner.invoke(main, ["projects", "backfill", "--since=not-a-date"])
         assert result.exit_code == 2, (
             f"Expected exit 2 (invalid --since); got {result.exit_code}; output={result.output!r}"
         )
@@ -274,9 +253,7 @@ class TestBackfillExitCodes:
 class TestBackfillSinceFilter:
     """``--since=<iso>`` restricts to observations created on/after the timestamp."""
 
-    def test_since_excludes_older_observations(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_since_excludes_older_observations(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             [
@@ -295,9 +272,7 @@ class TestBackfillSinceFilter:
             f"Expected obs 3 to be excluded by --since; got changes={report['changes']!r}"
         )
 
-    def test_invalid_since_exits_two(
-        self, backfill_backend: InMemoryBackend
-    ) -> None:
+    def test_invalid_since_exits_two(self, backfill_backend: InMemoryBackend) -> None:
         result = runner.invoke(
             main,
             [

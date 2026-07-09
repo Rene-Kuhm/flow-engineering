@@ -139,13 +139,13 @@ def make_fake_openspec_project(parent: Path, name: str = "os-proj") -> Path:
     return p
 
 
-def _default_branch_fake_git(branch: str = "main") -> Callable[..., subprocess.CompletedProcess[str]]:
+def _default_branch_fake_git(
+    branch: str = "main",
+) -> Callable[..., subprocess.CompletedProcess[str]]:
     """Build a fake_git that returns ``branch`` for rev-parse; no remote, clean."""
 
     def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
-        cp = subprocess.CompletedProcess(
-            args=["git", *args], returncode=0, stdout="", stderr=""
-        )
+        cp = subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
         if args and args[0] == "rev-parse":
             cp.stdout = branch + "\n"
         elif args and args[0] == "config":
@@ -173,9 +173,7 @@ def test_flow_projects_lists_subdirectories_with_markers(projects_root: Path) ->
     assert "stray-file.txt" not in result.output
 
 
-def test_flow_projects_custom_root_flag_overrides_env(
-    projects_root: Path, tmp_path: Path
-) -> None:
+def test_flow_projects_custom_root_flag_overrides_env(projects_root: Path, tmp_path: Path) -> None:
     """`flow projects --root <path>` overrides FLOW_PROJECTS_ROOT env var."""
     other = tmp_path / "other"
     other.mkdir()
@@ -265,9 +263,7 @@ def test_flow_projects_ls_isolates_unreadable_project_dirs(
 # ---------- Tests (workspace-intelligence: 9 new unit tests) ----------
 
 
-def test_flow_projects_ls_branch_with_git(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_flow_projects_ls_branch_with_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Go project + fake git seam → branch == 'main' (REQ-FIELD-EXTENSION)."""
     root = tmp_path / "projects"
     root.mkdir()
@@ -286,9 +282,7 @@ def test_flow_projects_ls_branch_with_git(
     assert project["branch"] == "main"
 
 
-def test_flow_projects_ls_dirty_clean(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_flow_projects_ls_dirty_clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Clean vs uncommitted → dirty boolean (REQ-FIELD-EXTENSION)."""
     root = tmp_path / "projects"
     root.mkdir()
@@ -296,9 +290,7 @@ def test_flow_projects_ls_dirty_clean(
     make_fake_dirty_project(root, name="dirty-proj")
 
     def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
-        cp = subprocess.CompletedProcess(
-            args=["git", *args], returncode=0, stdout="", stderr=""
-        )
+        cp = subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
         cwd = kwargs.get("cwd")
         cwd_path = Path(str(cwd)).resolve() if cwd else None
         is_dirty = cwd_path is not None and "dirty" in cwd_path.name
@@ -323,9 +315,7 @@ def test_flow_projects_ls_dirty_clean(
     assert by_name["dirty-proj"]["dirty"] is True
 
 
-def test_flow_projects_ls_remote_present(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_flow_projects_ls_remote_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Go project + origin URL → remote string (REQ-FIELD-EXTENSION)."""
     root = tmp_path / "projects"
     root.mkdir()
@@ -333,9 +323,7 @@ def test_flow_projects_ls_remote_present(
     expected_remote = "https://github.com/example/test.git"
 
     def fake_git(*args: str, **kwargs: object) -> subprocess.CompletedProcess:
-        cp = subprocess.CompletedProcess(
-            args=["git", *args], returncode=0, stdout="", stderr=""
-        )
+        cp = subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
         if args and args[0] == "rev-parse":
             cp.stdout = "main\n"
         elif args and args[0] == "config":
@@ -353,9 +341,7 @@ def test_flow_projects_ls_remote_present(
     assert payload["projects"][0]["remote"] == expected_remote
 
 
-def test_flow_projects_ls_remote_absent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_flow_projects_ls_remote_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No remote configured → remote is None (REQ-FIELD-EXTENSION)."""
     root = tmp_path / "projects"
     root.mkdir()
@@ -389,9 +375,7 @@ def test_flow_projects_ls_test_commands_python_pytest(
     assert payload["projects"][0]["test_commands"] == ["make test"]
 
 
-def test_flow_projects_ls_has_openspec(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_flow_projects_ls_has_openspec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Project with openspec/changes/ → has_openspec is True (REQ-FIELD-EXTENSION)."""
     root = tmp_path / "projects"
     root.mkdir()
@@ -407,9 +391,7 @@ def test_flow_projects_ls_has_openspec(
     assert payload["projects"][0]["has_openspec"] is True
 
 
-def test_flow_projects_ls_has_engram_stub(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_flow_projects_ls_has_engram_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """has_engram always False (stub) regardless of fixture (REQ-HAS-ENGRAM-STUB)."""
     root = tmp_path / "projects"
     root.mkdir()
@@ -734,9 +716,7 @@ class TestDetectProjectMarkersHasPytestConfig:
         project = tmp_path / "no_pytest_signal"
         project.mkdir()
         # Only pyproject.toml WITHOUT [tool.pytest] section.
-        (project / "pyproject.toml").write_text(
-            '[project]\nname = "x"\n', encoding="utf-8"
-        )
+        (project / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
         assert _detect_project_markers(project)["has_pytest_config"] is False
 
     def test_malformed_pyproject_does_not_crash(self, tmp_path: Path) -> None:
@@ -749,9 +729,6 @@ class TestDetectProjectMarkersHasPytestConfig:
         project = tmp_path / "bad_pyproject"
         project.mkdir()
         # Unclosed bracket -> tomllib raises.
-        (project / "pyproject.toml").write_text(
-            '[project\nname = "x"\n', encoding="utf-8"
-        )
+        (project / "pyproject.toml").write_text('[project\nname = "x"\n', encoding="utf-8")
         markers = _detect_project_markers(project)
         assert markers["has_pytest_config"] is False
-
