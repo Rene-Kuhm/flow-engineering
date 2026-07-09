@@ -14,6 +14,7 @@ Coverage:
 
 Tests are written BEFORE the implementation per strict TDD (RED → GREEN → REFACTOR).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -88,10 +89,10 @@ class TestFilterByWindow:
         now = 1_700_000_000.0
         events = [
             _event("a", now - 3 * 3600),  # 3h ago — excluded
-            _event("b", now - 90 * 60),   # 90m ago — excluded
-            _event("c", now - 30 * 60),   # 30m ago — kept
-            _event("d", now - 10 * 60),   # 10m ago — kept
-            _event("e", now - 2 * 60),    # 2m ago — kept
+            _event("b", now - 90 * 60),  # 90m ago — excluded
+            _event("c", now - 30 * 60),  # 30m ago — kept
+            _event("d", now - 10 * 60),  # 10m ago — kept
+            _event("e", now - 2 * 60),  # 2m ago — kept
         ]
         result = observability.filter_by_window(events, "1h", now=now)
         names = [ev.counter_name for ev in result]
@@ -102,9 +103,9 @@ class TestFilterByWindow:
         # Pin now far in the past so the relative window is deterministic.
         fixed_now = 1_000_000.0
         events = [
-            _event("old", fixed_now - 7200),   # 2h before fixed_now
-            _event("mid", fixed_now - 1800),   # 30m before fixed_now
-            _event("new", fixed_now - 60),     # 1m before fixed_now
+            _event("old", fixed_now - 7200),  # 2h before fixed_now
+            _event("mid", fixed_now - 1800),  # 30m before fixed_now
+            _event("new", fixed_now - 60),  # 1m before fixed_now
         ]
         # 1h window from fixed_now → cut at fixed_now - 3600; "old" is excluded.
         result = observability.filter_by_window(events, "1h", now=fixed_now)

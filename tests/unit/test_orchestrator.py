@@ -1,4 +1,5 @@
 """Unit tests for orchestrator.py — apply/verify/archive orchestration."""
+
 from __future__ import annotations
 
 import json
@@ -27,10 +28,15 @@ def _make_change_with_tasks(
     )
     sm = StateMachine.create(change, fe)
     full_path = [
-        ChangeStatus.EXPLORED, ChangeStatus.PROPOSED, ChangeStatus.DESIGNED,
-        ChangeStatus.SPECIFIED, ChangeStatus.TASKED,
-        ChangeStatus.APPLYING, ChangeStatus.VERIFYING,
-        ChangeStatus.ARCHIVING, ChangeStatus.DONE,
+        ChangeStatus.EXPLORED,
+        ChangeStatus.PROPOSED,
+        ChangeStatus.DESIGNED,
+        ChangeStatus.SPECIFIED,
+        ChangeStatus.TASKED,
+        ChangeStatus.APPLYING,
+        ChangeStatus.VERIFYING,
+        ChangeStatus.ARCHIVING,
+        ChangeStatus.DONE,
     ]
     for to in full_path:
         if to == status:
@@ -67,9 +73,9 @@ class TestApplyChange:
         apply_change("test-change", tmp_path, backend=backend)
         # The saved content now ends with a code_refs block; parse only the
         # JSON prose part.
-        raw = backend.mem_search(
-            query="T1.1", topic_key="sdd/test-change/apply-progress"
-        )[0]["content"]
+        raw = backend.mem_search(query="T1.1", topic_key="sdd/test-change/apply-progress")[0][
+            "content"
+        ]
         prose = raw.split("<!-- code_refs -->")[0]
         progress = json.loads(prose)
         assert "T1.1" in progress["tasks"]
@@ -100,7 +106,8 @@ class TestVerifyChange:
     def test_verify_structural_failure_escalates(self, tmp_path: Path) -> None:
         self._make_applying(tmp_path)
         result = verify_change(
-            "test-change", tmp_path,
+            "test-change",
+            tmp_path,
             test_output="ImportError: cannot import name 'foo'",
         )
         assert result.failure_class == FailureClass.STRUCTURAL
@@ -110,7 +117,8 @@ class TestVerifyChange:
     def test_verify_contract_failure_respecs(self, tmp_path: Path) -> None:
         self._make_applying(tmp_path)
         result = verify_change(
-            "test-change", tmp_path,
+            "test-change",
+            tmp_path,
             test_output="AssertionError: expected 200, got 404",
         )
         assert result.failure_class == FailureClass.CONTRACT
@@ -119,7 +127,9 @@ class TestVerifyChange:
     def test_verify_transient_first_retry(self, tmp_path: Path) -> None:
         self._make_applying(tmp_path)
         result = verify_change(
-            "test-change", tmp_path, test_output="TimeoutError: test exceeded 30s",
+            "test-change",
+            tmp_path,
+            test_output="TimeoutError: test exceeded 30s",
         )
         assert result.failure_class == FailureClass.TRANSIENT
         assert result.action == "retry"
@@ -134,7 +144,9 @@ class TestVerifyChange:
         sm.transition(ChangeStatus.VERIFYING, retry=True)
         sm.save()
         result = verify_change(
-            "test-change", tmp_path, test_output="TimeoutError: timed out",
+            "test-change",
+            tmp_path,
+            test_output="TimeoutError: timed out",
         )
         assert result.action == "max_retries_exceeded"
 
@@ -164,7 +176,9 @@ class TestArchiveChange:
     def test_archive_decides_full_for_structural_diff(self, tmp_path: Path) -> None:
         self._make_archiving(tmp_path)
         result = archive_change(
-            "test-change", tmp_path, diff_text="deleted file mode\nfoo.py",
+            "test-change",
+            tmp_path,
+            diff_text="deleted file mode\nfoo.py",
         )
         assert result.graphify_decision is not None
         assert result.graphify_decision.mode == "full"
@@ -173,9 +187,7 @@ class TestArchiveChange:
         backend = InMemoryBackend()
         self._make_archiving(tmp_path)
         archive_change("test-change", tmp_path, backend=backend)
-        results = backend.mem_search(
-            query="archived", topic_key="sdd/test-change/archive"
-        )
+        results = backend.mem_search(query="archived", topic_key="sdd/test-change/archive")
         assert len(results) == 1
         assert "test-change" in results[0]["content"]
 

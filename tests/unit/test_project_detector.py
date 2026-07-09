@@ -116,10 +116,7 @@ class TestDetectRegistryOverride:
 
     def test_registry_subdir_match_wins(self) -> None:
         registry = {"c:/Users/insyd/scratch/foo": "scratch-foo"}
-        assert (
-            detect(Path("c:/Users/insyd/scratch/foo/sub"), registry=registry)
-            == "scratch-foo"
-        )
+        assert detect(Path("c:/Users/insyd/scratch/foo/sub"), registry=registry) == "scratch-foo"
 
     def test_empty_registry_falls_back_to_default(self) -> None:
         """Empty registry means no override — fall through to default parts-based detection."""
@@ -152,9 +149,7 @@ class TestLoadRegistry:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(
-            "flow_engineering.project_detector.DEFAULT_REGISTRY_PATH", path
-        )
+        monkeypatch.setattr("flow_engineering.project_detector.DEFAULT_REGISTRY_PATH", path)
         result = load_registry()
         assert result == {"c:/dev/proyects/manual-tag-1": "manual-tag-1"}
 
@@ -163,9 +158,7 @@ class TestLoadRegistry:
     ) -> None:
         path = tmp_path / "bad.json"
         path.write_text("{not valid json,", encoding="utf-8")
-        monkeypatch.setattr(
-            "flow_engineering.project_detector.DEFAULT_REGISTRY_PATH", path
-        )
+        monkeypatch.setattr("flow_engineering.project_detector.DEFAULT_REGISTRY_PATH", path)
         with pytest.raises(RegistryParseError) as exc:
             load_registry()
         assert str(path) in str(exc.value)

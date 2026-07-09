@@ -59,9 +59,7 @@ def _event(
 ) -> observability.MetricEvent:
     """Build a single ``MetricEvent`` for prometheus_exposition tests."""
     return observability.MetricEvent(
-        timestamp=datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-        .replace(tzinfo=UTC)
-        .timestamp(),
+        timestamp=datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp(),
         counter_name=name,
         labels=fields or {},
         raw_line=json.dumps(
@@ -168,10 +166,7 @@ class TestPrometheusExpositionLabels:
         text = observability.prometheus_exposition(events)
 
         # ``change`` sorts before ``kind`` alphabetically.
-        assert (
-            'flow_drift_invoked_total{change="observability",kind="scan"} 1.0'
-            in text
-        )
+        assert 'flow_drift_invoked_total{change="observability",kind="scan"} 1.0' in text
 
     def test_prometheus_exposition_escapes_label_values(self) -> None:
         """Quotes/backslashes/newlines are escaped per Prometheus spec."""
@@ -403,7 +398,8 @@ class TestWritePrometheusTextfile:
     """write_prometheus_textfile writes content atomically to disk."""
 
     def test_write_prometheus_textfile_writes_atomically(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """write_prometheus_textfile writes the content to the target path."""
         target = tmp_path / "metrics.prom"
@@ -415,7 +411,8 @@ class TestWritePrometheusTextfile:
         assert target.read_text(encoding="utf-8") == content
 
     def test_write_prometheus_textfile_creates_parent_directory(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Missing parent dir is created on demand (D10 contract)."""
         target = tmp_path / "nested" / "subdir" / "metrics.prom"
@@ -427,7 +424,8 @@ class TestWritePrometheusTextfile:
         assert target.read_text(encoding="utf-8") == content
 
     def test_write_prometheus_textfile_replaces_existing_file(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Atomic write replaces existing content without half-write."""
         target = tmp_path / "metrics.prom"
@@ -439,7 +437,8 @@ class TestWritePrometheusTextfile:
         assert target.read_text(encoding="utf-8") == new_content
 
     def test_write_prometheus_textfile_no_tmp_orphan_leftovers(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """No ``.tmp`` files are left behind on success (D10 cleanup)."""
         target = tmp_path / "metrics.prom"
@@ -492,16 +491,8 @@ class TestPrometheusExpositionStableOutput:
         ]
 
         text = observability.prometheus_exposition(events)
-        lines = [
-            line
-            for line in text.splitlines()
-            if line and not line.startswith("#")
-        ]
+        lines = [line for line in text.splitlines() if line and not line.startswith("#")]
 
-        pattern = re.compile(
-            r"^[a-zA-Z_][a-zA-Z0-9_]*(\{[^}]*\})? -?\d+(\.\d+)?$"
-        )
+        pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\{[^}]*\})? -?\d+(\.\d+)?$")
         for line in lines:
-            assert pattern.match(line), (
-                f"line {line!r} does not match Prometheus metric line shape"
-            )
+            assert pattern.match(line), f"line {line!r} does not match Prometheus metric line shape"

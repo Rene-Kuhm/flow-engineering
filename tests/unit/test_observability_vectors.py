@@ -109,9 +109,7 @@ class TestVectorCounterNaming:
         # Gauges are point-in-time values; they MUST NOT end in ``_total``.
         gauges = ["vector_index_size_observations"]
         for g in gauges:
-            assert not g.endswith("_total"), (
-                f"Gauge {g} erroneously uses the counter suffix"
-            )
+            assert not g.endswith("_total"), f"Gauge {g} erroneously uses the counter suffix"
 
 
 # ---------- REQ-22 scenario 1: invoked counter + trigger tag ----------
@@ -120,9 +118,7 @@ class TestVectorCounterNaming:
 class TestVectorSearchInvokedCounter:
     """REQ-22 scenario 1: ``vector_search_invoked_total`` increments per call."""
 
-    def test_record_vector_summary_emits_invoked_counter(
-        self, metrics_path: Path
-    ) -> None:
+    def test_record_vector_summary_emits_invoked_counter(self, metrics_path: Path) -> None:
         observability.record_vector_summary(
             invoked=1,
             results_returned=3,
@@ -135,9 +131,7 @@ class TestVectorSearchInvokedCounter:
         assert events[0]["fields"].get("count") == 1
         assert events[0]["fields"].get("trigger") == "programmatic"
 
-    def test_record_vector_summary_accepts_cli_trigger(
-        self, metrics_path: Path
-    ) -> None:
+    def test_record_vector_summary_accepts_cli_trigger(self, metrics_path: Path) -> None:
         observability.record_vector_summary(
             invoked=1,
             results_returned=0,
@@ -149,9 +143,7 @@ class TestVectorSearchInvokedCounter:
         assert len(events) == 1
         assert events[0]["fields"].get("trigger") == "cli"
 
-    def test_invoked_count_increments_across_multiple_calls(
-        self, metrics_path: Path
-    ) -> None:
+    def test_invoked_count_increments_across_multiple_calls(self, metrics_path: Path) -> None:
         # Three calls should produce three distinct JSONL events with
         # ``count`` summing to the total invocation count.
         for i in range(3):
@@ -174,9 +166,7 @@ class TestVectorSearchInvokedCounter:
 class TestVectorSearchLatencyCounter:
     """REQ-22 scenario 2: ``vector_search_latency_ms`` appears in metrics."""
 
-    def test_latency_recorded_in_elapsed_ms_field(
-        self, metrics_path: Path
-    ) -> None:
+    def test_latency_recorded_in_elapsed_ms_field(self, metrics_path: Path) -> None:
         observability.record_vector_summary(
             invoked=1,
             results_returned=2,
@@ -190,9 +180,7 @@ class TestVectorSearchLatencyCounter:
         # downstream ``flow metrics`` summary can compute P50/P95/P99.
         assert events[0]["fields"].get("elapsed_ms") == 42
 
-    def test_multiple_latencies_persist_as_separate_events(
-        self, metrics_path: Path
-    ) -> None:
+    def test_multiple_latencies_persist_as_separate_events(self, metrics_path: Path) -> None:
         for ms in [10, 25, 100, 50]:
             observability.record_vector_summary(
                 invoked=1,
@@ -212,9 +200,7 @@ class TestVectorSearchLatencyCounter:
 class TestReindexCounters:
     """REQ-22 scenario 3: reindex counters reflect actual reindex state."""
 
-    def test_reindex_observations_total_matches_count(
-        self, metrics_path: Path
-    ) -> None:
+    def test_reindex_observations_total_matches_count(self, metrics_path: Path) -> None:
         # Simulate a reindex of 100 observations in one batch.
         observability.record_vector_summary(
             invoked=0,  # not a search — just reindex
@@ -229,9 +215,7 @@ class TestReindexCounters:
         assert len(events) == 1
         assert events[0]["fields"].get("count") == 100
 
-    def test_reindex_duration_recorded_as_gauge(
-        self, metrics_path: Path
-    ) -> None:
+    def test_reindex_duration_recorded_as_gauge(self, metrics_path: Path) -> None:
         observability.record_vector_summary(
             invoked=0,
             results_returned=0,
@@ -245,9 +229,7 @@ class TestReindexCounters:
         assert len(events) == 1
         assert events[0]["fields"].get("value") == 12.5
 
-    def test_index_size_gauge_reflects_current_count(
-        self, metrics_path: Path
-    ) -> None:
+    def test_index_size_gauge_reflects_current_count(self, metrics_path: Path) -> None:
         # The gauge MUST reflect ``index_size`` so ``flow metrics`` can show
         # the latest size without aggregating across events.
         observability.record_vector_summary(
@@ -261,22 +243,24 @@ class TestReindexCounters:
         assert len(events) == 1
         assert events[0]["fields"].get("value") == 42
 
-    def test_results_returned_counter_sums_lengths(
-        self, metrics_path: Path
-    ) -> None:
+    def test_results_returned_counter_sums_lengths(self, metrics_path: Path) -> None:
         # Two calls returning 3 and 5 results should produce two JSONL
         # events whose ``count`` fields sum to 8.
         observability.record_vector_summary(
-            invoked=1, results_returned=3, latency_ms=10,
-            index_size=10, trigger="programmatic",
+            invoked=1,
+            results_returned=3,
+            latency_ms=10,
+            index_size=10,
+            trigger="programmatic",
         )
         observability.record_vector_summary(
-            invoked=1, results_returned=5, latency_ms=20,
-            index_size=10, trigger="programmatic",
+            invoked=1,
+            results_returned=5,
+            latency_ms=20,
+            index_size=10,
+            trigger="programmatic",
         )
-        events = _events_for(
-            _read_metrics(metrics_path), "vector_search_results_returned_total"
-        )
+        events = _events_for(_read_metrics(metrics_path), "vector_search_results_returned_total")
         assert len(events) == 2
         total = sum(e["fields"].get("count", 0) for e in events)
         assert total == 8
@@ -324,10 +308,7 @@ class TestRecordVectorSummaryContract:
         after = len(_read_metrics(metrics_path))
         assert after - before == 4  # invoked + results + latency + index_size
 
-        names = {
-            e["name"]
-            for e in _read_metrics(metrics_path)[before:after]
-        }
+        names = {e["name"] for e in _read_metrics(metrics_path)[before:after]}
         assert names == {
             "vector_search_invoked_total",
             "vector_search_results_returned_total",
@@ -350,9 +331,7 @@ class TestHybridBackendCounterIntegration:
         hb = HybridBackend(inner, provider)
 
         # Seed an observation so mem_search has something to find.
-        inner.mem_save(
-            title="drift", content="drift detection strategy", topic_key="t"
-        )
+        inner.mem_save(title="drift", content="drift detection strategy", topic_key="t")
         before = len(_read_metrics(metrics_path))
         hb.mem_search_hybrid("drift detection", k=5, alpha=0.5)
         after = len(_read_metrics(metrics_path))
@@ -367,9 +346,7 @@ class TestHybridBackendCounterIntegration:
         assert invoked[0]["fields"].get("trigger") == "programmatic"
         assert invoked[0]["fields"].get("count") == 1
 
-    def test_hybrid_search_semantic_emits_invoked_counter(
-        self, metrics_path: Path
-    ) -> None:
+    def test_hybrid_search_semantic_emits_invoked_counter(self, metrics_path: Path) -> None:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
@@ -387,9 +364,7 @@ class TestHybridBackendCounterIntegration:
         assert len(events) == 1
         assert events[0]["fields"].get("count") == 1
 
-    def test_hybrid_search_does_not_emit_reindex_only_counters(
-        self, metrics_path: Path
-    ) -> None:
+    def test_hybrid_search_does_not_emit_reindex_only_counters(self, metrics_path: Path) -> None:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
@@ -397,17 +372,12 @@ class TestHybridBackendCounterIntegration:
 
         before = len(_read_metrics(metrics_path))
         hb.mem_search_hybrid("drift detection", k=5)
-        names = {
-            e["name"]
-            for e in _read_metrics(metrics_path)[before:]
-        }
+        names = {e["name"] for e in _read_metrics(metrics_path)[before:]}
         # Reindex-only counters MUST NOT fire on a search call.
         assert "reindex_observations_total" not in names
         assert "reindex_duration_seconds" not in names
 
-    def test_latency_is_positive_for_real_search(
-        self, metrics_path: Path
-    ) -> None:
+    def test_latency_is_positive_for_real_search(self, metrics_path: Path) -> None:
         inner = InMemoryBackend()
         provider = MockEmbeddingProvider()
         hb = HybridBackend(inner, provider)
@@ -426,9 +396,7 @@ class TestHybridBackendCounterIntegration:
         assert isinstance(elapsed, int)
         assert elapsed >= 0
 
-    def test_metrics_helper_is_idempotent_across_failures(
-        self, metrics_path: Path
-    ) -> None:
+    def test_metrics_helper_is_idempotent_across_failures(self, metrics_path: Path) -> None:
         # record_vector_summary MUST be fail-open (mirrors ``increment``):
         # a bad metric value should not raise; it should be silently
         # recorded with the next-best-valid representation.
