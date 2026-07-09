@@ -17,6 +17,7 @@ Click 8+ emits the deprecation warning to stderr as a plain text line
 NOT via Python's ``warnings.warn()`` machinery. The tests assert on
 ``result.stderr`` accordingly.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -50,9 +51,7 @@ def seeded_log(tmp_path: Path) -> Path:
 class TestDriftEventsAlias:
     """REQ-V1.2.4 1-release ``flow drift-events`` Click group alias."""
 
-    def test_alias_list_still_works_with_deprecation_warning(
-        self, seeded_log: Path
-    ) -> None:
+    def test_alias_list_still_works_with_deprecation_warning(self, seeded_log: Path) -> None:
         """``flow drift-events list --path=<tmp>`` exits 0 + emits DeprecationWarning.
 
         The hyphenated alias is preserved for one release cycle so v1.0/v1.1
@@ -65,7 +64,8 @@ class TestDriftEventsAlias:
                 "drift-events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -78,16 +78,15 @@ class TestDriftEventsAlias:
             f"expected 'drift-events' in deprecation message; got {result.stderr!r}"
         )
 
-    def test_alias_tail_still_works_with_deprecation_warning(
-        self, seeded_log: Path
-    ) -> None:
+    def test_alias_tail_still_works_with_deprecation_warning(self, seeded_log: Path) -> None:
         """``flow drift-events tail --path=<tmp>`` exits 0 + emits DeprecationWarning."""
         result = runner.invoke(
             main,
             [
                 "drift-events",
                 "tail",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -95,16 +94,15 @@ class TestDriftEventsAlias:
         assert "DeprecationWarning" in result.stderr
         assert "drift-events" in result.stderr
 
-    def test_alias_stats_still_works_with_deprecation_warning(
-        self, seeded_log: Path
-    ) -> None:
+    def test_alias_stats_still_works_with_deprecation_warning(self, seeded_log: Path) -> None:
         """``flow drift-events stats --path=<tmp>`` exits 0 + emits DeprecationWarning."""
         result = runner.invoke(
             main,
             [
                 "drift-events",
                 "stats",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -113,9 +111,7 @@ class TestDriftEventsAlias:
         assert "DeprecationWarning" in result.stderr
         assert "drift-events" in result.stderr
 
-    def test_alias_dispatches_to_canonical_subcommands(
-        self, seeded_log: Path
-    ) -> None:
+    def test_alias_dispatches_to_canonical_subcommands(self, seeded_log: Path) -> None:
         """``flow drift-events list --format=json`` returns a JSON array (canonical dispatch).
 
         The alias delegates to the canonical ``flow drift events list``
@@ -133,13 +129,15 @@ class TestDriftEventsAlias:
                 "drift-events",
                 "list",
                 "--format=json",
-                "--path", str(seeded_log),
+                "--path",
+                str(seeded_log),
             ],
         )
         assert result.exit_code == 0, result.output
         assert "DeprecationWarning" in result.stderr
         # Strip the deprecation warning line that CliRunner mixes into output.
         import json as _json
+
         lines = result.output.splitlines()
         json_lines = [ln for ln in lines if not ln.startswith("DeprecationWarning")]
         payload = _json.loads("\n".join(json_lines))

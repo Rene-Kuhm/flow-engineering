@@ -42,7 +42,12 @@ runner = CliRunner()
 
 
 def _make_obs(
-    *, obs_id: int, title: str, content: str, created_at: int = 1000, updated_at: int = 1000,
+    *,
+    obs_id: int,
+    title: str,
+    content: str,
+    created_at: int = 1000,
+    updated_at: int = 1000,
 ) -> dict:
     """Build an observation dict shaped like InMemoryBackend.mem_save output."""
     return {
@@ -85,9 +90,7 @@ def seeded_backend(monkeypatch: pytest.MonkeyPatch):
             backend.next_id = max(backend.next_id, o["id"] + 1)
             observations[o["id"]] = o
 
-    monkeypatch.setattr(
-        "flow_engineering.cli._default_save_backend", lambda: backend
-    )
+    monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
     return backend, _seed, observations
 
 
@@ -98,9 +101,15 @@ def graph_path(tmp_path: Path) -> Path:
 
 
 def _build_finding(
-    *, obs_id: Any, ref_id: str = "n1", label: str = "L",
-    file: str = "src/x.py", line: int = 1, source: str = "manual",
-    drift_class: DriftClass = DriftClass.STILL_VALID, detail: str = "",
+    *,
+    obs_id: Any,
+    ref_id: str = "n1",
+    label: str = "L",
+    file: str = "src/x.py",
+    line: int = 1,
+    source: str = "manual",
+    drift_class: DriftClass = DriftClass.STILL_VALID,
+    detail: str = "",
 ) -> Finding:
     """Build a Finding with a CodeRef-style binding for CLI tests.
 
@@ -110,17 +119,26 @@ def _build_finding(
     from flow_engineering.binding import CodeRef
 
     binding = CodeRef(
-        project="insyd", id=ref_id, label=label, file=file, line=line,
-        confidence=0.9, source=source,
+        project="insyd",
+        id=ref_id,
+        label=label,
+        file=file,
+        line=line,
+        confidence=0.9,
+        source=source,
     )
     return Finding(
-        decision_id=int(obs_id), binding=binding,
-        drift_class=drift_class, detail=detail,
+        decision_id=int(obs_id),
+        binding=binding,
+        drift_class=drift_class,
+        detail=detail,
     )
 
 
 def _patch_scan(
-    monkeypatch: pytest.MonkeyPatch, *, report: DriftReport | None = None,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    report: DriftReport | None = None,
     raise_exc: Exception | None = None,
 ) -> None:
     """Replace ``decision_drift.scan_change`` with a stub returning ``report``.
@@ -204,8 +222,7 @@ class TestExitCodeOne:
             },
             findings=[
                 _build_finding(obs_id=1, ref_id="ok", drift_class=DriftClass.STILL_VALID),
-                _build_finding(obs_id=2, ref_id="renamed",
-                               drift_class=DriftClass.LABEL_DRIFT),
+                _build_finding(obs_id=2, ref_id="renamed", drift_class=DriftClass.LABEL_DRIFT),
             ],
         )
         _patch_scan(monkeypatch, report=report)
@@ -306,16 +323,20 @@ class TestExitCodeTwo:
         def _stub(*args: Any, **kwargs: Any) -> DriftReport:
             called["called"] = True
             return DriftReport(
-                change_name="my-change", scanned_at=1000.0, graph_mtime=None,
-                decisions_total=0, bindings_total=0, class_counts={}, findings=[],
+                change_name="my-change",
+                scanned_at=1000.0,
+                graph_mtime=None,
+                decisions_total=0,
+                bindings_total=0,
+                class_counts={},
+                findings=[],
             )
 
         monkeypatch.setattr(cli_mod.decision_drift, "scan_change", _stub)
 
         result = runner.invoke(
             main,
-            ["drift", "run", "my-change", "--graph-json", str(graph_path),
-             "--since", "yesterday"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--since", "yesterday"],
         )
         assert result.exit_code == 2, result.output
         assert "since" in (result.stderr or "").lower() or "iso" in (result.stderr or "").lower()
@@ -339,8 +360,9 @@ class TestJsonOutput:
             decisions_total=1,
             bindings_total=1,
             class_counts={DriftClass.STALE_ID: 1},
-            findings=[_build_finding(obs_id=42, ref_id="missing_node",
-                                     drift_class=DriftClass.STALE_ID)],
+            findings=[
+                _build_finding(obs_id=42, ref_id="missing_node", drift_class=DriftClass.STALE_ID)
+            ],
         )
         _patch_scan(monkeypatch, report=report)
 
@@ -377,8 +399,12 @@ class TestIncludeObsolete:
         from flow_engineering import cli as cli_mod
 
         def _stub(
-            change_name: str, *, graph_json_path: Path, backend: Any = None,
-            include_obsolete: bool = False, since: float | None = None,
+            change_name: str,
+            *,
+            graph_json_path: Path,
+            backend: Any = None,
+            include_obsolete: bool = False,
+            since: float | None = None,
             snap_id: str | None = None,
         ) -> DriftReport:
             captured["change_name"] = change_name
@@ -387,16 +413,20 @@ class TestIncludeObsolete:
             captured["since"] = since
             captured["snap_id"] = snap_id
             return DriftReport(
-                change_name=change_name, scanned_at=1000.0, graph_mtime=999.0,
-                decisions_total=0, bindings_total=0, class_counts={}, findings=[],
+                change_name=change_name,
+                scanned_at=1000.0,
+                graph_mtime=999.0,
+                decisions_total=0,
+                bindings_total=0,
+                class_counts={},
+                findings=[],
             )
 
         monkeypatch.setattr(cli_mod.decision_drift, "scan_change", _stub)
 
         result = runner.invoke(
             main,
-            ["drift", "run", "my-change", "--graph-json", str(graph_path),
-             "--include-obsolete"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--include-obsolete"],
         )
         assert result.exit_code == 0, result.output
         assert captured["include_obsolete"] is True
@@ -417,23 +447,31 @@ class TestSince:
         from flow_engineering import cli as cli_mod
 
         def _stub(
-            change_name: str, *, graph_json_path: Path, backend: Any = None,
-            include_obsolete: bool = False, since: float | None = None,
+            change_name: str,
+            *,
+            graph_json_path: Path,
+            backend: Any = None,
+            include_obsolete: bool = False,
+            since: float | None = None,
             snap_id: str | None = None,
         ) -> DriftReport:
             captured["since"] = since
             captured["snap_id"] = snap_id
             return DriftReport(
-                change_name=change_name, scanned_at=1000.0, graph_mtime=999.0,
-                decisions_total=0, bindings_total=0, class_counts={}, findings=[],
+                change_name=change_name,
+                scanned_at=1000.0,
+                graph_mtime=999.0,
+                decisions_total=0,
+                bindings_total=0,
+                class_counts={},
+                findings=[],
             )
 
         monkeypatch.setattr(cli_mod.decision_drift, "scan_change", _stub)
 
         result = runner.invoke(
             main,
-            ["drift", "run", "my-change", "--graph-json", str(graph_path),
-             "--since", "2026-06-15"],
+            ["drift", "run", "my-change", "--graph-json", str(graph_path), "--since", "2026-06-15"],
         )
         assert result.exit_code == 0, result.output
         # 2026-06-15T00:00:00Z -> epoch seconds
@@ -458,8 +496,9 @@ class TestWriteBack:
             decisions_total=1,
             bindings_total=1,
             class_counts={DriftClass.STALE_ID: 1},
-            findings=[_build_finding(obs_id=42, ref_id="missing_node",
-                                     drift_class=DriftClass.STALE_ID)],
+            findings=[
+                _build_finding(obs_id=42, ref_id="missing_node", drift_class=DriftClass.STALE_ID)
+            ],
         )
         _patch_scan(monkeypatch, report=report)
 
@@ -594,10 +633,14 @@ class TestTableOutput:
             decisions_total=1,
             bindings_total=1,
             class_counts={DriftClass.STALE_ID: 1},
-            findings=[_build_finding(
-                obs_id=42, ref_id="ghost", label="GhostNode",
-                drift_class=DriftClass.STALE_ID,
-            )],
+            findings=[
+                _build_finding(
+                    obs_id=42,
+                    ref_id="ghost",
+                    label="GhostNode",
+                    drift_class=DriftClass.STALE_ID,
+                )
+            ],
         )
         _patch_scan(monkeypatch, report=report)
 
@@ -661,8 +704,13 @@ class TestWriteBackSkipWarn:
             Finding(
                 decision_id="non-int-0",  # type: ignore[arg-type]
                 binding=_CodeRef(
-                    project="insyd", id="r", label="L",
-                    file="src/x.py", line=1, confidence=0.9, source="manual",
+                    project="insyd",
+                    id="r",
+                    label="L",
+                    file="src/x.py",
+                    line=1,
+                    confidence=0.9,
+                    source="manual",
                 ),
                 drift_class=DriftClass.STALE_ID,
                 detail="",
@@ -719,12 +767,8 @@ class TestWriteBackSkipWarn:
         )
 
         stderr_text = (result.stderr or "") + capsys.readouterr().err
-        warn_lines = [
-            ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln
-        ]
-        assert warn_lines == [], (
-            f"expected no WARN lines on a clean batch; got {warn_lines!r}"
-        )
+        warn_lines = [ln for ln in stderr_text.splitlines() if "WARN" in ln and "skipped" in ln]
+        assert warn_lines == [], f"expected no WARN lines on a clean batch; got {warn_lines!r}"
         # All 5 rows were written.
         assert len(update_calls) == 5, update_calls
 
@@ -754,8 +798,13 @@ class TestWriteBackSkipWarn:
             Finding(
                 decision_id="non-int-0",  # type: ignore[arg-type]
                 binding=_CodeRef(
-                    project="insyd", id="r", label="L",
-                    file="src/x.py", line=1, confidence=0.9, source="manual",
+                    project="insyd",
+                    id="r",
+                    label="L",
+                    file="src/x.py",
+                    line=1,
+                    confidence=0.9,
+                    source="manual",
                 ),
                 drift_class=DriftClass.STALE_ID,
                 detail="",
@@ -812,7 +861,8 @@ class TestDriftEventsGroup:
                 "events",
                 "list",
                 "--format=text",
-                "--path", str(seeded_drift_events),
+                "--path",
+                str(seeded_drift_events),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -829,7 +879,8 @@ class TestDriftEventsGroup:
                 "drift",
                 "events",
                 "tail",
-                "--path", str(seeded_drift_events),
+                "--path",
+                str(seeded_drift_events),
             ],
         )
         assert result.exit_code == 0, result.output
@@ -845,7 +896,8 @@ class TestDriftEventsGroup:
                 "drift",
                 "events",
                 "stats",
-                "--path", str(seeded_drift_events),
+                "--path",
+                str(seeded_drift_events),
             ],
         )
         assert result.exit_code == 0, result.output
