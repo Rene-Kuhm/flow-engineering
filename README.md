@@ -120,6 +120,7 @@ See [Dependency Updates](docs/dependency-updates.md) for Dependabot scope and re
 See [Security Baseline](docs/security-baseline.md) and [Security Policy](SECURITY.md) for secret handling, token rotation, and sensitive-change gates.
 See [Session Checklist](docs/session-checklist.md) for the start/close routine agents should follow.
 See [Release and Recovery](docs/release-recovery.md) for release tagging, runner rebuild, rollback, and disaster recovery.
+See [Incident Response](docs/incident-response.md) for the symptom/diagnosis/fix/prevention workflow.
 
 ## License
 
@@ -131,3 +132,4 @@ See [Release and Recovery](docs/release-recovery.md) for release tagging, runner
 - Memory layer via [Engram](https://engram-mcp.com) (or compatible MCP memory provider).
 - Code indexing via [Graphify](https://github.com/codebase-memory/graphify).
 - Inspired by classical compiler pipelines: lex → parse → type-check → codegen → verify → archive.
+

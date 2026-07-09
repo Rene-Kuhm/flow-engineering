@@ -43,7 +43,7 @@ Goal: failures should find us before users do.
 - [x] Add CI failure notification path. `health-monitor` fails visibly through GitHub Actions notifications when the self-hosted runner is available.
 - [x] Add stale-green alert when no successful CI run exists after a threshold. `health-monitor` uses `HEALTH_MAX_CI_AGE_HOURS`.
 - [ ] Add out-of-band runner-down alert after GitHub-hosted billing or an external monitor is available.
-- [ ] Document incident response: symptom, diagnosis, fix, prevention.
+- [x] Document incident response: symptom, diagnosis, fix, prevention. See `docs/incident-response.md`.
 - [x] Record recent health-check result history. See `docs/system-health.md`.
 
 ## Priority 2 — security baseline
@@ -133,3 +133,4 @@ A slice is done when:
 - Do not convert every old follow-up into active work.
 - Do not expand SDD docs just to look enterprise.
 - Do not merge large refactors without slicing and review-budget proof.
+
