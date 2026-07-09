@@ -25,6 +25,7 @@ Test isolation:
 - Snapshots created in the Given step persist across When/Then in the
   same scenario world.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -179,7 +180,8 @@ def test_req31_diff_one_arg_vs_live(snapshot_world):
 
 @given(parsers.parse("an InMemoryBackend seeded with {n:d} observation"))
 def seed_n_observations_singular(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Seed ``n`` observations (singular wording: "1 observation")."""
     _seed_obs(snapshot_world["backend"], count=n)
@@ -187,7 +189,8 @@ def seed_n_observations_singular(
 
 @given(parsers.parse("an InMemoryBackend seeded with {n:d} observations"))
 def seed_n_observations_plural(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Seed ``n`` observations (plural wording: "N observations")."""
     _seed_obs(snapshot_world["backend"], count=n)
@@ -238,7 +241,7 @@ def given_five_ascending_snapshots(snapshot_world: dict[str, Any]) -> None:
                 break
 
 
-@given("a snapshot exists with description \"show-test\"")
+@given('a snapshot exists with description "show-test"')
 def given_one_snapshot_show_test(snapshot_world: dict[str, Any]) -> None:
     snapshot_world["snapshots_dir"].mkdir(parents=True, exist_ok=True)
     mgr = _get_manager(snapshot_world)
@@ -274,7 +277,8 @@ def given_added_2_since_a(snapshot_world: dict[str, Any]) -> None:
 @given("observation 2 was updated since snapshot A")
 def given_obs_2_updated(snapshot_world: dict[str, Any]) -> None:
     snapshot_world["backend"].update_observation(
-        2, content="drift detection strategy 1 UPDATED",
+        2,
+        content="drift detection strategy 1 UPDATED",
     )
 
 
@@ -291,7 +295,8 @@ def when_create_no_description(snapshot_world: dict[str, Any]) -> None:
 
 @when(parsers.parse('I create a snapshot with description "{description}"'))
 def when_create_with_description(
-    snapshot_world: dict[str, Any], description: str,
+    snapshot_world: dict[str, Any],
+    description: str,
 ) -> None:
     mgr = _get_manager(snapshot_world)
     sid = mgr.create(description=description)
@@ -305,13 +310,11 @@ def when_list_all(snapshot_world: dict[str, Any]) -> None:
     snapshot_world["list_result"] = mgr.list()
 
 
-@when(
-    parsers.parse(
-        'I list snapshots with since="{since}" and limit={limit:d}'
-    )
-)
+@when(parsers.parse('I list snapshots with since="{since}" and limit={limit:d}'))
 def when_list_with_since_and_limit(
-    snapshot_world: dict[str, Any], since: str, limit: int,
+    snapshot_world: dict[str, Any],
+    since: str,
+    limit: int,
 ) -> None:
     # The scenario passes a placeholder ``<T3.created_at>``; substitute
     # with the real created_at of the 3rd snapshot (1-indexed: T1=first).
@@ -337,7 +340,8 @@ def when_show_snapshot(snapshot_world: dict[str, Any]) -> None:
 def when_diff_a_vs_b(snapshot_world: dict[str, Any]) -> None:
     mgr = _get_manager(snapshot_world)
     snapshot_world["diff"] = mgr.diff(
-        snapshot_world["snap_id_a"], snapshot_world["snap_id_b"],
+        snapshot_world["snap_id_a"],
+        snapshot_world["snap_id_b"],
     )
 
 
@@ -360,6 +364,7 @@ def then_dir_has_one(snapshot_world: dict[str, Any]) -> None:
 def then_envelope_schema_1(snapshot_world: dict[str, Any]) -> None:
     sid = snapshot_world.get("last_snap_id") or snapshot_world["snap_ids"][-1]
     import gzip
+
     path = snapshot_world["snapshots_dir"] / f"{sid}.json.gz"
     with gzip.open(path, "rt", encoding="utf-8") as fh:
         envelope = json.loads(fh.read())
@@ -374,12 +379,8 @@ def then_sha256_matches(snapshot_world: dict[str, Any]) -> None:
     meta_for_hash = {k: v for k, v in meta.items() if k != "sha256"}
     envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
     envelope_for_hash["metadata"] = meta_for_hash
-    expected = hashlib.sha256(
-        _canonical_json_dumps(envelope_for_hash).encode("utf-8")
-    ).hexdigest()
-    assert meta["sha256"] == expected, (
-        f"sha256 mismatch: expected {expected}, got {meta['sha256']}"
-    )
+    expected = hashlib.sha256(_canonical_json_dumps(envelope_for_hash).encode("utf-8")).hexdigest()
+    assert meta["sha256"] == expected, f"sha256 mismatch: expected {expected}, got {meta['sha256']}"
 
 
 @then("the snapshot envelope graph_state contains all 5 observations")
@@ -393,6 +394,7 @@ def then_graph_state_has_5_obs(snapshot_world: dict[str, Any]) -> None:
 def then_envelope_description_literal(snapshot_world: dict[str, Any]) -> None:
     sid = snapshot_world["snap_ids"][-1]
     import gzip
+
     path = snapshot_world["snapshots_dir"] / f"{sid}.json.gz"
     with gzip.open(path, "rt", encoding="utf-8") as fh:
         envelope = json.loads(fh.read())
@@ -404,6 +406,7 @@ def then_prior_unchanged(snapshot_world: dict[str, Any]) -> None:
     prior_id = snapshot_world["prior_id"]
     prior_path = snapshot_world["snapshots_dir"] / f"{prior_id}.json.gz"
     import gzip
+
     with gzip.open(prior_path, "rt", encoding="utf-8") as fh:
         envelope = json.loads(fh.read())
     assert envelope["description"] == "prior"
@@ -458,8 +461,13 @@ def then_since_limit_combine(snapshot_world: dict[str, Any]) -> None:
 def then_envelope_has_7_keys(snapshot_world: dict[str, Any]) -> None:
     envelope = snapshot_world["envelope"]
     for key in (
-        "schema", "id", "created_at", "trigger", "description",
-        "graph_state", "metadata",
+        "schema",
+        "id",
+        "created_at",
+        "trigger",
+        "description",
+        "graph_state",
+        "metadata",
     ):
         assert key in envelope, f"Missing top-level key {key} in {envelope.keys()!r}"
 
@@ -499,9 +507,7 @@ def then_diff_unchanged_2(snapshot_world: dict[str, Any]) -> None:
 @then(parsers.parse('the diff summary starts with "{prefix}"'))
 def then_diff_summary_starts_with(snapshot_world: dict[str, Any], prefix: str) -> None:
     summary = snapshot_world["diff"].summary
-    assert summary.startswith(prefix), (
-        f"Expected summary to start with {prefix!r}, got {summary!r}"
-    )
+    assert summary.startswith(prefix), f"Expected summary to start with {prefix!r}, got {summary!r}"
 
 
 # ============================================================
@@ -537,9 +543,7 @@ def test_req32_rollback_conflict_refused(snapshot_world):
 
 
 @given(parsers.parse("a snapshot {snap_id} exists with {n:d} observations"))
-def given_snapshot_with_n_obs(
-    snapshot_world: dict[str, Any], snap_id: str, n: int
-) -> None:
+def given_snapshot_with_n_obs(snapshot_world: dict[str, Any], snap_id: str, n: int) -> None:
     """Create a snapshot named ``snap_id`` capturing ``n`` observations.
 
     The InMemoryBackend's auto-incremented IDs are deterministic, so the
@@ -563,19 +567,16 @@ def given_snapshot_with_n_obs(
 
 
 @given(parsers.parse("observation {obs_id:d} was modified after {snap_alias} was created"))
-def given_obs_was_modified(
-    snapshot_world: dict[str, Any], obs_id: int, snap_alias: str
-) -> None:
+def given_obs_was_modified(snapshot_world: dict[str, Any], obs_id: int, snap_alias: str) -> None:
     """Mark observation ``obs_id`` as modified AFTER the snapshot."""
     snapshot_world["backend"].update_observation(
-        obs_id, content=f"MODIFIED-AFTER-{snap_alias}",
+        obs_id,
+        content=f"MODIFIED-AFTER-{snap_alias}",
     )
 
 
 @given(parsers.parse("{n:d} observations were added since {snap_alias}"))
-def given_obs_added_since(
-    snapshot_world: dict[str, Any], n: int, snap_alias: str
-) -> None:
+def given_obs_added_since(snapshot_world: dict[str, Any], n: int, snap_alias: str) -> None:
     """Add ``n`` observations to live state AFTER the snapshot."""
     _seed_obs(snapshot_world["backend"], count=n)
 
@@ -584,18 +585,13 @@ def given_obs_added_since(
 
 
 @when(parsers.parse("I rollback to {snap_alias} without --confirm"))
-def when_rollback_no_confirm(
-    snapshot_world: dict[str, Any], snap_alias: str
-) -> None:
+def when_rollback_no_confirm(snapshot_world: dict[str, Any], snap_alias: str) -> None:
     """Attempt rollback WITHOUT ``--confirm`` — expect refusal."""
     real_id = snapshot_world["snap_aliases"][snap_alias]
     mgr = _get_manager(snapshot_world)
-    snapshot_world["files_before"] = sorted(
-        snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
-    )
+    snapshot_world["files_before"] = sorted(snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
     snapshot_world["backend_before"] = {
-        int(o["id"]): dict(o)
-        for o in snapshot_world["backend"].iter_observations()
+        int(o["id"]): dict(o) for o in snapshot_world["backend"].iter_observations()
     }
     try:
         mgr.rollback(real_id, confirm=False)
@@ -605,18 +601,13 @@ def when_rollback_no_confirm(
 
 
 @when(parsers.parse("I rollback to {snap_alias} with --confirm"))
-def when_rollback_with_confirm(
-    snapshot_world: dict[str, Any], snap_alias: str
-) -> None:
+def when_rollback_with_confirm(snapshot_world: dict[str, Any], snap_alias: str) -> None:
     """Attempt rollback WITH ``--confirm`` — may succeed or conflict."""
     real_id = snapshot_world["snap_aliases"][snap_alias]
     mgr = _get_manager(snapshot_world)
-    snapshot_world["files_before"] = sorted(
-        snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
-    )
+    snapshot_world["files_before"] = sorted(snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
     snapshot_world["backend_before"] = {
-        int(o["id"]): dict(o)
-        for o in snapshot_world["backend"].iter_observations()
+        int(o["id"]): dict(o) for o in snapshot_world["backend"].iter_observations()
     }
     try:
         result = mgr.rollback(real_id, confirm=True)
@@ -639,9 +630,7 @@ def then_rollback_refused(snapshot_world: dict[str, Any]) -> None:
         f"expected RollbackRefusedError, got {type(exc).__name__}: {exc}"
     )
     payload = exc.payload
-    assert payload["error"] == (
-        "--confirm required to write; use --dry-run to preview"
-    )
+    assert payload["error"] == ("--confirm required to write; use --dry-run to preview")
     assert "snap_id" in payload
 
 
@@ -649,10 +638,7 @@ def then_rollback_refused(snapshot_world: dict[str, Any]) -> None:
 def then_live_state_unchanged(snapshot_world: dict[str, Any]) -> None:
     """Verify live backend observations match what was there BEFORE the rollback."""
     before = snapshot_world.get("backend_before", {})
-    current = {
-        int(o["id"]): dict(o)
-        for o in snapshot_world["backend"].iter_observations()
-    }
+    current = {int(o["id"]): dict(o) for o in snapshot_world["backend"].iter_observations()}
     assert current.keys() == before.keys(), (
         f"live state ID set changed: before={sorted(before)} after={sorted(current)}"
     )
@@ -675,10 +661,12 @@ def then_no_safety_snapshot(snapshot_world: dict[str, Any]) -> None:
     )
 
 
-@then(parsers.parse("the rollback succeeds with safety_snapshot_id and target_snapshot_id {snap_alias}"))
-def then_rollback_succeeds(
-    snapshot_world: dict[str, Any], snap_alias: str
-) -> None:
+@then(
+    parsers.parse(
+        "the rollback succeeds with safety_snapshot_id and target_snapshot_id {snap_alias}"
+    )
+)
+def then_rollback_succeeds(snapshot_world: dict[str, Any], snap_alias: str) -> None:
     result = snapshot_world["rollback_result"]
     assert result is not None, (
         f"expected RollbackResult; got exception={snapshot_world['rollback_exception']}"
@@ -690,9 +678,7 @@ def then_rollback_succeeds(
 
 
 @then(parsers.parse('the safety snapshot was created with trigger "{trigger}"'))
-def then_safety_trigger(
-    snapshot_world: dict[str, Any], trigger: str
-) -> None:
+def then_safety_trigger(snapshot_world: dict[str, Any], trigger: str) -> None:
     safety_id = snapshot_world["safety_snap_id"]
     assert safety_id is not None
     safety_path = snapshot_world["snapshots_dir"] / f"{safety_id}.json.gz"
@@ -703,37 +689,27 @@ def then_safety_trigger(
 
 
 @then(parsers.parse('the safety snapshot description starts with "{prefix}"'))
-def then_safety_description_prefix(
-    snapshot_world: dict[str, Any], prefix: str
-) -> None:
+def then_safety_description_prefix(snapshot_world: dict[str, Any], prefix: str) -> None:
     safety_id = snapshot_world["safety_snap_id"]
     safety_path = snapshot_world["snapshots_dir"] / f"{safety_id}.json.gz"
     envelope = _read_envelope_safe(safety_path)
     assert envelope["description"].startswith(prefix), (
-        f"expected description to start with {prefix!r}; "
-        f"got {envelope.get('description')!r}"
+        f"expected description to start with {prefix!r}; got {envelope.get('description')!r}"
     )
 
 
 @then(parsers.parse("observation {obs_id:d} content is restored to the original"))
-def then_obs_content_restored(
-    snapshot_world: dict[str, Any], obs_id: int
-) -> None:
+def then_obs_content_restored(snapshot_world: dict[str, Any], obs_id: int) -> None:
     expected = snapshot_world["original_obs_content"].get(obs_id)
-    assert expected is not None, (
-        f"no original content captured for obs {obs_id}"
-    )
+    assert expected is not None, f"no original content captured for obs {obs_id}"
     current = snapshot_world["backend"].mem_get_observation(obs_id)
     assert current["content"] == expected, (
-        f"obs {obs_id} content not restored: expected {expected!r}; "
-        f"got {current['content']!r}"
+        f"obs {obs_id} content not restored: expected {expected!r}; got {current['content']!r}"
     )
 
 
 @then(parsers.parse("the rollback fails with conflict listing the {n:d} new observation IDs"))
-def then_rollback_conflict(
-    snapshot_world: dict[str, Any], n: int
-) -> None:
+def then_rollback_conflict(snapshot_world: dict[str, Any], n: int) -> None:
     exc = snapshot_world["rollback_exception"]
     assert exc is not None and isinstance(exc, RollbackConflictError), (  # noqa: PT018
         f"expected RollbackConflictError; got {exc!r}"
@@ -744,8 +720,7 @@ def then_rollback_conflict(
         f"expected {n} conflicts; got {len(conflict_ids)}: {conflict_ids}"
     )
     assert all(c["change"] == "added" for c in payload["conflicts"]), (
-        f"expected all changes to be 'added'; got "
-        f"{[c['change'] for c in payload['conflicts']]}"
+        f"expected all changes to be 'added'; got {[c['change'] for c in payload['conflicts']]}"
     )
 
 
@@ -776,6 +751,7 @@ def then_safety_still_created(snapshot_world: dict[str, Any]) -> None:
 def _read_envelope_safe(path: Path) -> dict[str, Any]:
     """Read + gunzip + json.loads the snapshot envelope at ``path``."""
     import gzip as _gzip
+
     with _gzip.open(path, "rt", encoding="utf-8") as fh:
         return json.loads(fh.read())
 
@@ -806,7 +782,8 @@ def test_req34_prune_dry_run_no_confirm(snapshot_world):
 
 @given(parsers.parse("{n:d} snapshots exist with timestamps spanning {n:d} days"))
 def given_n_snapshots_spanning_days(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Create ``n`` snapshots backdated to cover ``n`` distinct days.
 
@@ -833,9 +810,7 @@ def given_n_snapshots_spanning_days(
             envelope = json.loads(fh.read())
         backdated = datetime.now(UTC) - timedelta(days=(n - 1 - offset))
         envelope["created_at"] = backdated.strftime("%Y-%m-%dT%H:%M:%SZ")
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         envelope["metadata"]["sha256"] = _hashlib.sha256(
@@ -849,7 +824,8 @@ def given_n_snapshots_spanning_days(
 
 @given(parsers.parse("the {n:d} oldest are NOT pinned and NOT the most recent"))
 def given_n_oldest_not_pinned(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Sanity precondition — the 3 oldest snapshots are regular (un-pinned).
 
@@ -857,6 +833,7 @@ def given_n_oldest_not_pinned(
     step is mostly a contract assertion for the feature's intent.
     """
     import gzip as _gzip
+
     oldest_ids = snapshot_world["snap_ids"][:n]
     for sid in oldest_ids:
         path = snapshot_world["snapshots_dir"] / f"{sid}.json.gz"
@@ -869,7 +846,8 @@ def given_n_oldest_not_pinned(
 
 @given(parsers.parse("{n:d} snapshots exist"))
 def given_n_snapshots_simple(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Plain ``Given N snapshots exist`` setup (no date span)."""
     snapshot_world["snapshots_dir"].mkdir(parents=True, exist_ok=True)
@@ -887,7 +865,8 @@ def given_n_snapshots_simple(
 
 @when(parsers.parse("I run flow snapshot prune with --keep-last {n:d} and --confirm"))
 def when_prune_keep_last_with_confirm(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Invoke ``SnapshotManager.prune(keep_last=N, confirm=True)``."""
     mgr = _get_manager(snapshot_world)
@@ -903,7 +882,8 @@ def when_prune_keep_last_with_confirm(
 
 @when(parsers.parse("I run flow snapshot prune with --keep-last {n:d} (no --confirm)"))
 def when_prune_keep_last_no_confirm(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """Invoke ``SnapshotManager.prune(keep_last=N)`` (dry-run)."""
     mgr = _get_manager(snapshot_world)
@@ -922,12 +902,11 @@ def when_prune_keep_last_no_confirm(
 
 @then(parsers.parse("exactly {n:d} snapshot files are removed"))
 def then_n_files_removed(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     before = len(snapshot_world["files_before"])
-    after_files = sorted(
-        p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
-    )
+    after_files = sorted(p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
     after = len(after_files)
     assert before - after == n, (
         f"expected exactly {n} files removed (before={before}, after={after}); "
@@ -938,13 +917,13 @@ def then_n_files_removed(
 
 @then(parsers.parse("the remaining {n:d} are the {n:d} most recent"))
 def then_remaining_are_most_recent(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """The ``n`` remaining snapshot ids are the ``n`` most recent (last n)."""
     remaining_ids = [
-        p.name.replace(".json.gz", "") for p in (
-            snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
-        )
+        p.name.replace(".json.gz", "")
+        for p in (snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
     ]
     expected = snapshot_world["snap_ids"][-n:]
     assert set(remaining_ids) == set(expected), (
@@ -954,18 +933,16 @@ def then_remaining_are_most_recent(
 
 @then("no snapshot files are removed")
 def then_no_files_removed(snapshot_world: dict[str, Any]) -> None:
-    after_files = sorted(
-        p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz")
-    )
+    after_files = sorted(p.name for p in snapshot_world["snapshots_dir"].glob("snap_*.json.gz"))
     assert after_files == snapshot_world["files_before"], (
-        f"dry-run MUST NOT touch files; before={snapshot_world['files_before']} "
-        f"after={after_files}"
+        f"dry-run MUST NOT touch files; before={snapshot_world['files_before']} after={after_files}"
     )
 
 
-@then(parsers.parse("the prune output lists {n:d} \"would delete\" ids"))
+@then(parsers.parse('the prune output lists {n:d} "would delete" ids'))
 def then_prune_would_delete_count(
-    snapshot_world: dict[str, Any], n: int,
+    snapshot_world: dict[str, Any],
+    n: int,
 ) -> None:
     """``result.would_delete`` has ``n`` ids and ``result.dry_run`` is True."""
     result = snapshot_world["prune_result"]
@@ -974,8 +951,7 @@ def then_prune_would_delete_count(
     )
     assert result.dry_run is True
     assert len(result.would_delete) == n, (
-        f"expected {n} would_delete ids; got {len(result.would_delete)}: "
-        f"{result.would_delete!r}"
+        f"expected {n} would_delete ids; got {len(result.would_delete)}: {result.would_delete!r}"
     )
 
 
