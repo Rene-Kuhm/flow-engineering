@@ -56,8 +56,7 @@ def _ref(
 
 def _nodes(*pairs: tuple[str, str]) -> dict[str, dict]:
     return {
-        pid: {"id": pid, "label": lbl, "file": "src/auth/jwt.py", "line": 42}
-        for pid, lbl in pairs
+        pid: {"id": pid, "label": lbl, "file": "src/auth/jwt.py", "line": 42} for pid, lbl in pairs
     }
 
 
@@ -145,9 +144,7 @@ def test_drift_report_unable_reason_default_none() -> None:
 def test_epoch_to_iso_helper_matches_datetime() -> None:
     """The internal ``_epoch_to_iso`` helper must format Z-suffixed ISO."""
     epoch = 1751000000.0
-    expected = datetime.fromtimestamp(epoch, tz=UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    expected = datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     assert _epoch_to_iso(epoch) == expected
 
 

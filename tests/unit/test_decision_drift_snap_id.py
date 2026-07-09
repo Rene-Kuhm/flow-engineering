@@ -29,6 +29,7 @@ Coverage map (REQ-33 + D13 + D5):
    ``SnapshotGraphMissing`` when ``scan_change`` is invoked with that
    ``snap_id`` (D2 graceful degradation).
 """
+
 from __future__ import annotations
 
 import gzip
@@ -78,9 +79,8 @@ def _seed_obs_with_binding(
         confidence=0.9,
         source="manual",
     )
-    content = (
-        "## Decision\n\nSnapshot-pinned binding.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\n\nSnapshot-pinned binding.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     obs = backend.mem_save(
         title="snap-test/phase_0",
@@ -97,7 +97,8 @@ def _write_graph(graph_path: Path, *, nodes: list[dict[str, Any]]) -> None:
 
 
 def _envelope_obs_payload(
-    backend: InMemoryBackend, *,
+    backend: InMemoryBackend,
+    *,
     with_include_graph: bool = True,
     nodes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -119,30 +120,32 @@ def _envelope_obs_payload(
         envelope["graph_state"].pop("graph_json", None)
         envelope["metadata"]["include_graph"] = False
         # Rewrite without the sha256 to avoid mismatches.
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         import hashlib as _hashlib
+
         canonical = json.dumps(
-            envelope_for_hash, ensure_ascii=False,
-            sort_keys=True, separators=(",", ":"),
+            envelope_for_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with gzip.open(path, "wt", encoding="utf-8") as fh:
             fh.write(json.dumps(envelope, ensure_ascii=False))
     elif nodes is not None:
         envelope["graph_state"]["graph_json"] = {"nodes": nodes}
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         import hashlib as _hashlib
+
         canonical = json.dumps(
-            envelope_for_hash, ensure_ascii=False,
-            sort_keys=True, separators=(",", ":"),
+            envelope_for_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with gzip.open(path, "wt", encoding="utf-8") as fh:
@@ -162,13 +165,17 @@ class TestLoadGraphWithSnapId:
         backend = InMemoryBackend()
         # Seed an observation so the snapshot has at least one entry.
         _seed_obs_with_binding(
-            backend, cref_id="vec_store", cref_file="vectors/sqlite_vec_store.py",
-            cref_line=42, cref_label="SQLiteVecStore",
+            backend,
+            cref_id="vec_store",
+            cref_file="vectors/sqlite_vec_store.py",
+            cref_line=42,
+            cref_label="SQLiteVecStore",
         )
 
         # Create snapshot with custom graph.json content.
         snap_id = SnapshotManager(snapshots_dir=tmp_path / "snaps", backend=backend).create(
-            description="frozen", trigger="manual",
+            description="frozen",
+            trigger="manual",
         )
         # Rewrite envelope to embed a known graph_json.
         path = (tmp_path / "snaps") / f"{snap_id}.json.gz"
@@ -176,19 +183,24 @@ class TestLoadGraphWithSnapId:
             envelope = json.loads(fh.read())
         envelope["graph_state"]["graph_json"] = {
             "nodes": [
-                {"id": "vec_store", "label": "SQLiteVecStore",
-                 "file": "vectors/sqlite_vec_store.py", "line": 42},
+                {
+                    "id": "vec_store",
+                    "label": "SQLiteVecStore",
+                    "file": "vectors/sqlite_vec_store.py",
+                    "line": 42,
+                },
             ]
         }
         import hashlib as _hashlib
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         canonical = json.dumps(
-            envelope_for_hash, ensure_ascii=False,
-            sort_keys=True, separators=(",", ":"),
+            envelope_for_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with gzip.open(path, "wt", encoding="utf-8") as fh:
@@ -196,7 +208,8 @@ class TestLoadGraphWithSnapId:
 
         # Call load_graph with snap_id only (path MUST be None).
         nodes, id_map, mtime = decision_drift.load_graph(
-            graph_json_path=None, snap_id=snap_id,
+            graph_json_path=None,
+            snap_id=snap_id,
         )
 
         # Frozen graph content is loaded.
@@ -204,18 +217,22 @@ class TestLoadGraphWithSnapId:
         assert "vec_store" in nodes
         assert id_map is not None
         assert id_map["vec_store"] == (
-            "vectors/sqlite_vec_store.py", 42, "SQLiteVecStore",
+            "vectors/sqlite_vec_store.py",
+            42,
+            "SQLiteVecStore",
         )
         assert mtime is not None  # snapshot provides a frozen mtime
 
-    def test_load_graph_snap_id_and_path_mutual_exclusion(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_graph_snap_id_and_path_mutual_exclusion(self, tmp_path: Path) -> None:
         from flow_engineering import decision_drift
 
         backend = InMemoryBackend()
         _seed_obs_with_binding(
-            backend, cref_id="x", cref_file="x.py", cref_line=1, cref_label="X",
+            backend,
+            cref_id="x",
+            cref_file="x.py",
+            cref_line=1,
+            cref_label="X",
         )
         snap_id = SnapshotManager(snapshots_dir=tmp_path / "snaps", backend=backend).create(
             description="mx",
@@ -225,7 +242,8 @@ class TestLoadGraphWithSnapId:
 
         with pytest.raises(ValueError):  # noqa: PT011
             decision_drift.load_graph(
-                graph_json_path=graph_path, snap_id=snap_id,
+                graph_json_path=graph_path,
+                snap_id=snap_id,
             )
 
 
@@ -235,9 +253,7 @@ class TestLoadGraphWithSnapId:
 class TestLoadGraphNonRegression:
     """``load_graph(graph_json_path)`` byte-identical to pre-change (D13)."""
 
-    def test_load_graph_default_none_byte_identical_to_pre_change(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_graph_default_none_byte_identical_to_pre_change(self, tmp_path: Path) -> None:
         """Calling without snap_id returns the same shape as before the seam."""
         from flow_engineering import decision_drift
 
@@ -245,8 +261,7 @@ class TestLoadGraphNonRegression:
         _write_graph(
             graph_path,
             nodes=[
-                {"id": "alpha", "label": "Alpha",
-                 "file": "src/alpha.py", "line": 10},
+                {"id": "alpha", "label": "Alpha", "file": "src/alpha.py", "line": 10},
             ],
         )
 
@@ -259,9 +274,7 @@ class TestLoadGraphNonRegression:
         assert mtime is not None
         assert mtime > 0
 
-    def test_load_graph_with_explicit_none_returns_same_as_default(
-        self, tmp_path: Path
-    ) -> None:
+    def test_load_graph_with_explicit_none_returns_same_as_default(self, tmp_path: Path) -> None:
         """``load_graph(graph_json_path, snap_id=None)`` matches pre-change behavior."""
         from flow_engineering import decision_drift
 
@@ -270,7 +283,8 @@ class TestLoadGraphNonRegression:
 
         # Positional path + explicit snap_id=None.
         nodes_a, id_map_a, mtime_a = decision_drift.load_graph(
-            graph_json_path=graph_path, snap_id=None,
+            graph_json_path=graph_path,
+            snap_id=None,
         )
         # Pre-change positional only.
         nodes_b, id_map_b, mtime_b = decision_drift.load_graph(graph_path)
@@ -287,9 +301,7 @@ class TestLoadGraphNonRegression:
 class TestScanChangeWithSnapId:
     """``scan_change(snap_id=...)`` uses frozen observations + graph."""
 
-    def test_scan_change_with_snap_id_uses_frozen_observations(
-        self, tmp_path: Path
-    ) -> None:
+    def test_scan_change_with_snap_id_uses_frozen_observations(self, tmp_path: Path) -> None:
         from flow_engineering import decision_drift
 
         backend = InMemoryBackend()
@@ -311,19 +323,24 @@ class TestScanChangeWithSnapId:
             envelope = json.loads(fh.read())
         envelope["graph_state"]["graph_json"] = {
             "nodes": [
-                {"id": "vec_store", "label": "SQLiteVecStore",
-                 "file": "vectors/sqlite_vec_store.py", "line": 42},
+                {
+                    "id": "vec_store",
+                    "label": "SQLiteVecStore",
+                    "file": "vectors/sqlite_vec_store.py",
+                    "line": 42,
+                },
             ]
         }
         import hashlib as _hashlib
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         canonical = json.dumps(
-            envelope_for_hash, ensure_ascii=False,
-            sort_keys=True, separators=(",", ":"),
+            envelope_for_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with gzip.open(path, "wt", encoding="utf-8") as fh:
@@ -332,17 +349,25 @@ class TestScanChangeWithSnapId:
         # Now MUTATE live state so the binding is stale — but the scan
         # should still see the SNAPSHOT's frozen state (D5 headline).
         backend.update_observation(
-            1, content=(
+            1,
+            content=(
                 "## Decision\n\nUpdated content (live, irrelevant to scan).\n"
                 + "<!-- code_refs -->\n"
-                + json.dumps({
-                    "schema_version": 1, "source": "manual",
-                    "nodes": [{
-                        "id": "vec_store", "label": "STALE_LABEL",
-                        "file": "vectors/sqlite_vec_store.py", "line": 42,
-                        "confidence": 0.9,
-                    }],
-                })
+                + json.dumps(
+                    {
+                        "schema_version": 1,
+                        "source": "manual",
+                        "nodes": [
+                            {
+                                "id": "vec_store",
+                                "label": "STALE_LABEL",
+                                "file": "vectors/sqlite_vec_store.py",
+                                "line": 42,
+                                "confidence": 0.9,
+                            }
+                        ],
+                    }
+                )
             ),
         )
 
@@ -355,20 +380,23 @@ class TestScanChangeWithSnapId:
 
         # DriftReport is built from the FROZEN observation set, NOT live.
         from flow_engineering.decision_drift import DriftClass
+
         # The frozen observation still has the original binding, matching
         # the frozen graph_json → STILL_VALID, not LABEL_DRIFT.
         assert report.class_counts.get(DriftClass.STILL_VALID, 0) >= 1
         assert report.class_counts.get(DriftClass.LABEL_DRIFT, 0) == 0
         assert report.findings, "expected at least one frozen-state finding"
 
-    def test_scan_change_snap_id_and_backend_mutual_exclusion(
-        self, tmp_path: Path
-    ) -> None:
+    def test_scan_change_snap_id_and_backend_mutual_exclusion(self, tmp_path: Path) -> None:
         from flow_engineering import decision_drift
 
         backend = InMemoryBackend()
         _seed_obs_with_binding(
-            backend, cref_id="x", cref_file="x.py", cref_line=1, cref_label="X",
+            backend,
+            cref_id="x",
+            cref_file="x.py",
+            cref_line=1,
+            cref_label="X",
         )
         snap_id = SnapshotManager(snapshots_dir=tmp_path / "snaps", backend=backend).create(
             description="mx",
@@ -382,24 +410,24 @@ class TestScanChangeWithSnapId:
                 snap_id=snap_id,
             )
 
-    def test_scan_change_without_snap_id_byte_identical(
-        self, tmp_path: Path
-    ) -> None:
+    def test_scan_change_without_snap_id_byte_identical(self, tmp_path: Path) -> None:
         """No ``snap_id`` ⇒ same call shape as pre-change (D13 non-breaking)."""
         from flow_engineering import decision_drift
 
         backend = InMemoryBackend()
         _seed_obs_with_binding(
-            backend, cref_id="alpha", cref_file="src/alpha.py",
-            cref_line=10, cref_label="Alpha",
+            backend,
+            cref_id="alpha",
+            cref_file="src/alpha.py",
+            cref_line=10,
+            cref_label="Alpha",
             topic_key="sdd/vector-semantic-search/spec",
         )
         graph_path = tmp_path / "graph.json"
         _write_graph(
             graph_path,
             nodes=[
-                {"id": "alpha", "label": "Alpha",
-                 "file": "src/alpha.py", "line": 10},
+                {"id": "alpha", "label": "Alpha", "file": "src/alpha.py", "line": 10},
             ],
         )
 
@@ -410,18 +438,21 @@ class TestScanChangeWithSnapId:
         )
 
         from flow_engineering.decision_drift import DriftClass
+
         assert report.class_counts.get(DriftClass.STILL_VALID, 0) == 1
         assert report.findings[0].drift_class == DriftClass.STILL_VALID
 
-    def test_scan_change_snap_id_missing_graph_json_raises(
-        self, tmp_path: Path
-    ) -> None:
+    def test_scan_change_snap_id_missing_graph_json_raises(self, tmp_path: Path) -> None:
         """When snapshot's ``metadata.include_graph == False``, raise ``SnapshotGraphMissing``."""
         from flow_engineering import decision_drift
 
         backend = InMemoryBackend()
         _seed_obs_with_binding(
-            backend, cref_id="x", cref_file="x.py", cref_line=1, cref_label="X",
+            backend,
+            cref_id="x",
+            cref_file="x.py",
+            cref_line=1,
+            cref_label="X",
         )
         snap_id = SnapshotManager(snapshots_dir=tmp_path / "snaps", backend=backend).create(
             description="no-graph",
@@ -433,14 +464,15 @@ class TestScanChangeWithSnapId:
         envelope["graph_state"].pop("graph_json", None)
         envelope["metadata"]["include_graph"] = False
         import hashlib as _hashlib
-        meta_for_hash = {
-            k: v for k, v in envelope["metadata"].items() if k != "sha256"
-        }
+
+        meta_for_hash = {k: v for k, v in envelope["metadata"].items() if k != "sha256"}
         envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
         envelope_for_hash["metadata"] = meta_for_hash
         canonical = json.dumps(
-            envelope_for_hash, ensure_ascii=False,
-            sort_keys=True, separators=(",", ":"),
+            envelope_for_hash,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
         envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with gzip.open(path, "wt", encoding="utf-8") as fh:

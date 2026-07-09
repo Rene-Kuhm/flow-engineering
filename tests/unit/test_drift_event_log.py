@@ -120,9 +120,7 @@ class TestAppendCreatesFile:
         parsed = json.loads(lines[0])
         assert parsed == event.to_json_dict()
 
-    def test_drift_event_log_creates_parent_dirs(
-        self, tmp_path: Path
-    ) -> None:
+    def test_drift_event_log_creates_parent_dirs(self, tmp_path: Path) -> None:
         """A nested parent path (missing intermediate dirs) is auto-created."""
         nested = tmp_path / "deep" / "nested" / "drift_events.jsonl"
         log = DriftEventLog(path=nested)
@@ -138,9 +136,7 @@ class TestAppendCreatesFile:
 class TestAppendMultipleEvents:
     """Multiple appends write one JSONL line per event in order."""
 
-    def test_drift_event_log_appends_multiple_events_as_jsonl(
-        self, log_path: Path
-    ) -> None:
+    def test_drift_event_log_appends_multiple_events_as_jsonl(self, log_path: Path) -> None:
         """Three appends produce exactly three lines, no overwrites."""
         log = DriftEventLog(path=log_path)
         events = [_make_event(decision_id=i, binding_id=f"obs-{i}") for i in range(3)]
@@ -154,9 +150,7 @@ class TestAppendMultipleEvents:
         for ev, raw in zip(events, lines, strict=False):
             assert json.loads(raw) == ev.to_json_dict()
 
-    def test_drift_event_log_read_all_returns_events_in_order(
-        self, log_path: Path
-    ) -> None:
+    def test_drift_event_log_read_all_returns_events_in_order(self, log_path: Path) -> None:
         """``read_all()`` returns the events in append order."""
         log = DriftEventLog(path=log_path)
         events = [
@@ -173,9 +167,7 @@ class TestAppendMultipleEvents:
         for got, want in zip(result, events, strict=False):
             assert got == want
 
-    def test_drift_event_log_read_all_skips_malformed_lines(
-        self, log_path: Path
-    ) -> None:
+    def test_drift_event_log_read_all_skips_malformed_lines(self, log_path: Path) -> None:
         """Malformed JSONL lines are silently skipped (sink is best-effort)."""
         log = DriftEventLog(path=log_path)
         log.append(_make_event(decision_id=1))
@@ -190,9 +182,7 @@ class TestAppendMultipleEvents:
         assert len(result) == 3
         assert [ev.decision_id for ev in result] == [1, 2, 3]
 
-    def test_drift_event_log_read_all_on_missing_file_returns_empty(
-        self, tmp_path: Path
-    ) -> None:
+    def test_drift_event_log_read_all_on_missing_file_returns_empty(self, tmp_path: Path) -> None:
         """``read_all()`` returns ``[]`` when the JSONL file does not exist."""
         log = DriftEventLog(path=tmp_path / "nope.jsonl")
 
@@ -221,13 +211,15 @@ class TestReadAllLegacyCoercion:
         )
 
         log_path = tmp_path / "drift_events.jsonl"
-        legacy_line = json.dumps({
-            "change": "x",
-            "decision_id": "42",
-            "binding_id": "y",
-            "class": "z",
-            "detected_at": 1_710_000_000.0,
-        })
+        legacy_line = json.dumps(
+            {
+                "change": "x",
+                "decision_id": "42",
+                "binding_id": "y",
+                "class": "z",
+                "detected_at": 1_710_000_000.0,
+            }
+        )
         log_path.write_text(legacy_line + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
@@ -237,42 +229,44 @@ class TestReadAllLegacyCoercion:
         stderr = capsys.readouterr().err
         assert "legacy str decision_id" not in stderr
 
-    def test_read_all_non_numeric_legacy_str_also_raises(
-        self, tmp_path: Path
-    ) -> None:
+    def test_read_all_non_numeric_legacy_str_also_raises(self, tmp_path: Path) -> None:
         """A non-numeric legacy str decision_id RAISES too (v1.0 silently skipped)."""
         from flow_engineering.drift_event_log import (
             DriftEventLogLegacyFormatError,
         )
 
         log_path = tmp_path / "drift_events.jsonl"
-        legacy_line = json.dumps({
-            "change": "x",
-            "decision_id": "not-a-number",
-            "binding_id": "y",
-            "class": "z",
-            "detected_at": 1_710_000_000.0,
-        })
+        legacy_line = json.dumps(
+            {
+                "change": "x",
+                "decision_id": "not-a-number",
+                "binding_id": "y",
+                "class": "z",
+                "detected_at": 1_710_000_000.0,
+            }
+        )
         log_path.write_text(legacy_line + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
         with pytest.raises(DriftEventLogLegacyFormatError):
             log.read_all()
 
-    def test_read_all_v10_int_lines_still_parse(
-        self, tmp_path: Path
-    ) -> None:
+    def test_read_all_v10_int_lines_still_parse(self, tmp_path: Path) -> None:
         """v1.0-compliant int decision_id lines continue to parse unchanged."""
         log_path = tmp_path / "drift_events.jsonl"
         lines = []
         for i in range(3):
-            lines.append(json.dumps({
-                "change": "x",
-                "decision_id": i + 100,
-                "binding_id": f"y{i}",
-                "class": "z",
-                "detected_at": 1_710_000_000.0 + i,
-            }))
+            lines.append(
+                json.dumps(
+                    {
+                        "change": "x",
+                        "decision_id": i + 100,
+                        "binding_id": f"y{i}",
+                        "class": "z",
+                        "detected_at": 1_710_000_000.0 + i,
+                    }
+                )
+            )
         log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
@@ -290,9 +284,7 @@ class TestThreadSafety:
     """The append writer MUST use a file lock so concurrent appends do not
     interleave bytes (D11 — file lock + flush for thread safety)."""
 
-    def test_drift_event_log_thread_safety_uses_flock(
-        self, log_path: Path
-    ) -> None:
+    def test_drift_event_log_thread_safety_uses_flock(self, log_path: Path) -> None:
         """20 threads × 10 events each produce exactly 200 lines (no lost
         writes, no interleaved bytes)."""
         log = DriftEventLog(path=log_path)
@@ -308,9 +300,7 @@ class TestThreadSafety:
                     )
                 )
 
-        threads = [
-            threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)
-        ]
+        threads = [threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)]
         for t in threads:
             t.start()
         for t in threads:
@@ -355,22 +345,22 @@ class TestReadAllLegacyFormat:
     first legacy line.
     """
 
-    def test_legacy_str_decision_id_raises_legacy_format_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_legacy_str_decision_id_raises_legacy_format_error(self, tmp_path: Path) -> None:
         """A legacy str decision_id line raises DriftEventLogLegacyFormatError (T2.1 RED)."""
         from flow_engineering.drift_event_log import (
             DriftEventLogLegacyFormatError,
         )
 
         log_path = tmp_path / "drift_events.jsonl"
-        legacy_line = json.dumps({
-            "change": "x",
-            "decision_id": "42",
-            "binding_id": "y",
-            "class": "z",
-            "detected_at": 1_710_000_000.0,
-        })
+        legacy_line = json.dumps(
+            {
+                "change": "x",
+                "decision_id": "42",
+                "binding_id": "y",
+                "class": "z",
+                "detected_at": 1_710_000_000.0,
+            }
+        )
         log_path.write_text(legacy_line + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
@@ -386,9 +376,7 @@ class TestReadAllLegacyFormat:
 
         assert issubclass(DriftEventLogLegacyFormatError, ValueError)
 
-    def test_legacy_lines_remain_skippable_via_caller_catch(
-        self, tmp_path: Path
-    ) -> None:
+    def test_legacy_lines_remain_skippable_via_caller_catch(self, tmp_path: Path) -> None:
         """Read-side callers can ``except DriftEventLogLegacyFormatError``
         to keep the best-effort sink ethos (T2.4 contract)."""
         from flow_engineering.drift_event_log import (
@@ -396,13 +384,15 @@ class TestReadAllLegacyFormat:
         )
 
         log_path = tmp_path / "drift_events.jsonl"
-        legacy = json.dumps({
-            "change": "x",
-            "decision_id": "42",
-            "binding_id": "y",
-            "class": "z",
-            "detected_at": 1_710_000_000.0,
-        })
+        legacy = json.dumps(
+            {
+                "change": "x",
+                "decision_id": "42",
+                "binding_id": "y",
+                "class": "z",
+                "detected_at": 1_710_000_000.0,
+            }
+        )
         log_path.write_text(legacy + "\n", encoding="utf-8")
         log = DriftEventLog(path=log_path)
 
@@ -436,9 +426,7 @@ class TestRotation:
     Best-effort ``try/except OSError`` swallow for slow FS errors.
     """
 
-    def test_rotates_at_max_bytes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rotates_at_max_bytes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Appending past ``FLOW_DRIFT_EVENT_LOG_MAX_BYTES`` rotates the active file."""
         # T1.1 RED: 1 KB threshold so a single DriftEvent triggers rotation.
         log_path = tmp_path / "drift_events.jsonl"
@@ -455,9 +443,7 @@ class TestRotation:
         # for the NEXT append); a sibling rotated file was created.
         assert log_path.exists()
         rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
-        assert len(rotated) == 1, (
-            f"expected exactly 1 rotated file; got {rotated}"
-        )
+        assert len(rotated) == 1, f"expected exactly 1 rotated file; got {rotated}"
         # The rotated file is lex-sortable (ISO-no-colons format).
         assert rotated[0].name.startswith("drift_events.")
         assert rotated[0].name.endswith(".jsonl")
@@ -477,9 +463,7 @@ class TestRotation:
         # Only the active file exists; no rotated siblings.
         assert log_path.exists()
         rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
-        assert rotated == [], (
-            f"unexpected rotated files below threshold: {rotated}"
-        )
+        assert rotated == [], f"unexpected rotated files below threshold: {rotated}"
         # The active file contains all 3 events.
         lines = log_path.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 3
@@ -501,9 +485,7 @@ class TestRotation:
 
         # At least one rotated file should exist after 5 appends.
         rotated = sorted(tmp_path.glob("drift_events.*.jsonl"))
-        assert len(rotated) >= 1, (
-            f"expected at least 1 rotated file; got {rotated}"
-        )
+        assert len(rotated) >= 1, f"expected at least 1 rotated file; got {rotated}"
 
     def test_deletes_rotated_files_older_than_max_age_days(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -524,9 +506,7 @@ class TestRotation:
         # siblings and deletes old rotated files.
         log.append(_make_event(decision_id=1))
 
-        assert not old_rotated.exists(), (
-            "old rotated file should have been deleted on next append"
-        )
+        assert not old_rotated.exists(), "old rotated file should have been deleted on next append"
 
     def test_rotation_preserves_lock(self, log_path: Path) -> None:
         """Rotation runs inside ``self._lock`` so concurrent appends do not
@@ -544,9 +524,7 @@ class TestRotation:
                     )
                 )
 
-        threads = [
-            threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)
-        ]
+        threads = [threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)]
         for t in threads:
             t.start()
         for t in threads:
