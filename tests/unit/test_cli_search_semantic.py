@@ -130,7 +130,9 @@ def seeded_hybrid_backend(monkeypatch: pytest.MonkeyPatch) -> Any:
             "drift detection strategy": np.ones(EMBEDDING_DIMS, dtype=np.float32),
             "we detect drift via diff stats": np.ones(EMBEDDING_DIMS, dtype=np.float32),
             "drift alarm": np.ones(EMBEDDING_DIMS, dtype=np.float32),
-            "raise an alarm when drift exceeds threshold": np.ones(EMBEDDING_DIMS, dtype=np.float32),
+            "raise an alarm when drift exceeds threshold": np.ones(
+                EMBEDDING_DIMS, dtype=np.float32
+            ),
             "logging best practices": np.zeros(EMBEDDING_DIMS, dtype=np.float32),
             "use structured json logs everywhere": np.zeros(EMBEDDING_DIMS, dtype=np.float32),
         }

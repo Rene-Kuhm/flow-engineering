@@ -19,6 +19,7 @@ MUST fail with ``'flow prompts show' got an unexpected keyword
 argument 'render_count'`` (or similar click error) until the GREEN
 commit wires the flags.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,9 +33,7 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def seeded_sink(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def seeded_sink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Seed the prompt render sink with 3 events for ``strict_tdd``."""
     log_path = tmp_path / "prompt_renders.jsonl"
     from flow_engineering import prompt_render_log as log_mod
@@ -89,9 +88,7 @@ def seeded_sink(
 class TestRenderCountFlag:
     """``flow prompts show <id> --render-count`` emits a one-line summary."""
 
-    def test_render_count_outputs_one_line_with_count(
-        self, seeded_sink: Path
-    ) -> None:
+    def test_render_count_outputs_one_line_with_count(self, seeded_sink: Path) -> None:
         result = runner.invoke(
             main,
             ["prompts", "show", "strict_tdd", "--render-count"],
@@ -114,9 +111,7 @@ class TestRenderCountFlag:
         # Count is 0 → "render_count: 0" appears in the summary line.
         assert "render_count: 0" in result.output
 
-    def test_render_count_last_rendered_at_present(
-        self, seeded_sink: Path
-    ) -> None:
+    def test_render_count_last_rendered_at_present(self, seeded_sink: Path) -> None:
         result = runner.invoke(
             main,
             ["prompts", "show", "strict_tdd", "--render-count"],
@@ -156,14 +151,10 @@ class TestRenderHistoryFlag:
         # At most 1 data row (the most recent).
         # The header + footer consume several lines; we count strict_tdd
         # occurrences which should equal data rows + 1 from header.
-        body_lines = [
-            ln for ln in result.output.splitlines() if "strict_tdd" in ln
-        ]
+        body_lines = [ln for ln in result.output.splitlines() if "strict_tdd" in ln]
         assert len(body_lines) >= 1
 
-    def test_render_history_excludes_other_prompts(
-        self, seeded_sink: Path
-    ) -> None:
+    def test_render_history_excludes_other_prompts(self, seeded_sink: Path) -> None:
         result = runner.invoke(
             main,
             [
@@ -178,9 +169,7 @@ class TestRenderHistoryFlag:
         # The "other_prompt" id must NOT appear in the strict_tdd view.
         assert "other_prompt" not in result.output
 
-    def test_render_history_includes_status_marker(
-        self, seeded_sink: Path
-    ) -> None:
+    def test_render_history_includes_status_marker(self, seeded_sink: Path) -> None:
         result = runner.invoke(
             main,
             [
@@ -194,21 +183,15 @@ class TestRenderHistoryFlag:
         assert result.exit_code == 0, result.output
         # The 3rd event was a failure with error="missing_var"; the
         # table includes a status column showing ok/fail markers.
-        ok_count = sum(
-            1 for ln in result.output.splitlines() if "ok" in ln.lower()
-        )
-        fail_count = sum(
-            1 for ln in result.output.splitlines() if "fail" in ln.lower()
-        )
+        ok_count = sum(1 for ln in result.output.splitlines() if "ok" in ln.lower())
+        fail_count = sum(1 for ln in result.output.splitlines() if "fail" in ln.lower())
         assert ok_count + fail_count >= 1
 
 
 class TestRenderCountAndHistoryCoexistWithVar:
     """The flags compose with ``--var`` substitution (additive)."""
 
-    def test_render_count_does_not_break_var_substitution(
-        self, seeded_sink: Path
-    ) -> None:
+    def test_render_count_does_not_break_var_substitution(self, seeded_sink: Path) -> None:
         result = runner.invoke(
             main,
             [

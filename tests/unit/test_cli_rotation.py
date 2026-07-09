@@ -45,7 +45,8 @@ def _make_entry(root: Path, name: str, *, mtime: datetime, with_proposal: bool =
     entry.mkdir(parents=True, exist_ok=True)
     if with_proposal:
         (entry / "proposal.md").write_text(
-            f"# {name}\n", encoding="utf-8",
+            f"# {name}\n",
+            encoding="utf-8",
         )
     ts = mtime.timestamp()
     # Walk every file/dir created and pin its mtime.
@@ -71,7 +72,8 @@ class TestCandidateEntriesFilter:
     """``_candidate_entries`` filters out entries newer than the threshold."""
 
     def test_older_than_180_days_excludes_fresh_entry(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A 7-day-old entry MUST be excluded when ``--older-than 180``."""
         now = datetime.now(tz=UTC)
@@ -96,7 +98,9 @@ class TestDryRunNonMutating:
     """``--dry-run`` does not move or rename any archive entry."""
 
     def test_dry_run_does_not_mutate_archive_dir(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After ``rotate_cmd --dry-run``, the archive dir is byte-identical."""
         now = datetime.now(tz=UTC)
@@ -119,7 +123,8 @@ class TestDryRunNonMutating:
         monkeypatch.chdir(repo)
 
         result = runner.invoke(
-            main, ["archive", "rotate", "--older-than", "180", "--dry-run"],
+            main,
+            ["archive", "rotate", "--older-than", "180", "--dry-run"],
         )
 
         assert result.exit_code == 0, (
@@ -141,11 +146,15 @@ class TestOutputFormats:
     def test_format_yaml_emits_parseable_yaml(self) -> None:
         """``--format yaml`` parses cleanly with PyYAML and contains candidates key."""
         result = runner.invoke(
-            main, [
-                "archive", "rotate",
-                "--older-than", "90",
+            main,
+            [
+                "archive",
+                "rotate",
+                "--older-than",
+                "90",
                 "--dry-run",
-                "--format", "yaml",
+                "--format",
+                "yaml",
             ],
         )
         assert result.exit_code == 0, (
@@ -162,11 +171,15 @@ class TestOutputFormats:
     def test_format_json_emits_parseable_json(self) -> None:
         """``--format json`` parses cleanly and contains the same keys."""
         result = runner.invoke(
-            main, [
-                "archive", "rotate",
-                "--older-than", "90",
+            main,
+            [
+                "archive",
+                "rotate",
+                "--older-than",
+                "90",
                 "--dry-run",
-                "--format", "json",
+                "--format",
+                "json",
             ],
         )
         assert result.exit_code == 0, (
@@ -181,7 +194,8 @@ class TestOutputFormats:
     def test_default_format_is_yaml(self) -> None:
         """No ``--format`` flag defaults to YAML (ADR-d.2)."""
         result = runner.invoke(
-            main, ["archive", "rotate", "--older-than", "90"],
+            main,
+            ["archive", "rotate", "--older-than", "90"],
         )
         assert result.exit_code == 0, (
             f"expected exit 0; got {result.exit_code}. output={result.output!r}"
@@ -218,7 +232,8 @@ class TestEntryMtimeHelper:
     """``_entry_mtime`` falls back to git-log when fs mtime is skewed."""
 
     def test_falls_back_to_git_log_on_windows_checkout_skew(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When fs_mtime is >30d ahead of git timestamp, prefer git.
 
@@ -254,12 +269,16 @@ class TestEntryMtimeHelper:
             if args and args[0][:3] == ["git", "log", "-1"]:
                 stdout_value = git_ts_value
                 return _subprocess.CompletedProcess(
-                    args=args[0], returncode=0, stdout=stdout_value, stderr="",
+                    args=args[0],
+                    returncode=0,
+                    stdout=stdout_value,
+                    stderr="",
                 )
             return real_run(*args, **kwargs)
 
         monkeypatch.setattr(
-            "flow_engineering.cli.rotation.subprocess.run", fake_run,
+            "flow_engineering.cli.rotation.subprocess.run",
+            fake_run,
         )
 
         result = _entry_mtime(real_entry)
