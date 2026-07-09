@@ -101,8 +101,7 @@ def _coerce_node(node: Any) -> CodeRef:
     source = node.get("source", "manual")
     if source not in ALLOWED_SOURCES:
         raise ParseError(
-            f"unknown node source value: {source!r} "
-            f"(allowed: {', '.join(ALLOWED_SOURCES)})",
+            f"unknown node source value: {source!r} (allowed: {', '.join(ALLOWED_SOURCES)})",
             offset=0,
         )
     return CodeRef(
@@ -142,8 +141,7 @@ def validate_block(body_json: str) -> list[CodeRef]:
     block_source = payload.get("source", "manual")
     if block_source not in ALLOWED_SOURCES:
         raise ParseError(
-            f"unknown block source value: {block_source!r} "
-            f"(allowed: {', '.join(ALLOWED_SOURCES)})",
+            f"unknown block source value: {block_source!r} (allowed: {', '.join(ALLOWED_SOURCES)})",
             offset=0,
         )
     return _parse_nodes(payload)
@@ -178,9 +176,7 @@ def format_code_refs_block(refs: list[CodeRef], *, source: Source = "unbound") -
     (``extract(format(extract(x))) == extract(x)``).
     """
     if source not in ALLOWED_SOURCES:
-        raise ValueError(
-            f"unknown source: {source!r} (allowed: {', '.join(ALLOWED_SOURCES)})"
-        )
+        raise ValueError(f"unknown source: {source!r} (allowed: {', '.join(ALLOWED_SOURCES)})")
     sorted_refs = sorted(refs, key=lambda r: r.id)
     nodes = [
         {

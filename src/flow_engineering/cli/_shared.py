@@ -79,7 +79,9 @@ def _read_pyproject_min_skill_versions(
     except (OSError, ValueError):
         return None
     section = (
-        data.get("tool", {}).get("flow_engineering", {}).get(
+        data.get("tool", {})
+        .get("flow_engineering", {})
+        .get(
             "min_sdd_skill_versions",
         )
     )

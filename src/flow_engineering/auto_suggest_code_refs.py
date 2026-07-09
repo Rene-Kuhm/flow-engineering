@@ -73,9 +73,7 @@ class SuggestionResult:
 # ---------- Pure helpers (no IO) ----------
 
 
-def _is_non_interactive(
-    *, with_suggest: bool, is_tty: bool, env: dict[str, str]
-) -> bool:
+def _is_non_interactive(*, with_suggest: bool, is_tty: bool, env: dict[str, str]) -> bool:
     """Return True when the suggester should run in non-interactive mode.
 
     Non-interactive (accept-all) is the default in batch / CI / env-driven
@@ -99,10 +97,7 @@ def format_suggestion_prompt(refs: list[CodeRef]) -> str:
         return EMPTY_PROMPT_TEXT
     lines = [PROMPT_HEADER]
     for i, r in enumerate(refs, 1):
-        lines.append(
-            f"  [{i}] {r.label} ({r.file}:{r.line}, "
-            f"score={r.confidence:.2f}, id={r.id})"
-        )
+        lines.append(f"  [{i}] {r.label} ({r.file}:{r.line}, score={r.confidence:.2f}, id={r.id})")
     lines.append("")
     lines.append(PROMPT_FOOTER)
     return "\n".join(lines)
@@ -130,14 +125,10 @@ def _resolve_env(env: dict[str, str] | None) -> dict[str, str]:
     return dict(env) if env is not None else dict(os.environ)
 
 
-def _query_graphify(
-    text: str, *, threshold: float, max_results: int
-) -> list[CodeRef]:
+def _query_graphify(text: str, *, threshold: float, max_results: int) -> list[CodeRef]:
     """Call graphify_query.query_nodes, returning [] on any error (fail-open)."""
     try:
-        return graphify_query.query_nodes(
-            text, threshold=threshold, max_results=max_results
-        )
+        return graphify_query.query_nodes(text, threshold=threshold, max_results=max_results)
     except Exception as exc:  # pragma: no cover - defensive
         _record_miss("error")
         # Re-raise via a sentinel: caller distinguishes via empty result.
@@ -148,9 +139,7 @@ class GraphifyCallError(RuntimeError):
     """Internal sentinel so the orchestrator can distinguish empty-vs-error."""
 
 
-def _interactive_choose(
-    suggestions: list[CodeRef], prompt_fn: PromptFn | None
-) -> list[CodeRef]:
+def _interactive_choose(suggestions: list[CodeRef], prompt_fn: PromptFn | None) -> list[CodeRef]:
     """Resolve the interactive selection; fall back to accept-all when no fn."""
     if prompt_fn is None:
         # TTY claimed but no prompt function -- fail-open to non-interactive.
@@ -205,25 +194,17 @@ def auto_suggest_code_refs(
     resolved_env = _resolve_env(env)
 
     try:
-        suggestions = _query_graphify(
-            text, threshold=threshold, max_results=max_results
-        )
+        suggestions = _query_graphify(text, threshold=threshold, max_results=max_results)
     except GraphifyCallError as exc:
-        return SuggestionResult(
-            refs=[], source="unbound", error=f"graphify_error: {exc}"
-        )
+        return SuggestionResult(refs=[], source="unbound", error=f"graphify_error: {exc}")
 
     if not suggestions:
         _record_miss("no_candidates")
         return SuggestionResult(refs=[], source="unbound", error="no_candidates")
 
-    if _is_non_interactive(
-        with_suggest=with_suggest, is_tty=is_tty, env=resolved_env
-    ):
+    if _is_non_interactive(with_suggest=with_suggest, is_tty=is_tty, env=resolved_env):
         _record_hit(len(suggestions))
-        return SuggestionResult(
-            refs=list(suggestions), source="auto_suggest", error=None
-        )
+        return SuggestionResult(refs=list(suggestions), source="auto_suggest", error=None)
 
     chosen = _interactive_choose(suggestions, prompt_fn)
     if chosen:

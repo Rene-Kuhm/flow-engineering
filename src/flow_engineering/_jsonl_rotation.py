@@ -20,6 +20,7 @@ metrics sink is single-process). Every filesystem call is wrapped in
 ``try/except OSError`` so a slow FS never crashes the caller (best-effort
 contract preserved from REQ-V1.1.1 / REQ-V1.2.1).
 """
+
 from __future__ import annotations
 
 import os
@@ -144,9 +145,7 @@ def _rotate_jsonl_if_needed(
             # append will see a still-over-threshold size and retry.
             pass
 
-    max_age_days = _resolve_jsonl_max_age_days(
-        env=max_age_days_env, default=default_max_age_days
-    )
+    max_age_days = _resolve_jsonl_max_age_days(env=max_age_days_env, default=default_max_age_days)
     # REQ-JRH-1 explicit guard: disabled/negative age cleanup MUST
     # short-circuit BEFORE any parent.glob walk so the FS is untouched.
     if max_age_days <= 0:

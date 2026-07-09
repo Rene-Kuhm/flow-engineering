@@ -300,7 +300,9 @@ def doctor() -> None:
     default=Path.cwd(),
     help="Project root containing flow-engineering/<change>/.",
 )
-@click.option("--no-strict-tdd", "no_strict_tdd", is_flag=True, help="Disable strict TDD (requires --reason).")
+@click.option(
+    "--no-strict-tdd", "no_strict_tdd", is_flag=True, help="Disable strict TDD (requires --reason)."
+)
 @click.option("--reason", default=None, help="Reason for disabling strict TDD.")
 def apply(change: str, target: Path, no_strict_tdd: bool, reason: str | None) -> None:
     """Apply tasks for a change (TASKED -> APPLYING -> VERIFYING)."""
@@ -374,13 +376,15 @@ def archive(change: str, target: Path, diff: str, no_graphify: bool) -> None:
     default=Path.cwd(),
 )
 @click.option(
-    "--drift", "drift_flag",
+    "--drift",
+    "drift_flag",
     is_flag=True,
     default=False,
     help="REQ-15: also watch apply-progress writes; emit drift summary per merged task.",
 )
 @click.option(
-    "--graph-json", "graph_json",
+    "--graph-json",
+    "graph_json",
     default=None,
     type=click.Path(path_type=Path),
     help="Path to graph.json snapshot (default: ~/.flow-engineering/graph.json).",
@@ -667,7 +671,9 @@ def _format_where_json(
             for h in sorted_hits
         ],
         "totals": {"projects_searched": projects_searched, "matches": hits_total},
-        "engram": {"enabled": False, "phase": "stub"} if engram_stub else {"enabled": False, "phase": "stub"},
+        "engram": {"enabled": False, "phase": "stub"}
+        if engram_stub
+        else {"enabled": False, "phase": "stub"},
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -682,9 +688,7 @@ def _format_where_tsv(hits: list[dict[str, Any]]) -> str:
     lines: list[str] = ["project\tfile\tline\ttype\tcontent"]
     for hit in hits:
         content = str(hit.get("content", "")).replace("\r", "").replace("\n", "\\n")
-        lines.append(
-            f"{hit['project']}\t{hit['file']}\t{hit['line']}\t{hit['type']}\t{content}"
-        )
+        lines.append(f"{hit['project']}\t{hit['file']}\t{hit['line']}\t{hit['type']}\t{content}")
     return "\n".join(lines)
 
 
@@ -794,10 +798,7 @@ def where_cmd(
     """
     # Phase 2 dispatch: any of the new flags activates the cross-project path.
     cross_project_active = (
-        root_path is not None
-        or format_type != "text"
-        or regex_flag
-        or engram_flag
+        root_path is not None or format_type != "text" or regex_flag or engram_flag
     )
 
     if not cross_project_active:
@@ -820,11 +821,7 @@ def where_cmd(
         ctx.exit(2)
 
     # Bump limit to cross-project scale when the user kept the legacy default.
-    effective_limit = (
-        _CROSS_PROJECT_DEFAULT_LIMIT
-        if limit == where_mod.DEFAULT_LIMIT
-        else limit
-    )
+    effective_limit = _CROSS_PROJECT_DEFAULT_LIMIT if limit == where_mod.DEFAULT_LIMIT else limit
 
     hits, projects_searched = _search_projects_for_query(
         resolved_root, query, regex_flag, limit=effective_limit
@@ -908,8 +905,7 @@ def _ensure_vector_extra() -> None:
     """
     if not _vectors_extra_available():
         click.echo(
-            "Semantic search disabled: install [vectors] extra — "
-            f"{VECTOR_INSTALL_HINT}",
+            f"Semantic search disabled: install [vectors] extra — {VECTOR_INSTALL_HINT}",
             err=True,
         )
         sys.exit(2)
@@ -1199,10 +1195,9 @@ def search(
     from flow_engineering.cli.drift import (
         _parse_since,  # noqa: F401  (lazy; lives in cli.drift post-Slice-4)
     )
+
     if semantic_flag and hybrid_flag:
-        click.echo(
-            "ERROR: --semantic and --hybrid are mutually exclusive.", err=True
-        )
+        click.echo("ERROR: --semantic and --hybrid are mutually exclusive.", err=True)
         sys.exit(2)
     if federated_flag and (semantic_flag or hybrid_flag):
         click.echo(
@@ -1211,9 +1206,7 @@ def search(
         )
         sys.exit(2)
     if not (0.0 <= alpha <= 1.0):
-        click.echo(
-            f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True
-        )
+        click.echo(f"ERROR: --alpha must be in [0.0, 1.0], got {alpha}", err=True)
         sys.exit(2)
     if federated_flag and since is not None:
         # Validate the ISO string via _parse_since (epoch conversion is
@@ -1343,15 +1336,12 @@ def reindex(batch_size: int, dry_run: bool) -> None:
     consistent state — re-invoking ``flow reindex`` finishes the work.
     """
     if batch_size <= 0:
-        click.echo(
-            f"ERROR: --batch-size must be > 0, got {batch_size}", err=True
-        )
+        click.echo(f"ERROR: --batch-size must be > 0, got {batch_size}", err=True)
         sys.exit(2)
 
     if not _sqlite_vec_available():
         click.echo(
-            "reindex disabled: install [vectors] extra — "
-            f"{VECTOR_INSTALL_HINT}",
+            f"reindex disabled: install [vectors] extra — {VECTOR_INSTALL_HINT}",
             err=True,
         )
         sys.exit(2)
@@ -1370,9 +1360,7 @@ def reindex(batch_size: int, dry_run: bool) -> None:
     if total == 0:
         # Empty corpus short-circuits with the no-op summary line so the
         # done-format is consistent across zero and non-zero runs.
-        click.echo(
-            "reindex: done — 0 observations indexed in 0.0s", err=True
-        )
+        click.echo("reindex: done — 0 observations indexed in 0.0s", err=True)
         observability.increment("reindex_observations_total", count=0)
         observability.increment("reindex_duration_seconds", value=0.0)
         return
@@ -1508,8 +1496,13 @@ def _serialize_inspect_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @main.command()
 @click.argument("change")
-@click.option("--json", "json_flag", is_flag=True, default=False,
-              help="Emit machine-readable JSON instead of a text table.")
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit machine-readable JSON instead of a text table.",
+)
 def inspect(change: str, json_flag: bool) -> None:
     """Render decisions for a change as a table (REQ-7).
 
@@ -1554,6 +1547,3 @@ report parse-error counts separately (REQ-59 S2 mirror, future T2.4).
 
 if __name__ == "__main__":
     main()
-
-
-
