@@ -32,8 +32,12 @@ def test_stamp_iso_format() -> None:
 @pytest.mark.parametrize(
     ("raw", "default", "expected"),
     [
-        (None, 42, 42), ("", 42, 42), ("garbage", 42, 42),
-        ("-1", 42, 0), ("0", 42, 0), ("1024", 42, 1024),
+        (None, 42, 42),
+        ("", 42, 42),
+        ("garbage", 42, 42),
+        ("-1", 42, 0),
+        ("0", 42, 0),
+        ("1024", 42, 1024),
     ],
 )
 def test_resolve_threshold_bytes(
@@ -49,8 +53,12 @@ def test_resolve_threshold_bytes(
 @pytest.mark.parametrize(
     ("raw", "default", "expected"),
     [
-        (None, 30, 30), ("", 30, 30), ("garbage", 30, 30),
-        ("-7", 30, 0), ("0", 30, 0), ("7", 30, 7),
+        (None, 30, 30),
+        ("", 30, 30),
+        ("garbage", 30, 30),
+        ("-7", 30, 0),
+        ("0", 30, 0),
+        ("7", 30, 7),
     ],
 )
 def test_resolve_max_age_days(
@@ -105,9 +113,16 @@ def test_missing_active_file_is_noop(tmp_path: Path, monkeypatch: pytest.MonkeyP
     path = tmp_path / "drift_events.jsonl"
     monkeypatch.setenv(DRIFT_BYTES, "1")
     monkeypatch.setenv(DRIFT_AGE, "30")
-    assert _rotate_jsonl_if_needed(
-        path, glob_prefix="drift_events", max_bytes_env=DRIFT_BYTES, max_age_days_env=DRIFT_AGE, **DEFAULTS
-    ) is None
+    assert (
+        _rotate_jsonl_if_needed(
+            path,
+            glob_prefix="drift_events",
+            max_bytes_env=DRIFT_BYTES,
+            max_age_days_env=DRIFT_AGE,
+            **DEFAULTS,
+        )
+        is None
+    )
     assert not path.exists()
     assert sorted(tmp_path.glob("drift_events.*.jsonl")) == []
 
@@ -122,10 +137,18 @@ def test_env_var_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv(DRIFT_AGE, "30")
     monkeypatch.delenv(METRICS_AGE, raising=False)
     _rotate_jsonl_if_needed(
-        drift_path, glob_prefix="drift_events", max_bytes_env=DRIFT_BYTES, max_age_days_env=DRIFT_AGE, **DEFAULTS
+        drift_path,
+        glob_prefix="drift_events",
+        max_bytes_env=DRIFT_BYTES,
+        max_age_days_env=DRIFT_AGE,
+        **DEFAULTS,
     )
     _rotate_jsonl_if_needed(
-        metrics_path, glob_prefix="metrics", max_bytes_env=METRICS_BYTES, max_age_days_env=METRICS_AGE, **DEFAULTS
+        metrics_path,
+        glob_prefix="metrics",
+        max_bytes_env=METRICS_BYTES,
+        max_age_days_env=METRICS_AGE,
+        **DEFAULTS,
     )
     assert sorted(tmp_path.glob("drift_events.*.jsonl"))
     assert sorted(tmp_path.glob("metrics.*.jsonl")) == []
@@ -144,7 +167,11 @@ def test_rename_oserror_is_swallowed(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(Path, "rename", boom)
     try:
         result = _rotate_jsonl_if_needed(
-            path, glob_prefix="drift_events", max_bytes_env=DRIFT_BYTES, max_age_days_env=DRIFT_AGE, **DEFAULTS
+            path,
+            glob_prefix="drift_events",
+            max_bytes_env=DRIFT_BYTES,
+            max_age_days_env=DRIFT_AGE,
+            **DEFAULTS,
         )
     finally:
         monkeypatch.setattr(Path, "rename", original_rename)
@@ -152,7 +179,9 @@ def test_rename_oserror_is_swallowed(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert path.exists()
 
 
-def test_age_cutoff_prunes_old_keeps_recent_and_active(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_age_cutoff_prunes_old_keeps_recent_and_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     path = tmp_path / "drift_events.jsonl"
     monkeypatch.setenv(DRIFT_BYTES, "1048576")
     monkeypatch.setenv(DRIFT_AGE, "30")
@@ -165,7 +194,11 @@ def test_age_cutoff_prunes_old_keeps_recent_and_active(tmp_path: Path, monkeypat
     os.utime(old_sibling, (now - 60 * 86400, now - 60 * 86400))
     os.utime(recent_sibling, (now, now))
     _rotate_jsonl_if_needed(
-        path, glob_prefix="drift_events", max_bytes_env=DRIFT_BYTES, max_age_days_env=DRIFT_AGE, **DEFAULTS
+        path,
+        glob_prefix="drift_events",
+        max_bytes_env=DRIFT_BYTES,
+        max_age_days_env=DRIFT_AGE,
+        **DEFAULTS,
     )
     assert not old_sibling.exists()
     assert recent_sibling.exists()
@@ -173,7 +206,9 @@ def test_age_cutoff_prunes_old_keeps_recent_and_active(tmp_path: Path, monkeypat
 
 
 @pytest.mark.parametrize("age_env_val", ["0", "-7"])
-def test_zero_and_negative_skip_glob(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, age_env_val: str) -> None:
+def test_zero_and_negative_skip_glob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, age_env_val: str
+) -> None:
     path = tmp_path / "drift_events.jsonl"
     monkeypatch.setenv(DRIFT_BYTES, "1048576")
     monkeypatch.setenv(DRIFT_AGE, age_env_val)
@@ -183,7 +218,11 @@ def test_zero_and_negative_skip_glob(tmp_path: Path, monkeypatch: pytest.MonkeyP
     now = _time.time()
     os.utime(very_old, (now - 5 * 365 * 86400, now - 5 * 365 * 86400))
     _rotate_jsonl_if_needed(
-        path, glob_prefix="drift_events", max_bytes_env=DRIFT_BYTES, max_age_days_env=DRIFT_AGE, **DEFAULTS
+        path,
+        glob_prefix="drift_events",
+        max_bytes_env=DRIFT_BYTES,
+        max_age_days_env=DRIFT_AGE,
+        **DEFAULTS,
     )
     assert very_old.exists()
     assert path.exists()
@@ -213,7 +252,11 @@ def test_glob_prefix_scoping(
     os.utime(other_sibling, (now - 5 * 365 * 86400, now - 5 * 365 * 86400))
     path.write_text("active\n", encoding="utf-8")
     _rotate_jsonl_if_needed(
-        path, glob_prefix=active_scheme, max_bytes_env=bytes_env, max_age_days_env=age_env, **DEFAULTS
+        path,
+        glob_prefix=active_scheme,
+        max_bytes_env=bytes_env,
+        max_age_days_env=age_env,
+        **DEFAULTS,
     )
     assert other_sibling.exists()
     assert path.exists()
