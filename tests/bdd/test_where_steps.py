@@ -13,6 +13,7 @@ Test isolation:
     ``flow_engineering.where.DEFAULT_GRAPH_PATH`` per scenario so we never
     read the user's real ``graphify-out/graph.json`` snapshot.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,9 +34,7 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def where_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def where_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for the BDD ``flow where`` scenarios."""
     # Build a minimal fixture tree rooted at tmp_path. Code hits come from
     # `src/x.py`; SDD archive hits from `openspec/changes/archive/x/spec.md`.
@@ -44,9 +43,7 @@ def where_world(
     (src / "x.py").write_text("def make_jwt():\n    return 'token'\n", encoding="utf-8")
     archive = tmp_path / "openspec" / "changes" / "archive" / "x"
     archive.mkdir(parents=True)
-    (archive / "spec.md").write_text(
-        "the jwt validator pattern handles X.\n", encoding="utf-8"
-    )
+    (archive / "spec.md").write_text("the jwt validator pattern handles X.\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     return {
         "tmp_path": tmp_path,
@@ -63,7 +60,9 @@ def _set_graph_json(monkeypatch: pytest.MonkeyPatch, path: Path) -> None:
 # ---------- Scenario bindings ----------
 
 
-@scenario("req_where.feature", "Graphify index absent renders the deterministic unavailable message")
+@scenario(
+    "req_where.feature", "Graphify index absent renders the deterministic unavailable message"
+)
 def test_graphify_absent_renders_unavailable(where_world: dict[str, Any]) -> None:
     pass
 
@@ -83,9 +82,7 @@ def given_no_graph_json(where_world: dict[str, Any]) -> None:
 
 
 @given("a fresh repo with a fixture graph.json matching the query")
-def given_graph_json_fixture(
-    where_world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def given_graph_json_fixture(where_world: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     """Write a minimal graph.json with one node that overlaps the query ``jwt``."""
     graph = where_world["tmp_path"] / "graph.json"
     graph.write_text(
@@ -161,15 +158,11 @@ def _monkeypatch_for(where_world: dict[str, Any]) -> pytest.MonkeyPatch:
     """
     mp = where_world.get("_monkeypatch")
     if mp is None:
-        raise RuntimeError(
-            "monkeypatch was never attached to where_world; check conftest"
-        )
+        raise RuntimeError("monkeypatch was never attached to where_world; check conftest")
     return mp
 
 
 @pytest.fixture(autouse=True)
-def _attach_monkeypatch(
-    where_world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _attach_monkeypatch(where_world: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     """Attach the pytest ``monkeypatch`` fixture to ``where_world`` for step access."""
     where_world["_monkeypatch"] = monkeypatch

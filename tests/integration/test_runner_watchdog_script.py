@@ -1,4 +1,5 @@
 """Smoke tests for the out-of-band runner watchdog script."""
+
 from __future__ import annotations
 
 import json
@@ -14,8 +15,12 @@ SCRIPT = REPO_ROOT / "scripts" / "runner_watchdog.ps1"
 
 
 pytestmark = [
-    pytest.mark.skipif(platform.system() != "Windows", reason="runner watchdog is Windows-service focused"),
-    pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh is required for the watchdog script"),
+    pytest.mark.skipif(
+        platform.system() != "Windows", reason="runner watchdog is Windows-service focused"
+    ),
+    pytest.mark.skipif(
+        shutil.which("pwsh") is None, reason="pwsh is required for the watchdog script"
+    ),
 ]
 
 
@@ -52,8 +57,7 @@ def test_runner_watchdog_reports_missing_service_as_critical() -> None:
         for check in payload["checks"]
     )
     assert any(
-        check["name"] == "github_ci" and check["status"] == "skipped"
-        for check in payload["checks"]
+        check["name"] == "github_ci" and check["status"] == "skipped" for check in payload["checks"]
     )
 
 

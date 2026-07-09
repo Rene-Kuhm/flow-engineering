@@ -53,9 +53,7 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def workspace_home(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def workspace_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for the ``flow workspace`` BDD scenarios.
 
     Returns a dict carrying:
@@ -106,16 +104,12 @@ def _fake_git(workspace_home: dict[str, Any]) -> None:
             and cwd is not None
             and Path(str(cwd)).resolve() == Path(dirty_project).resolve()
         )
-        cp = subprocess.CompletedProcess(
-            args=["git", *args], returncode=0, stdout="", stderr=""
-        )
+        cp = subprocess.CompletedProcess(args=["git", *args], returncode=0, stdout="", stderr="")
         if args and args[0] == "init":
             target = Path(args[1]) if len(args) > 1 else None
             if target is not None:
                 (target / ".git").mkdir(exist_ok=True)
-                (target / ".git" / "HEAD").write_text(
-                    "ref: refs/heads/main\n", encoding="utf-8"
-                )
+                (target / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
                 (target / ".git" / "config").write_text(
                     "[core]\n\trepositoryformatversion = 0\n", encoding="utf-8"
                 )
@@ -155,9 +149,7 @@ def _maybe_break_verify(workspace_home: dict[str, Any]) -> None:
             return False
         return real_fn(*args, **kwargs)  # type: ignore[arg-type]
 
-    workspace_home["_monkeypatch"].setattr(
-        wh_mod, "_verify_post_mutation", wrapper
-    )
+    workspace_home["_monkeypatch"].setattr(wh_mod, "_verify_post_mutation", wrapper)
 
 
 # =============================================================================
@@ -266,7 +258,9 @@ def test_fix_without_yes_refuses(workspace_home: dict[str, Any]) -> None:
     """AC2."""
 
 
-@scenario("workspace_hygiene.feature", "non-empty fix without --backup refuses and mentions --backup")
+@scenario(
+    "workspace_hygiene.feature", "non-empty fix without --backup refuses and mentions --backup"
+)
 def test_non_empty_fix_without_backup_refuses(workspace_home: dict[str, Any]) -> None:
     """AC3."""
 
@@ -276,7 +270,9 @@ def test_non_empty_fix_with_backup_succeeds(workspace_home: dict[str, Any]) -> N
     """AC4."""
 
 
-@scenario("workspace_hygiene.feature", "empty fix with --yes (no --backup) creates .git and no backup")
+@scenario(
+    "workspace_hygiene.feature", "empty fix with --yes (no --backup) creates .git and no backup"
+)
 def test_empty_fix_succeeds(workspace_home: dict[str, Any]) -> None:
     """AC5."""
 
@@ -286,7 +282,9 @@ def test_archive_with_reason(workspace_home: dict[str, Any]) -> None:
     """AC6."""
 
 
-@scenario("workspace_hygiene.feature", "archive without --reason defaults to \"manual archive\" and logs it")
+@scenario(
+    "workspace_hygiene.feature", 'archive without --reason defaults to "manual archive" and logs it'
+)
 def test_archive_without_reason_defaults(workspace_home: dict[str, Any]) -> None:
     """AC7."""
 
@@ -319,7 +317,9 @@ def test_byte_identical_for_non_targets(workspace_home: dict[str, Any]) -> None:
     """AC10 — byte-identical preservation."""
 
 
-@scenario("workspace_hygiene.feature", "post-mutation verify failure triggers restore from snapshot")
+@scenario(
+    "workspace_hygiene.feature", "post-mutation verify failure triggers restore from snapshot"
+)
 def test_verify_failure_triggers_restore(workspace_home: dict[str, Any]) -> None:
     """AC11 — pollution-protocol restore."""
 
@@ -334,7 +334,9 @@ def test_read_only_does_not_create_registry(workspace_home: dict[str, Any]) -> N
     """AC12 — read-only consumer."""
 
 
-@scenario("workspace_hygiene.feature", "fix on a dirty-git project does not remediate the dirty state")
+@scenario(
+    "workspace_hygiene.feature", "fix on a dirty-git project does not remediate the dirty state"
+)
 def test_fix_on_dirty_git_does_not_remediate(workspace_home: dict[str, Any]) -> None:
     """AC13 — R1 OUT OF SCOPE."""
 
@@ -384,7 +386,9 @@ def given_clean_registry(workspace_home: dict[str, Any]) -> None:
     _flush_pending(workspace_home)
 
 
-@given('a registry with 2 archived projects ("mockup-2-blog" reason "deprecated", "openspec" reason "manual archive")')
+@given(
+    'a registry with 2 archived projects ("mockup-2-blog" reason "deprecated", "openspec" reason "manual archive")'
+)
 def given_registry_two_archived(workspace_home: dict[str, Any]) -> None:
     project_a = _make_project(workspace_home, "mockup-2-blog")
     project_b = _make_project(workspace_home, "openspec")
@@ -538,7 +542,7 @@ def when_fix_fresh_yes(workspace_home: dict[str, Any]) -> None:
     workspace_home["output"] = result.output
 
 
-@when('I run the CLI "flow workspace archive mockup-2-blog --reason \'deprecated\' --yes"')
+@when("I run the CLI \"flow workspace archive mockup-2-blog --reason 'deprecated' --yes\"")
 def when_archive_with_reason(workspace_home: dict[str, Any]) -> None:
     _flush_pending(workspace_home)
     result = runner.invoke(
@@ -616,9 +620,7 @@ def when_registry_write_interrupted(workspace_home: dict[str, Any]) -> None:
         has_graphify=False,
         last_status_check="2026-06-30T12:00:00Z",
     )
-    save_registry_atomic(
-        Registry(version=1, projects=[seed_entry], archived=[])
-    )
+    save_registry_atomic(Registry(version=1, projects=[seed_entry], archived=[]))
 
     real_replace = Path.replace
 
@@ -780,7 +782,9 @@ def then_registry_has_mockup(workspace_home: dict[str, Any]) -> None:
 @then('no backup was created for "fresh"')
 def then_no_backup_for_fresh(workspace_home: dict[str, Any]) -> None:
     backup_root = _backup_root(workspace_home)
-    fresh_snaps = list((backup_root / "fresh").rglob("*")) if (backup_root / "fresh").exists() else []
+    fresh_snaps = (
+        list((backup_root / "fresh").rglob("*")) if (backup_root / "fresh").exists() else []
+    )
     assert not fresh_snaps, f"unexpected backup for fresh: {fresh_snaps}"
 
 
@@ -882,7 +886,9 @@ def then_archived_list_unchanged(workspace_home: dict[str, Any]) -> None:
     assert any(a.name == "mockup-2-blog" for a in reg.archived), reg.archived
 
 
-@then('the bytes of "flow projects ls --json" for "project-b" are byte-identical to the captured bytes')
+@then(
+    'the bytes of "flow projects ls --json" for "project-b" are byte-identical to the captured bytes'
+)
 def then_byte_identical_for_project_b(workspace_home: dict[str, Any]) -> None:
     """AC10 — capture bytes for project-b before AND after the archive action.
 
@@ -894,16 +900,12 @@ def then_byte_identical_for_project_b(workspace_home: dict[str, Any]) -> None:
     captured = workspace_home.get("captured_bytes")
     assert captured is not None, "captured_bytes not set"
     payload_before = json.loads(captured)
-    project_b_before = next(
-        p for p in payload_before["projects"] if p["name"] == "project-b"
-    )
+    project_b_before = next(p for p in payload_before["projects"] if p["name"] == "project-b")
 
     result = runner.invoke(main, ["projects", "ls", "--json"])
     assert result.exit_code == 0, result.output
     payload_after = json.loads(result.output)
-    project_b_after = next(
-        p for p in payload_after["projects"] if p["name"] == "project-b"
-    )
+    project_b_after = next(p for p in payload_after["projects"] if p["name"] == "project-b")
     # The byte-identical contract for non-targets is enforced by the
     # shared ``_detect_project_markers`` path + the fact that the
     # archive operation does NOT mutate any field used by ``projects ls``.
@@ -937,9 +939,7 @@ def then_no_partial_registry(workspace_home: dict[str, Any]) -> None:
     target = _registry_path()
     parent = target.parent
     if parent.exists():
-        tmp_files = [
-            p for p in parent.iterdir() if p.name.startswith(".registry-")
-        ]
+        tmp_files = [p for p in parent.iterdir() if p.name.startswith(".registry-")]
         assert not tmp_files, f"temp registry files leaked: {tmp_files}"
     # If a prior registry existed (seeded above), it's still readable.
     if target.exists():
@@ -972,9 +972,7 @@ def then_worktree_unchanged(workspace_home: dict[str, Any]) -> None:
     # Working tree must contain the original WIP.md file.
     assert (project / "WIP.md").read_text(encoding="utf-8") == "in progress"
     # And no other user files were added or removed.
-    user_files = [
-        p.name for p in project.iterdir() if p.name not in {".git", "WIP.md"}
-    ]
+    user_files = [p.name for p in project.iterdir() if p.name not in {".git", "WIP.md"}]
     assert user_files == [], f"unexpected working tree changes: {user_files}"
 
 
@@ -989,9 +987,7 @@ def then_index_unchanged(workspace_home: dict[str, Any]) -> None:
     forbidden_index = {"add", "rm", "reset", "checkout"}
     for args in calls:
         # Anything that mutates the index is forbidden.
-        assert args[0] not in forbidden_index, (
-            f"index-mutating git call observed: {args}"
-        )
+        assert args[0] not in forbidden_index, f"index-mutating git call observed: {args}"
 
 
 @then("the project's untracked files are unchanged")
@@ -1019,9 +1015,7 @@ def then_no_worktree_manipulation(workspace_home: dict[str, Any]) -> None:
     # that verb was issued by the orchestrator.
     forbidden_subcommands.add("st" + "ash")
     for args in workspace_home["git_calls"]:
-        assert args[0] not in forbidden_subcommands, (
-            f"worktree-mutating git call observed: {args}"
-        )
+        assert args[0] not in forbidden_subcommands, f"worktree-mutating git call observed: {args}"
 
 
 @then('stdout contains "R1 dirty-git is OUT OF SCOPE for Phase 4 MVP"')

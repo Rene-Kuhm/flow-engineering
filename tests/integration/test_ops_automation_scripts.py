@@ -1,4 +1,5 @@
 """Smoke tests for operator automation helper scripts."""
+
 from __future__ import annotations
 
 import json
@@ -17,8 +18,12 @@ SET_WEBHOOK = REPO_ROOT / "scripts" / "set_runner_watchdog_webhook.ps1"
 
 
 pytestmark = [
-    pytest.mark.skipif(platform.system() != "Windows", reason="operator scripts target Windows PowerShell"),
-    pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh is required for operator scripts"),
+    pytest.mark.skipif(
+        platform.system() != "Windows", reason="operator scripts target Windows PowerShell"
+    ),
+    pytest.mark.skipif(
+        shutil.which("pwsh") is None, reason="pwsh is required for operator scripts"
+    ),
 ]
 
 

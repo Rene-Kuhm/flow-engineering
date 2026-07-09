@@ -3,6 +3,7 @@
 REQ: verify that both plugins activate correctly when their conditions are met,
 without interfering with each other.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -29,9 +30,7 @@ def test_both_plugins_have_valid_syntax() -> None:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, (
-            f"{name} has syntax errors:\n{result.stderr}"
-        )
+        assert result.returncode == 0, f"{name} has syntax errors:\n{result.stderr}"
 
 
 def test_both_plugins_export_expected_function(tmp_path: Path) -> None:
