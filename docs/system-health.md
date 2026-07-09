@@ -19,6 +19,17 @@ billing gate prevents those jobs from starting. Until billing or an external
 monitor is available, runner-down detection remains manual through this health
 command.
 
+## Last verified status
+
+Last checked: 2026-07-09.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Runner service | Healthy | `actions.runner.Rene-Kuhm-flow-engineering.TECNODESPEGUE-flow-engineering` is `Running` / `Automatic` |
+| Startup fallback | Removed | `flow-engineering-actions-runner.cmd` does not exist in Startup |
+| CI | Green | `tests` run `28991760348` passed on `main` |
+| Scheduled monitor | Green | `health-monitor` run `28992222994` passed on `main` |
+
 Expected healthy state:
 
 | Check | Healthy value |
