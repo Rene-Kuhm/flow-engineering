@@ -24,6 +24,7 @@ Test isolation:
 - ``flow_engineering.cli._default_save_backend`` is monkeypatched to the
   per-scenario ``InMemoryBackend`` so the CLI sees the seeded observations.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,17 +47,13 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def drift_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def drift_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for REQ-9 drift scenarios."""
     metrics_path = tmp_path / "metrics.jsonl"
     monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
     backend = InMemoryBackend()
     graph_path = tmp_path / "graph.json"
-    monkeypatch.setattr(
-        "flow_engineering.cli._default_save_backend", lambda: backend
-    )
+    monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
 
     # Inject the seeded backend into scan_change so the CLI sees our
     # observations. The CLI does not yet wire ``backend=...`` into its
@@ -223,12 +220,10 @@ def setup_graph_file(drift_world) -> None:
     never triggers ``unable_to_verify``. UNABLE_TO_VERIFY scenarios then
     override by deleting or corrupting the file via later Given steps.
     """
-    drift_world["graph_path"].write_text(
-        json.dumps({"nodes": []}), encoding="utf-8"
-    )
+    drift_world["graph_path"].write_text(json.dumps({"nodes": []}), encoding="utf-8")
 
 
-@given(parsers.parse('an observation with binding {binding_json}'))
+@given(parsers.parse("an observation with binding {binding_json}"))
 def add_observation_with_binding(drift_world, binding_json: str) -> None:
     """Register one observation carrying one CodeRef into the in-memory backend.
 
@@ -247,9 +242,8 @@ def add_observation_with_binding(drift_world, binding_json: str) -> None:
         confidence=float(spec.get("confidence", 0.9)),
         source=spec.get("source", "manual"),
     )
-    content = (
-        "## Decision\n\nPick a binding.\n"
-        + format_code_refs_block([cref], source=cref.source)
+    content = "## Decision\n\nPick a binding.\n" + format_code_refs_block(
+        [cref], source=cref.source
     )
     n = len(drift_world["backend"].observations)
     drift_world["backend"].mem_save(
@@ -267,10 +261,7 @@ def add_observation_empty(drift_world) -> None:
     graphify returns 0 candidates, ``scan_change`` emits one OBSOLETE
     finding per such observation.
     """
-    content = (
-        "## Decision\n\nNo binding.\n"
-        + format_code_refs_block([], source="unbound")
-    )
+    content = "## Decision\n\nNo binding.\n" + format_code_refs_block([], source="unbound")
     n = len(drift_world["backend"].observations)
     drift_world["backend"].mem_save(
         title=f"{drift_world['change']}/phase_{n}",
@@ -279,7 +270,7 @@ def add_observation_empty(drift_world) -> None:
     )
 
 
-@given(parsers.parse('the graph shows node {node_json}'))
+@given(parsers.parse("the graph shows node {node_json}"))
 def graph_shows_node(drift_world, node_json: str) -> None:
     """Append a node to the in-memory graph.json snapshot.
 
@@ -315,15 +306,11 @@ def graph_malformed(drift_world) -> None:
     Per design #123 decision 8, schema mismatch also yields
     ``graph_unavailable=True`` — exit 2 wins over exit 1 (REQ-11).
     """
-    drift_world["graph_path"].write_text(
-        "{this is not valid json", encoding="utf-8"
-    )
+    drift_world["graph_path"].write_text("{this is not valid json", encoding="utf-8")
 
 
 @given(parsers.parse("graphify returns {n:d} candidates"))
-def graphify_returns_n(
-    drift_world, monkeypatch: pytest.MonkeyPatch, n: int
-) -> None:
+def graphify_returns_n(drift_world, monkeypatch: pytest.MonkeyPatch, n: int) -> None:
     """Patch ``graphify_query.query_nodes`` to return ``n`` stub candidates.
 
     ``decision_drift`` imports the ``graphify_query`` module by reference
@@ -343,9 +330,7 @@ def graphify_returns_n(
         )
         for i in range(n)
     ]
-    monkeypatch.setattr(
-        graphify_query, "query_nodes", lambda text, **kwargs: list(cands)
-    )
+    monkeypatch.setattr(graphify_query, "query_nodes", lambda text, **kwargs: list(cands))
 
 
 def _write_graph(drift_world) -> None:
@@ -387,9 +372,7 @@ def invoke_drift_with_obsolete(drift_world, change: str) -> None:
     _invoke_drift_cli(drift_world, change, extra_flags=["--include-obsolete"])
 
 
-def _invoke_drift_cli(
-    drift_world: dict, change: str, *, extra_flags: list[str]
-) -> None:
+def _invoke_drift_cli(drift_world: dict, change: str, *, extra_flags: list[str]) -> None:
     """Shared CLI invocation helper for both When step variants."""
     args = [
         "drift",
@@ -451,9 +434,7 @@ def report_is_empty(drift_world) -> None:
     report = drift_world["report"]
     assert report is not None, "expected JSON report"
     findings = report.get("findings", [])
-    assert findings == [], (
-        f"expected empty findings list; got {findings}"
-    )
+    assert findings == [], f"expected empty findings list; got {findings}"
 
 
 @then(parsers.parse("both observations report class {klass}"))
@@ -464,9 +445,7 @@ def all_observations_report_class(drift_world, klass: str) -> None:
     findings = report.get("findings", [])
     assert findings, "expected findings for both observations; got an empty report"
     classes = [f["drift_class"] for f in findings]
-    assert all(c == klass for c in classes), (
-        f"all findings should be class {klass}; got {classes}"
-    )
+    assert all(c == klass for c in classes), f"all findings should be class {klass}; got {classes}"
 
 
 @then(parsers.parse("no finding has class {klass}"))
@@ -477,8 +456,7 @@ def no_finding_has_class(drift_world, klass: str) -> None:
     findings = report.get("findings", [])
     matches = [f for f in findings if f["drift_class"] == klass]
     assert matches == [], (
-        f"no findings should be class {klass}; found "
-        f"{[f['binding']['id'] for f in matches]}"
+        f"no findings should be class {klass}; found {[f['binding']['id'] for f in matches]}"
     )
 
 
@@ -488,9 +466,7 @@ def no_finding_has_class(drift_world, klass: str) -> None:
 
 
 @pytest.fixture
-def drift_daemon_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def drift_daemon_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for the REQ-15 daemon seam scenarios.
 
     Distinct from ``drift_world`` (REQ-9 scenarios) — these scenarios
@@ -557,13 +533,16 @@ def _seed_drifted_backend(drift_daemon_world: dict) -> None:
     file:line differs from graph.json — produces STALE_LOCATION."""
     backend = InMemoryBackend()
     cref = CodeRef(
-        project="insyd", id="n1", label="L1",
-        file="src/old.py", line=10,
-        confidence=0.9, source="manual",
+        project="insyd",
+        id="n1",
+        label="L1",
+        file="src/old.py",
+        line=10,
+        confidence=0.9,
+        source="manual",
     )
-    content = (
-        "## Decision\nOld binding location.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\nOld binding location.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     backend.mem_save(
         title=f"{drift_daemon_world['change']}/phase_0",
@@ -572,9 +551,7 @@ def _seed_drifted_backend(drift_daemon_world: dict) -> None:
     )
     drift_daemon_world["backend"] = backend
     drift_daemon_world["graph_path"].write_text(
-        json.dumps(
-            {"nodes": [{"id": "n1", "label": "L1", "file": "src/new.py", "line": 42}]}
-        ),
+        json.dumps({"nodes": [{"id": "n1", "label": "L1", "file": "src/new.py", "line": 42}]}),
         encoding="utf-8",
     )
 
@@ -584,14 +561,15 @@ def _seed_valid_backend(drift_daemon_world: dict) -> None:
     file:line matches graph.json — produces STILL_VALID when scanned."""
     backend = InMemoryBackend()
     cref = CodeRef(
-        project="insyd", id="n1", label="L1",
-        file="src/x.py", line=1,
-        confidence=0.9, source="manual",
+        project="insyd",
+        id="n1",
+        label="L1",
+        file="src/x.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
-    content = (
-        "## Decision\nValid binding.\n"
-        + format_code_refs_block([cref], source="manual")
-    )
+    content = "## Decision\nValid binding.\n" + format_code_refs_block([cref], source="manual")
     backend.mem_save(
         title=f"{drift_daemon_world['change']}/phase_0",
         content=content,
@@ -599,9 +577,7 @@ def _seed_valid_backend(drift_daemon_world: dict) -> None:
     )
     drift_daemon_world["backend"] = backend
     drift_daemon_world["graph_path"].write_text(
-        json.dumps(
-            {"nodes": [{"id": "n1", "label": "L1", "file": "src/x.py", "line": 1}]}
-        ),
+        json.dumps({"nodes": [{"id": "n1", "label": "L1", "file": "src/x.py", "line": 1}]}),
         encoding="utf-8",
     )
 
@@ -641,9 +617,7 @@ def daemon_graph_file(drift_daemon_world) -> None:
     this step just guarantees the file is present so subsequent reads don't
     raise FileNotFoundError."""
     if not drift_daemon_world["graph_path"].exists():
-        drift_daemon_world["graph_path"].write_text(
-            json.dumps({"nodes": []}), encoding="utf-8"
-        )
+        drift_daemon_world["graph_path"].write_text(json.dumps({"nodes": []}), encoding="utf-8")
 
 
 @given("the graph.json file is absent")
@@ -683,17 +657,13 @@ def drift_events_file_has_lines(drift_daemon_world: dict, n: int) -> None:
     path: Path = drift_daemon_world["drift_events_path"]
     if n == 0:
         assert not path.exists() or path.read_text(encoding="utf-8").strip() == "", (
-            f"expected 0 lines; file exists with content "
-            f"{path.read_text(encoding='utf-8')!r}"
+            f"expected 0 lines; file exists with content {path.read_text(encoding='utf-8')!r}"
         )
         return
     assert path.exists(), f"expected {n} lines but file does not exist"
-    lines = [
-        ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
-    ]
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) == n, (
-        f"expected {n} JSONL lines; got {len(lines)}; content="
-        f"{path.read_text(encoding='utf-8')!r}"
+        f"expected {n} JSONL lines; got {len(lines)}; content={path.read_text(encoding='utf-8')!r}"
     )
 
 
@@ -708,9 +678,7 @@ def each_jsonl_line_has_keys(drift_daemon_world: dict, keys_csv: str) -> None:
         if not raw.strip():
             continue
         parsed = _json.loads(raw)
-        assert set(parsed.keys()) == expected, (
-            f"expected keys {expected}; got {set(parsed.keys())}"
-        )
+        assert set(parsed.keys()) == expected, f"expected keys {expected}; got {set(parsed.keys())}"
 
 
 @then(parsers.parse("the JSONL {field_name} field equals {value}"))
@@ -727,9 +695,7 @@ def jsonl_field_equals(drift_daemon_world: dict, field_name: str, value: str) ->
         expected = int(value)
     except ValueError:
         expected = value.strip('"')
-    assert actual == expected, (
-        f"expected JSONL {field_name}={expected!r}; got {actual!r}"
-    )
+    assert actual == expected, f"expected JSONL {field_name}={expected!r}; got {actual!r}"
 
 
 # ---------- When step (REQ-15) ----------
@@ -740,9 +706,7 @@ def jsonl_field_equals(drift_daemon_world: dict, field_name: str, value: str) ->
         'the daemon processes an apply-progress payload with task "{task_id}" status "{status}"'
     )
 )
-def daemon_processes_payload(
-    drift_daemon_world, task_id: str, status: str
-) -> None:
+def daemon_processes_payload(drift_daemon_world, task_id: str, status: str) -> None:
     """Invoke ``daemon.handle_apply_progress_event`` with a synthesized
     apply-progress payload. The seam runs ``scan_change`` (when the task
     is merged), records drift counters, and emits a one-line summary
@@ -803,9 +767,7 @@ def summary_line_contains_once(drift_daemon_world, substring: str) -> None:
     """Assert exactly one summary line contains ``substring`` (used by the
     missing-graph scenario to confirm ``unable_to_verify`` is logged once,
     not zero or many times)."""
-    matches = [
-        s for s in drift_daemon_world["summaries"] if substring in s
-    ]
+    matches = [s for s in drift_daemon_world["summaries"] if substring in s]
     assert len(matches) == 1, (
         f"expected exactly one summary containing {substring!r}; "
         f"got {len(matches)} matches in {drift_daemon_world['summaries']!r}"
@@ -857,12 +819,10 @@ def no_drift_counter_increments(drift_daemon_world) -> None:
     (used by the silent path: no merged task -> no counters fire)."""
     events = _read_drift_events(drift_daemon_world["metrics_path"])
     drift_events = [
-        e for e in events
-        if isinstance(e.get("name"), str) and e["name"].startswith("drift_")
+        e for e in events if isinstance(e.get("name"), str) and e["name"].startswith("drift_")
     ]
     assert drift_events == [], (
-        f"expected no drift counter events; got "
-        f"{[e.get('name') for e in drift_events]}"
+        f"expected no drift counter events; got {[e.get('name') for e in drift_events]}"
     )
 
 
@@ -872,9 +832,7 @@ def no_drift_counter_increments(drift_daemon_world) -> None:
 
 
 @pytest.fixture
-def drift_pinned_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def drift_pinned_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for REQ-33 drift-pinned scenarios.
 
     Distinct from ``drift_world`` (REQ-9): the snapshot's graph_json
@@ -952,9 +910,8 @@ def _seed_snapshot_with_binding_and_graph(
         confidence=0.9,
         source="manual",
     )
-    content = (
-        "## Decision\n\nDrift-pinned binding.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\n\nDrift-pinned binding.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     backend.mem_save(
         title="vec/phase_0",
@@ -964,7 +921,8 @@ def _seed_snapshot_with_binding_and_graph(
 
     snaps_dir.mkdir(parents=True, exist_ok=True)
     snap_id = SnapshotManager(
-        snapshots_dir=snaps_dir, backend=backend,
+        snapshots_dir=snaps_dir,
+        backend=backend,
     ).create(description=description)
 
     # Inject the frozen graph_json + recompute sha256.
@@ -985,8 +943,10 @@ def _seed_snapshot_with_binding_and_graph(
     envelope_for_hash = {k: v for k, v in envelope.items() if k != "metadata"}
     envelope_for_hash["metadata"] = meta_for_hash
     canonical = json.dumps(
-        envelope_for_hash, ensure_ascii=False,
-        sort_keys=True, separators=(",", ":"),
+        envelope_for_hash,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     envelope["metadata"]["sha256"] = _hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     with _gzip.open(path, "wt", encoding="utf-8") as fh:
@@ -995,9 +955,7 @@ def _seed_snapshot_with_binding_and_graph(
 
 
 @given(
-    parsers.parse(
-        'a snapshot {snap_alias} exists with 1 binding at file "{file}" line {line:d}'
-    )
+    parsers.parse('a snapshot {snap_alias} exists with 1 binding at file "{file}" line {line:d}')
 )
 def given_snapshot_with_frozen_binding(
     drift_pinned_world: dict[str, Any],
@@ -1034,11 +992,7 @@ def given_frozen_graph_shows(
     # previous Given step. This step exists for scenario clarity.
 
 
-@given(
-    parsers.parse(
-        'today the live graph shows the same id at file "{file}" line {line:d}'
-    )
-)
+@given(parsers.parse('today the live graph shows the same id at file "{file}" line {line:d}'))
 def given_live_graph_diverged(
     drift_pinned_world: dict[str, Any],
     file: str,
@@ -1074,11 +1028,7 @@ def given_live_graph_diverged(
 # ---------- When steps (REQ-33) ----------
 
 
-@when(
-    parsers.parse(
-        'I run flow drift with snapshot {snap_alias} on change "{change}"'
-    )
-)
+@when(parsers.parse('I run flow drift with snapshot {snap_alias} on change "{change}"'))
 def when_drift_with_snapshot(
     drift_pinned_world: dict[str, Any], snap_alias: str, change: str
 ) -> None:
@@ -1097,14 +1047,8 @@ def when_drift_with_snapshot(
     drift_pinned_world["result"] = type("R", (), {"report": report})()
 
 
-@when(
-    parsers.parse(
-        'I run flow drift without --snapshot on change "{change}"'
-    )
-)
-def when_drift_without_snapshot(
-    drift_pinned_world: dict[str, Any], change: str
-) -> None:
+@when(parsers.parse('I run flow drift without --snapshot on change "{change}"'))
+def when_drift_without_snapshot(drift_pinned_world: dict[str, Any], change: str) -> None:
     """Invoke the library directly: ``scan_change(...)`` (no snap_id).
 
     The live graph.json (which has the drifted line) drives the scan,
@@ -1127,9 +1071,8 @@ def when_drift_without_snapshot(
         confidence=0.9,
         source="manual",
     )
-    content = (
-        "## Decision\n\nDrift-pinned binding.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\n\nDrift-pinned binding.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     backend.mem_save(
         title="vec/phase_0",
@@ -1168,6 +1111,7 @@ def then_report_contains_one_finding_with_class(
         f"all findings: {[(f.drift_class.value, f.binding.id) for f in findings]}"
     )
 
+
 # ============================================================
 # drift-hardening batch C: REQ-10..16 BDD scenarios (24 total)
 # ============================================================
@@ -1196,9 +1140,7 @@ def then_report_contains_one_finding_with_class(
 
 
 @pytest.fixture
-def drift_cli_world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Any]:
+def drift_cli_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Per-scenario scratch state for the REQ-10..16 batch C scenarios.
 
     Distinct from ``drift_world`` (REQ-9) - these scenarios exercise the
@@ -1217,12 +1159,8 @@ def drift_cli_world(
     monkeypatch.setenv("FLOW_METRICS_PATH", str(metrics_path))
     backend = InMemoryBackend()
     graph_path = tmp_path / "graph.json"
-    graph_path.write_text(
-        json.dumps({"nodes": []}), encoding="utf-8"
-    )
-    monkeypatch.setattr(
-        "flow_engineering.cli._default_save_backend", lambda: backend
-    )
+    graph_path.write_text(json.dumps({"nodes": []}), encoding="utf-8")
+    monkeypatch.setattr("flow_engineering.cli._default_save_backend", lambda: backend)
     from flow_engineering import decision_drift as _dd_mod
 
     _original_scan_change = _dd_mod.scan_change
@@ -1299,18 +1237,15 @@ def _seed_stale_findings(
             confidence=0.9,
             source="manual",
         )
-        content = (
-            "## Decision\n\nBatch-C binding.\n"
-            + format_code_refs_block([cref], source="manual")
+        content = "## Decision\n\nBatch-C binding.\n" + format_code_refs_block(
+            [cref], source="manual"
         )
         backend.mem_save(
             title=f"{drift_cli_world['change']}/phase_{i}",
             content=content,
             topic_key=f"sdd/{drift_cli_world['change']}/phase_{i}",
         )
-        nodes.append(
-            {"id": cref.id, "file": f"src/new_{i}.py", "line": 42, "label": cref.label}
-        )
+        nodes.append({"id": cref.id, "file": f"src/new_{i}.py", "line": 42, "label": cref.label})
         drift_cli_world["findings_seed"].append(
             {"id": cref.id, "file": cref.file, "line": cref.line}
         )
@@ -1321,11 +1256,17 @@ def _write_graph_with_nodes(drift_cli_world: dict, nodes: list[dict]) -> None:
     """Rewrite graph.json with the given nodes (each: id, file, line)."""
     drift_cli_world["graph_path"].write_text(
         json.dumps(
-            {"nodes": [
-                {"id": n["id"], "label": n.get("label", n["id"].upper()),
-                 "file": n["file"], "line": n["line"]}
-                for n in nodes
-            ]},
+            {
+                "nodes": [
+                    {
+                        "id": n["id"],
+                        "label": n.get("label", n["id"].upper()),
+                        "file": n["file"],
+                        "line": n["line"],
+                    }
+                    for n in nodes
+                ]
+            },
             ensure_ascii=False,
             indent=2,
         ),
@@ -1543,12 +1484,16 @@ def given_change_with_obsolete_and_label_drift(drift_cli_world: dict) -> None:
     graph) observation; these only surface under ``--include-obsolete``."""
     backend = drift_cli_world["backend"]
     cref = CodeRef(
-        project="insyd", id="n_label", label="OldLabel",
-        file="src/x.py", line=1, confidence=0.9, source="manual",
+        project="insyd",
+        id="n_label",
+        label="OldLabel",
+        file="src/x.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
-    content = (
-        "## Decision\n\nLabel-drift binding.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\n\nLabel-drift binding.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     backend.mem_save(
         title=f"{drift_cli_world['change']}/phase_0",
@@ -1559,10 +1504,7 @@ def given_change_with_obsolete_and_label_drift(drift_cli_world: dict) -> None:
         drift_cli_world,
         [{"id": "n_label", "file": "src/x.py", "line": 1, "label": "NewLabel"}],
     )
-    content_unbound = (
-        "## Decision\n\nNo binding.\n"
-        + format_code_refs_block([], source="unbound")
-    )
+    content_unbound = "## Decision\n\nNo binding.\n" + format_code_refs_block([], source="unbound")
     backend.mem_save(
         title=f"{drift_cli_world['change']}/phase_1",
         content=content_unbound,
@@ -1615,12 +1557,16 @@ def given_change_with_5_findings_all_classes(drift_cli_world: dict) -> None:
     ]
     for idx, (bid, file_, line, label) in enumerate(seed_specs):
         cref = CodeRef(
-            project="insyd", id=bid, label=label, file=file_, line=line,
-            confidence=0.9, source="manual",
+            project="insyd",
+            id=bid,
+            label=label,
+            file=file_,
+            line=line,
+            confidence=0.9,
+            source="manual",
         )
-        content = (
-            "## Decision\n\nBatch-C multi-class seed.\n"
-            + format_code_refs_block([cref], source="manual")
+        content = "## Decision\n\nBatch-C multi-class seed.\n" + format_code_refs_block(
+            [cref], source="manual"
         )
         backend.mem_save(
             title=f"{drift_cli_world['change']}/phase_{idx}",
@@ -1660,12 +1606,15 @@ def given_observation_42_with_metadata(drift_cli_world: dict) -> None:
 
     backend = drift_cli_world["backend"]
     cref = CodeRef(
-        project="insyd", id="obs_node", label="OBS",
-        file="src/o.py", line=1, confidence=0.9, source="manual",
+        project="insyd",
+        id="obs_node",
+        label="OBS",
+        file="src/o.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
-    metadata_block = json.dumps(
-        {"schema": 1, "fields": {"existing_key": "existing_value"}}
-    )
+    metadata_block = json.dumps({"schema": 1, "fields": {"existing_key": "existing_value"}})
     content = (
         "## Decision\n\nObservation 1.\n"
         + format_code_refs_block([cref], source="manual")
@@ -1681,18 +1630,22 @@ def given_observation_42_with_metadata(drift_cli_world: dict) -> None:
     drift_cli_world["client"] = client
 
 
-@given("a finding with decision_id=\"unknown\"")
+@given('a finding with decision_id="unknown"')
 def given_finding_with_non_int_decision_id(drift_cli_world: dict) -> None:
     """Seed 1 observation whose binding carries a non-int ``id`` so
     ``_write_back_findings`` triggers the S2 stderr WARN (1 skipped row)."""
     backend = drift_cli_world["backend"]
     cref = CodeRef(
-        project="insyd", id="unknown", label="UNK",
-        file="src/u.py", line=1, confidence=0.9, source="manual",
+        project="insyd",
+        id="unknown",
+        label="UNK",
+        file="src/u.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
-    content = (
-        "## Decision\n\nNon-int decision_id binding.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\n\nNon-int decision_id binding.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     backend.mem_save(
         title=f"{drift_cli_world['change']}/unknown",
@@ -1708,13 +1661,15 @@ def given_change_with_valid_plus_invalid(drift_cli_world: dict) -> None:
     _seed_stale_findings(drift_cli_world, count=1)
     backend = drift_cli_world["backend"]
     cref = CodeRef(
-        project="insyd", id="bad_id", label="BAD",
-        file="src/bad.py", line=1, confidence=0.9, source="manual",
+        project="insyd",
+        id="bad_id",
+        label="BAD",
+        file="src/bad.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
-    content = (
-        "## Decision\n\nBad-id binding.\n"
-        + format_code_refs_block([cref], source="manual")
-    )
+    content = "## Decision\n\nBad-id binding.\n" + format_code_refs_block([cref], source="manual")
     backend.mem_save(
         title=f"{drift_cli_world['change']}/bad",
         content=content,
@@ -1728,13 +1683,15 @@ def given_10mb_graph_json(drift_cli_world: dict) -> None:
     padding each node entry to ~1KB so 10_000 nodes fill the quota."""
     nodes = []
     for i in range(10_500):
-        nodes.append({
-            "id": f"node_{i:06d}",
-            "label": f"Node{i}",
-            "file": f"src/pad_{i:06d}.py",
-            "line": i % 1000,
-            "pad": "x" * 1000,
-        })
+        nodes.append(
+            {
+                "id": f"node_{i:06d}",
+                "label": f"Node{i}",
+                "file": f"src/pad_{i:06d}.py",
+                "line": i % 1000,
+                "pad": "x" * 1000,
+            }
+        )
     drift_cli_world["graph_path"].write_text(
         json.dumps({"nodes": nodes}, ensure_ascii=False),
         encoding="utf-8",
@@ -1751,11 +1708,13 @@ def given_custom_graph_at_tmp(drift_cli_world: dict, tmp_path: Path) -> None:
     custom_path = tmp_path / "custom-graph.json"
     custom_path.write_text(
         json.dumps(
-            {"nodes": [
-                {"id": "n1", "label": "N1", "file": "src/x.py", "line": 1},
-                {"id": "n2", "label": "N2", "file": "src/y.py", "line": 2},
-                {"id": "n3", "label": "N3", "file": "src/z.py", "line": 3},
-            ]},
+            {
+                "nodes": [
+                    {"id": "n1", "label": "N1", "file": "src/x.py", "line": 1},
+                    {"id": "n2", "label": "N2", "file": "src/y.py", "line": 2},
+                    {"id": "n3", "label": "N3", "file": "src/z.py", "line": 3},
+                ]
+            },
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -1763,12 +1722,16 @@ def given_custom_graph_at_tmp(drift_cli_world: dict, tmp_path: Path) -> None:
     drift_cli_world["custom_graph_path"] = custom_path
     backend = drift_cli_world["backend"]
     cref = CodeRef(
-        project="insyd", id="n1", label="N1",
-        file="src/x.py", line=1, confidence=0.9, source="manual",
+        project="insyd",
+        id="n1",
+        label="N1",
+        file="src/x.py",
+        line=1,
+        confidence=0.9,
+        source="manual",
     )
-    content = (
-        "## Decision\n\nCustom-graph binding.\n"
-        + format_code_refs_block([cref], source="manual")
+    content = "## Decision\n\nCustom-graph binding.\n" + format_code_refs_block(
+        [cref], source="manual"
     )
     backend.mem_save(
         title=f"{drift_cli_world['change']}/phase_0",
@@ -1784,8 +1747,11 @@ def given_custom_graph_at_tmp(drift_cli_world: dict, tmp_path: Path) -> None:
 def when_run_drift_json(drift_cli_world: dict) -> None:
     """Invoke ``flow drift <change> --graph-json <tmp> --json`` via CliRunner."""
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
         "--json",
     ]
     res = runner.invoke(cli_main, args)
@@ -1798,8 +1764,11 @@ def when_run_drift_json(drift_cli_world: dict) -> None:
 def when_run_drift_include_obsolete(drift_cli_world: dict) -> None:
     """Invoke ``flow drift <change> --graph-json <tmp> --include-obsolete``."""
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
         "--include-obsolete",
     ]
     res = runner.invoke(cli_main, args)
@@ -1808,16 +1777,20 @@ def when_run_drift_include_obsolete(drift_cli_world: dict) -> None:
     drift_cli_world["stderr"] = res.stderr or ""
 
 
-@when(parsers.parse('I run `flow drift <change> --since {ts}`'))
+@when(parsers.parse("I run `flow drift <change> --since {ts}`"))
 def when_run_drift_since(drift_cli_world: dict, ts: str) -> None:
     """Invoke ``flow drift <change> --graph-json <tmp> --since=<ts>``.
 
     The ``--since`` value is passed verbatim so the CLI's
     ``_parse_since`` parses it (or raises ValueError -> exit 2)."""
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
-        "--since", ts,
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
+        "--since",
+        ts,
     ]
     res = runner.invoke(cli_main, args)
     drift_cli_world["result"] = res
@@ -1836,8 +1809,11 @@ def when_run_drift_write_back(drift_cli_world: dict, monkeypatch: pytest.MonkeyP
     which only happens when the threshold is 0 or 1."""
     monkeypatch.setenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", "0")
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
         "--write-back",
     ]
     res = runner.invoke(cli_main, args)
@@ -1846,7 +1822,7 @@ def when_run_drift_write_back(drift_cli_world: dict, monkeypatch: pytest.MonkeyP
     drift_cli_world["stderr"] = res.stderr or ""
 
 
-@when(parsers.parse('I run `flow drift <change> --graph-json {path}`'))
+@when(parsers.parse("I run `flow drift <change> --graph-json {path}`"))
 def when_run_drift_custom_graph(drift_cli_world: dict, path: str) -> None:
     """Invoke ``flow drift <change> --graph-json=<path>`` against a
     user-supplied graph file. The path placeholder is a literal
@@ -1857,8 +1833,11 @@ def when_run_drift_custom_graph(drift_cli_world: dict, path: str) -> None:
     if "custom_graph_path" in drift_cli_world:
         actual_path = str(drift_cli_world["custom_graph_path"])
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", actual_path,
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        actual_path,
     ]
     res = runner.invoke(cli_main, args)
     drift_cli_world["result"] = res
@@ -1873,8 +1852,11 @@ def when_run_drift_no_flags(drift_cli_world: dict) -> None:
     output. Used by REQ-10 #6 + REQ-14 #3 (read-only default) + REQ-11
     exit-code scenarios."""
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
     ]
     res = runner.invoke(cli_main, args)
     drift_cli_world["result"] = res
@@ -1887,9 +1869,13 @@ def when_run_drift_bad_since(drift_cli_world: dict, bad_ts: str) -> None:
     """Invoke ``flow drift <change> --since=<bad_ts>`` so ``_parse_since``
     raises ValueError and the CLI exits 2 (REQ-11 priority)."""
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
-        "--since", bad_ts,
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
+        "--since",
+        bad_ts,
     ]
     res = runner.invoke(cli_main, args)
     drift_cli_world["result"] = res
@@ -1901,12 +1887,13 @@ def when_run_drift_bad_since(drift_cli_world: dict, bad_ts: str) -> None:
 def when_run_drift_malformed_graph(drift_cli_world: dict) -> None:
     """Write invalid JSON to graph.json and invoke the CLI; the scan must
     not raise (REQ-14 fail-open) - exit code is 0 or 2."""
-    drift_cli_world["graph_path"].write_text(
-        "{this is not valid json", encoding="utf-8"
-    )
+    drift_cli_world["graph_path"].write_text("{this is not valid json", encoding="utf-8")
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
     ]
     res = runner.invoke(cli_main, args)
     drift_cli_world["result"] = res
@@ -1920,8 +1907,11 @@ def when_run_drift_write_back_twice(drift_cli_world: dict, monkeypatch: pytest.M
     duplicate metadata entries (idempotent)."""
     monkeypatch.setenv("FLOW_DRIFT_SKIP_WARN_THRESHOLD", "0")
     args = [
-        "drift", "run", drift_cli_world["change"],
-        "--graph-json", str(drift_cli_world["graph_path"]),
+        "drift",
+        "run",
+        drift_cli_world["change"],
+        "--graph-json",
+        str(drift_cli_world["graph_path"]),
         "--write-back",
     ]
     res1 = runner.invoke(cli_main, args)
@@ -1934,10 +1924,8 @@ def when_run_drift_write_back_twice(drift_cli_world: dict, monkeypatch: pytest.M
 # ---------- Library-level When steps (REQ-13) ----------
 
 
-@when(parsers.parse('I call `update_observation_metadata({oid:d}, {key}, {value})`'))
-def when_call_update_metadata(
-    drift_cli_world: dict, oid: int, key: str, value: str
-) -> None:
+@when(parsers.parse("I call `update_observation_metadata({oid:d}, {key}, {value})`"))
+def when_call_update_metadata(drift_cli_world: dict, oid: int, key: str, value: str) -> None:
     """Call ``EngramClient.update_observation_metadata`` directly so the
     REQ-13 metadata helper can be exercised outside the CLI surface."""
     from flow_engineering.engram_io import EngramClient
@@ -1953,10 +1941,8 @@ def when_call_update_metadata(
         drift_cli_world["metadata_exc"] = exc
 
 
-@when(parsers.parse('I call `update_observation_metadata({oid:d}, {key}, {value})` twice'))
-def when_call_update_metadata_twice(
-    drift_cli_world: dict, oid: int, key: str, value: str
-) -> None:
+@when(parsers.parse("I call `update_observation_metadata({oid:d}, {key}, {value})` twice"))
+def when_call_update_metadata_twice(drift_cli_world: dict, oid: int, key: str, value: str) -> None:
     """Call the helper twice with the same key; the second call must NOT
     create a duplicate entry (last-write-wins semantics)."""
     from flow_engineering.engram_io import EngramClient
@@ -1985,8 +1971,12 @@ def when_run_sdd_verify_step_6a(drift_cli_world: dict) -> None:
         "skills_root", Path.home() / ".config" / "opencode" / "skills"
     )
     required = [
-        "sdd-propose", "sdd-design", "sdd-tasks",
-        "sdd-apply", "sdd-verify", "sdd-archive",
+        "sdd-propose",
+        "sdd-design",
+        "sdd-tasks",
+        "sdd-apply",
+        "sdd-verify",
+        "sdd-archive",
     ]
     drift_cli_world["sdd_verify_rc"] = 0
     drift_cli_world["sdd_verify_skills_root"] = skills_root
@@ -2003,9 +1993,11 @@ def when_run_sdd_verify_step_6a(drift_cli_world: dict) -> None:
             drift_cli_world["sdd_verify_missing"].append(skill)
 
 
-@when(parsers.parse(
-    "I grep `## Drift detection hook` across sdd-{propose,design,tasks,apply,verify,archive}/SKILL.md"
-))
+@when(
+    parsers.parse(
+        "I grep `## Drift detection hook` across sdd-{propose,design,tasks,apply,verify,archive}/SKILL.md"
+    )
+)
 def when_grep_drift_hook_across_skills(drift_cli_world: dict) -> None:
     """Locate the 6 SKILL.md files and count how many carry a section
     header line matching ``## Drift detection hook``."""
@@ -2013,8 +2005,12 @@ def when_grep_drift_hook_across_skills(drift_cli_world: dict) -> None:
         "skills_root", Path.home() / ".config" / "opencode" / "skills"
     )
     required = [
-        "sdd-propose", "sdd-design", "sdd-tasks",
-        "sdd-apply", "sdd-verify", "sdd-archive",
+        "sdd-propose",
+        "sdd-design",
+        "sdd-tasks",
+        "sdd-apply",
+        "sdd-verify",
+        "sdd-archive",
     ]
     drift_cli_world["sdd_verify_skills_root"] = skills_root
     drift_cli_world["sdd_verify_required"] = required
@@ -2031,7 +2027,7 @@ def when_grep_drift_hook_across_skills(drift_cli_world: dict) -> None:
 # ---------- Then steps (REQ-10..16) ----------
 
 
-@then("stdout is valid JSON with key \"findings\"")
+@then('stdout is valid JSON with key "findings"')
 def then_stdout_json_with_findings_key(drift_cli_world: dict) -> None:
     """Parse stdout as JSON and assert the top-level ``findings`` key exists."""
     parsed = json.loads(drift_cli_world["stdout"])
@@ -2118,7 +2114,7 @@ def then_stdout_is_table(drift_cli_world: dict) -> None:
     )
 
 
-@then("stderr contains \"invalid --since format\"")
+@then('stderr contains "invalid --since format"')
 def then_stderr_invalid_since(drift_cli_world: dict) -> None:
     """Assert stderr carries the parse-error message from ``_parse_since``.
 
@@ -2126,21 +2122,19 @@ def then_stderr_invalid_since(drift_cli_world: dict) -> None:
     brief's literal ``invalid --since format`` is paraphrased - the
     actual message is friendlier with an example timestamp)."""
     err = drift_cli_world["stderr"]
-    assert (
-        "ISO 8601" in err
-        or "invalid --since format" in err
-        or "--since must be" in err
-    ), f"expected --since parse error in stderr; got {err!r}"
+    assert "ISO 8601" in err or "invalid --since format" in err or "--since must be" in err, (
+        f"expected --since parse error in stderr; got {err!r}"
+    )
 
 
-@then(parsers.parse("stderr contains \"{needle}\""))
+@then(parsers.parse('stderr contains "{needle}"'))
 def then_stderr_contains(drift_cli_world: dict, needle: str) -> None:
     """Generic stderr-substring assertion used by REQ-10 #8 + REQ-14."""
     err = drift_cli_world["stderr"]
     assert needle in err, f"expected {needle!r} in stderr; got {err!r}"
 
 
-@then(parsers.parse("stdout contains \"{needle}\""))
+@then(parsers.parse('stdout contains "{needle}"'))
 def then_stdout_contains(drift_cli_world: dict, needle: str) -> None:
     """Generic stdout-substring assertion used by REQ-14 #2 (malformed
     graph surfaces ``unable_to_verify`` text in stdout, not stderr)."""
@@ -2167,8 +2161,7 @@ def then_exit_code_0(drift_cli_world: dict) -> None:
     if res is None:
         raise AssertionError("expected result from prior CLI invocation")
     assert res.exit_code == 0, (
-        f"expected exit 0; got {res.exit_code}; "
-        f"stdout={res.output!r}; stderr={res.stderr!r}"
+        f"expected exit 0; got {res.exit_code}; stdout={res.output!r}; stderr={res.stderr!r}"
     )
 
 
@@ -2178,8 +2171,7 @@ def then_exit_code_1(drift_cli_world: dict) -> None:
     """Assert the CLI exit code is 1 (drift detected)."""
     res = drift_cli_world["result"]
     assert res.exit_code == 1, (
-        f"expected exit 1; got {res.exit_code}; "
-        f"stdout={res.output!r}; stderr={res.stderr!r}"
+        f"expected exit 1; got {res.exit_code}; stdout={res.output!r}; stderr={res.stderr!r}"
     )
 
 
@@ -2188,8 +2180,7 @@ def then_exit_code_2(drift_cli_world: dict) -> None:
     """Assert the CLI exit code is 2 (unable_to_verify / parse error)."""
     res = drift_cli_world["result"]
     assert res.exit_code == 2, (
-        f"expected exit 2; got {res.exit_code}; "
-        f"stdout={res.output!r}; stderr={res.stderr!r}"
+        f"expected exit 2; got {res.exit_code}; stdout={res.output!r}; stderr={res.stderr!r}"
     )
 
 
@@ -2209,9 +2200,7 @@ def then_metrics_has_8_lines(drift_cli_world: dict) -> None:
     events from one ``record_drift_summary`` invocation."""
     path: Path = drift_cli_world["metrics_path"]
     assert path.exists(), f"expected metrics.jsonl to exist at {path}"
-    lines = [
-        ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
-    ]
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) == 8, (
         f"expected 8 drift counter events; got {len(lines)}; "
         f"lines: {[json.loads(ln).get('name') for ln in lines]}"
@@ -2258,9 +2247,7 @@ def then_observation_metadata_has_both_keys(drift_cli_world: dict) -> None:
     assert "existing_key" in content, (
         f"expected existing_key to survive the merge; got content={content!r}"
     )
-    assert "new_key" in content, (
-        f"expected new_key to be appended; got content={content!r}"
-    )
+    assert "new_key" in content, f"expected new_key to be appended; got content={content!r}"
 
 
 @then("metadata has only one entry for key")
@@ -2316,7 +2303,10 @@ def then_missing_obs_raises(drift_cli_world: dict) -> None:
         ]
         if "update_observation_metadata_failed_total" in names:
             return
-    raise AssertionError("expected either an exception or update_observation_metadata_failed_total " f"counter increment; got exc={exc!r}, metrics_path={path}")
+    raise AssertionError(
+        "expected either an exception or update_observation_metadata_failed_total "
+        f"counter increment; got exc={exc!r}, metrics_path={path}"
+    )
 
 
 @then("exit code is 1 (the valid one counted)")
@@ -2359,9 +2349,7 @@ def then_no_observation_metadata_changed(drift_cli_world: dict) -> None:
 
 
 @then(parsers.parse("processing completes in <{seconds:d} seconds"))
-def then_processing_completes_under_seconds(
-    drift_cli_world: dict, seconds: int
-) -> None:
+def then_processing_completes_under_seconds(drift_cli_world: dict, seconds: int) -> None:
     """Assert the previous ``flow drift`` invocation completed within the
     budget. We measure via wall-clock against a captured start time in
     ``drift_cli_world['_start_ts']`` - the When step doesn't currently
@@ -2379,8 +2367,7 @@ def then_six_files_have_section(drift_cli_world: dict) -> None:
     ``## Drift detection hook`` section header."""
     found = drift_cli_world.get("sdd_verify_found", [])
     assert len(found) == 6, (
-        f"expected 6 SKILL.md files with '## Drift detection hook'; "
-        f"got {len(found)}: {found}"
+        f"expected 6 SKILL.md files with '## Drift detection hook'; got {len(found)}: {found}"
     )
 
 
