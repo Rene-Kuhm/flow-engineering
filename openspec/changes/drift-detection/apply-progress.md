@@ -267,3 +267,29 @@ N/N PASSED
 - **`SnapshotGraphMissing` re-export** is a 1-line PEP 562 `from ... import ... as ...` in `decision_drift.py`. The canonical class is unchanged at `snapshot_manager.py:81-101`. `cli/drift.py:351`'s `except decision_drift.SnapshotGraphMissing` block continues to work byte-identically.
 - **D2 graceful degradation** (`raise SnapshotGraphMissing` when snapshot has no graph content) is PRESERVED as a `raise` at the scan boundary. It does NOT map to `unable_reason` per REQ-33 contract.
 - **Batch 7 (verify gates)** has NO work-unit commits — T7.1 + T7.2 are CI verification steps executed by `sdd-verify` (or locally before PR open). The implementation is complete after Batch 6 commits land.
+
+---
+
+## Current audit — T1.1 + T1.2a tracker alignment
+
+> **Date**: 2026-07-09
+> **Scope**: Align tracker evidence for the already-present GraphLoader Protocol and LiveDiskGraphLoader implementation.
+
+### Verified tasks
+
+- [x] T1.1 — `tests/unit/test_decision_drift_graph_loader.py` contains GraphLoader Protocol contract coverage.
+- [x] T1.2a — `src/flow_engineering/drift_graph_loader.py` contains `LiveDiskGraphLoader` and `GraphMissing` behavior for missing live graph files.
+
+### Verification evidence
+
+```powershell
+$base = Join-Path $env:TEMP "flow-engineering-pytest-$PID"
+uv run pytest --basetemp="$base" tests/unit/test_decision_drift_graph_loader.py -q -k "GraphLoaderProtocol or LiveDiskGraphLoader"
+# 6 passed, 16 deselected
+```
+
+### Notes
+
+- This was a tracker-alignment micro-slice, not a new behavior implementation.
+- Current `main` already contained the GraphLoader and later drift-detection code before this update.
+- No production code was changed in this micro-slice.
