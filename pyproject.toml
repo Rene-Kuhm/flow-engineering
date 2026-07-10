@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 flow = "flow_engineering.cli:main"
+flow-mcp = "flow_engineering.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -26,7 +27,9 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=2.2.0",
     "pip-audit==2.10.1",
+    "mcp>=1.28.1,<1.29",
 ]
+mcp = ["mcp>=1.28.1,<1.29"]
 
 # Optional ML extras for vector-semantic-search (REQ-17, REQ-19).
 # Installing [vectors] enables ``HybridBackend.mem_search_semantic`` /
