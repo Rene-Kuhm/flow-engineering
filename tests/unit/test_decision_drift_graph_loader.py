@@ -1094,7 +1094,7 @@ def _serialize_report(report) -> dict:  # type: ignore[no-untyped-def]
     }
 
 
-_BASELINE_SCAN_SCRIPT = r'''
+_BASELINE_SCAN_SCRIPT = r"""
 from __future__ import annotations
 
 import gzip
@@ -1269,4 +1269,4 @@ print(
         sort_keys=True,
     )
 )
-'''
+"""
