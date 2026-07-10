@@ -330,7 +330,7 @@ class TestReindexModuleImportClean:
             capture_output=True,
             text=True,
             check=False,
-            cwd="C:/dev/proyects/flow-engineering",
+            cwd=Path(__file__).resolve().parents[2],
         )
         assert result.returncode == 0, (
             f"Heavy deps leaked:\nstdout={result.stdout}\nstderr={result.stderr}"

@@ -876,7 +876,7 @@ def when_subprocess_import(embedding_world):
         capture_output=True,
         text=True,
         check=False,
-        cwd="C:/dev/proyects/flow-engineering",
+        cwd=Path(__file__).resolve().parents[2],
     )
 
 

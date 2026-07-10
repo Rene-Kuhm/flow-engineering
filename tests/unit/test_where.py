@@ -216,6 +216,33 @@ class TestGrepRepo:
         assert [h.path for h in code] == ["src/foo.py"]
         assert [h.path for h in tests] == ["tests/test_x.py"]
 
+    def test_unrelated_rg_executable_falls_back_to_python_search(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A non-ripgrep ``rg.exe`` on Windows must not disable retrieval."""
+        _make_src_tree(tmp_path, {"src/foo.py": "def make_jwt():\n    return 'token'\n"})
+        monkeypatch.chdir(tmp_path)
+
+        import flow_engineering.where as where_mod
+
+        monkeypatch.setattr(
+            where_mod.shutil,
+            "which",
+            lambda name: "C:/tools/rg.exe" if name == "rg" else None,
+        )
+        monkeypatch.setattr(
+            where_mod.subprocess,
+            "run",
+            lambda argv, **kwargs: subprocess.CompletedProcess(
+                args=argv, returncode=0, stdout="", stderr=""
+            ),
+        )
+
+        code, tests = where.grep_repo("jwt", limit=20)
+
+        assert [hit.path for hit in code] == ["src/foo.py"]
+        assert tests == []
+
 
 # ---------- T1.3 / T1.4 — REQ-V1.0.1: split_code_vs_tests ----------
 

@@ -16,6 +16,7 @@ PR#2 T2.1: SentenceTransformersProvider
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -177,7 +178,7 @@ class TestEmbeddingProviderLazyImport:
             capture_output=True,
             text=True,
             check=False,
-            cwd="C:/dev/proyects/flow-engineering",
+            cwd=Path(__file__).resolve().parents[2],
         )
         assert result.returncode == 0, (
             f"Lazy import violated:\nstdout={result.stdout}\nstderr={result.stderr}"
@@ -419,7 +420,7 @@ class TestSentenceTransformersProviderModuleImportClean:
             capture_output=True,
             text=True,
             check=False,
-            cwd="C:/dev/proyects/flow-engineering",
+            cwd=Path(__file__).resolve().parents[2],
         )
         assert result.returncode == 0, (
             f"Module-level import leaked heavy deps:\n"
