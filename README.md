@@ -55,6 +55,21 @@ flow archive     my-change   # reconcile + close
 
 For full phase semantics, see `openspec/changes/v1.1-followups/spec.md` and the `.specify/memory/constitution.md` governance.
 
+## Agent distribution
+
+The optional stdio MCP server and portable agent skill are documented in
+[`docs/mcp-and-skill.md`](docs/mcp-and-skill.md). For a local checkout, the
+canonical setup is:
+
+```bash
+uv sync --extra mcp
+uv run --extra mcp flow-mcp
+```
+
+The MCP adapter is optional; the core package remains authoritative for
+deterministic project and health behavior, while the skill defines agent
+workflow and safety boundaries.
+
 ## Architecture
 
 `flow-engineering` is organized as a Python package under `src/flow_engineering/`. Entry points:

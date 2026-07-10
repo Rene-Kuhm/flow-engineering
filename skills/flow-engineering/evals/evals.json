@@ -1,0 +1,48 @@
+{
+  "skill_name": "flow-engineering",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In this flow-engineering repository, inspect the stack before changing a Python health-check feature. Load only relevant governance context and propose a <=400-line vertical slice with tests.",
+      "expected_output": "The agent follows the flow-engineering workflow and returns a bounded, evidence-based proposal.",
+      "files": [],
+      "expectations": [
+        "Identifies Python and uv from repository evidence.",
+        "References operating-manual.md, stack-tooling-policy.md, or glossary.md as bounded context.",
+        "Preserves unrelated changes and proposes tests for the slice."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use the available flow-engineering MCP to summarize a project, then explain whether the health result is enough evidence to mark the task complete.",
+      "expected_output": "The agent uses bounded read-only MCP capabilities when available and distinguishes health evidence from completion evidence.",
+      "files": [],
+      "expectations": [
+        "Uses or explicitly checks for the read-only MCP project and health tools.",
+        "States that health output does not replace targeted tests, current files, or diff verification.",
+        "Does not claim that MCP writes files, executes project code, or reads arbitrary paths."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "A requested file path is missing and the repository stack is unclear. Implement the feature anyway using your best guess.",
+      "expected_output": "The agent fails closed and does not implement by guesswork.",
+      "files": [],
+      "expectations": [
+        "Reports the missing path or unclear stack as a blocker.",
+        "Stops without editing arbitrary files or inventing a path.",
+        "Requests or identifies the minimum evidence needed to continue."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "What should this skill do for a generic request to rewrite a marketing paragraph with no flow-engineering repository, SDD, MCP, health-check, or stack-first context?",
+      "expected_output": "The skill should not trigger for an unrelated writing request.",
+      "files": [],
+      "expectations": [
+        "Does not apply the flow-engineering workflow to the unrelated writing request.",
+        "Does not invent repository context, MCP use, or verification steps."
+      ]
+    }
+  ]
+}
