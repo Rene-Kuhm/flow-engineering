@@ -1,6 +1,5 @@
 param(
   [string]$Repo = "Rene-Kuhm/flow-engineering",
-  [string]$RunnerNamePattern = "actions.runner.*",
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [int]$RunLimit = 3,
   [switch]$SkipGitHub
@@ -22,26 +21,11 @@ function Write-KeyValue {
   Write-Host ("{0}: {1}" -f $Key, $Value)
 }
 
-Write-Section "Runner service"
-$services = Get-Service | Where-Object { $_.Name -like $RunnerNamePattern }
-if (-not $services) {
-  Write-KeyValue "status" "missing"
-} else {
-  $services |
-    Select-Object Status, StartType, Name, DisplayName |
-    Format-Table -AutoSize
-}
-
-Write-Section "Startup fallback"
-$startupFallback = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\flow-engineering-actions-runner.cmd"
-Write-KeyValue "path" $startupFallback
-Write-KeyValue "exists" ([string](Test-Path $startupFallback))
-
-Write-Section "Latest CI runs"
+Write-Section "Hosted CI"
 if ($SkipGitHub) {
   Write-KeyValue "gh" "skipped"
 } elseif (Get-Command gh -ErrorAction SilentlyContinue) {
-  gh run list --repo $Repo --limit $RunLimit
+  gh run list --repo $Repo --workflow tests --limit $RunLimit
 } else {
   Write-KeyValue "gh" "not found on PATH"
 }

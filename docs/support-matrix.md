@@ -8,7 +8,7 @@ This file defines what the project promises versus what is only expected to work
 |---|---|---|
 | Python | 3.12, 3.13 | GitHub Actions `tests` matrix runs both versions. |
 | Minimum Python | >=3.12 | `pyproject.toml` declares `requires-python = ">=3.12"`. |
-| Primary CI OS | Windows self-hosted runner | `.github/workflows/test.yml` runs on `self-hosted`; runner is installed as a Windows service. |
+| Primary CI OS | Windows GitHub-hosted runner | `.github/workflows/test.yml` runs on `windows-latest` for pushes and pull requests. |
 | Local development OS | Windows, Linux, macOS | Code is intended to be portable Python, but Linux/macOS are not currently CI-gated. |
 | Runner shell | Windows PowerShell 5.1 | Workflows use `powershell -ExecutionPolicy Bypass -NoProfile`. |
 

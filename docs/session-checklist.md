@@ -16,7 +16,6 @@ gh pr list --repo Rene-Kuhm/flow-engineering --state open --limit 10
 Confirm:
 
 - [ ] The working tree is clean, or the dirty files are understood.
-- [ ] The runner service is `Running` and `Automatic`.
 - [ ] The latest relevant CI run is green, or the failure is the current task.
 - [ ] Open PRs are known before starting new work.
 - [ ] Active follow-ups come from `docs/follow-up-audit.md`, not from old archived noise.
@@ -45,7 +44,7 @@ Confirm:
 
 - [ ] Relevant local verification passed.
 - [ ] CI is green after any push.
-- [ ] The final health check shows runner and CI visibility.
+- [ ] The final health check shows hosted CI visibility.
 - [ ] Memory has the important outcome and gotchas.
 - [ ] Follow-ups are explicit: closed, promoted, or deferred.
 - [ ] The next step is small enough for one reviewable slice.
@@ -56,7 +55,6 @@ Do not keep building on top of a bad baseline.
 
 | Symptom | First action |
 |---------|--------------|
-| Runner is stopped | Check the `actions.runner.*` Windows service before touching CI code. |
 | CI is failing | Inspect the failing run logs before changing implementation. |
 | Working tree is dirty unexpectedly | Stop and identify every file before editing more. |
 | Old follow-up looks important | Verify it against current code/docs before promoting it. |
@@ -65,6 +63,6 @@ Do not keep building on top of a bad baseline.
 ## Source of truth
 
 - `docs/enterprise-readiness.md` — enterprise maturity roadmap.
-- `docs/system-health.md` — runner and CI health routine.
+- `docs/system-health.md` — hosted CI health routine.
 - `docs/follow-up-audit.md` — current follow-up policy.
 - `docs/memory-maintenance.md` — memory hygiene policy.

@@ -9,46 +9,15 @@ This project is healthy when `main` stays green, SDD artifacts explain decisions
 3. Archive completed changes immediately.
 4. Prefer one clear architectural seam over broad “while we are here” refactors.
 
-## Runner operations
+## Hosted CI operations
 
-The current self-hosted runner lives at:
+Repository workflows use GitHub-hosted runners only. PR jobs must use the
+audited `windows-latest` label without expressions or reusable-workflow jobs.
 
-```text
-C:\actions-runner-flow-engineering
-```
-
-Current production mode: Windows Service.
+Verify hosted CI health:
 
 ```powershell
-Get-Service | Where-Object { $_.Name -like "actions.runner.*" } |
-  Select-Object Status,StartType,Name,DisplayName
-```
-
-Expected result:
-
-```text
-Running  Automatic  actions.runner.Rene-Kuhm-flow-engineering.TECNODESPEGUE-flow-engineering
-```
-
-If the service must be recreated, open PowerShell as Administrator and run:
-
-```powershell
-$repo = "Rene-Kuhm/flow-engineering"
-$runnerRoot = "C:\actions-runner-flow-engineering"
-$token = gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token
-
-cd $runnerRoot
-.\config.cmd remove --token (gh api -X POST "repos/$repo/actions/runners/remove-token" --jq .token)
-.\config.cmd --unattended --url "https://github.com/$repo" --token $token --name "$env:COMPUTERNAME-flow-engineering" --work _work --labels "self-hosted,Windows,X64,flow-engineering" --replace --runasservice
-```
-
-Verify runner health:
-
-```powershell
-Get-Service | Where-Object { $_.Name -like "actions.runner.*" } |
-  Select-Object Status,StartType,Name
-
-gh run list --repo Rene-Kuhm/flow-engineering --limit 5
+gh run list --repo Rene-Kuhm/flow-engineering --workflow tests --limit 5
 ```
 
 For the compact project dashboard, run:
@@ -63,14 +32,6 @@ For local Windows test runs, avoid pytest's shared `pytest-current` temp link:
 $base = Join-Path $env:TEMP "flow-engineering-pytest-$PID"
 uv run pytest --basetemp="$base"
 ```
-
-There should be no user Startup fallback after service installation:
-
-```powershell
-Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\flow-engineering-actions-runner.cmd"
-```
-
-Expected result: `False`.
 
 ## SDD anti-bureaucracy rules
 
