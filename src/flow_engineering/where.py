@@ -134,11 +134,11 @@ def _run_search(query: str, paths: Iterable[str], cwd: Path) -> str:
     pure-Python regex scanner so Windows service runners without Unix tools
     still exercise the real retrieval behaviour.
 
-    Exit-code semantics:
-    - ``0`` → matches found (stdout parsed normally).
-    - ``1`` → no matches (rg / grep convention; we treat this as ``""``).
-    - ``2+`` → tool error (we also treat as ``""`` so the caller's
-      fail-open contract holds). No exception is raised.
+    A command that errors or produces no matches falls through to the next
+    backend. This is important on hosted Windows images where an unrelated
+    executable named ``rg.exe`` may be on PATH. The final pure-Python scan
+    preserves deterministic retrieval rather than treating that name
+    collision as authoritative evidence of no matches.
     """
     if not query:
         return ""
@@ -157,10 +157,9 @@ def _run_search(query: str, paths: Iterable[str], cwd: Path) -> str:
                 encoding="utf-8",
             )
         except (OSError, subprocess.SubprocessError):
-            return ""
-        if completed.returncode in (0, 1):
-            return completed.stdout or ""
-        return ""
+            continue
+        if completed.returncode == 0 and completed.stdout:
+            return completed.stdout
     return _run_python_search(query, paths, cwd)
 
 
