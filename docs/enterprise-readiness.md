@@ -17,8 +17,8 @@ This project is healthy for a small advanced team. Enterprise readiness means ma
 | Area | Current state | Enterprise gap |
 |------|---------------|----------------|
 | CI | GitHub Actions is green on Python 3.12 and 3.13. | Keep failure signals visible and investigated. |
-| Runner | Self-hosted Windows runner runs as an Automatic service. | Out-of-band watchdog is available for Task Scheduler or external monitors. |
-| Health | `scripts/system_health.ps1`, `health-monitor`, and `runner_watchdog.ps1` cover manual, scheduled, and out-of-band checks. | Keep recording recent health history. |
+| Runner | Repository workflows use GitHub-hosted Windows runners only. | Keep the hosted-runner allowlist regression green. |
+| Health | `scripts/system_health.ps1` and GitHub Actions provide manual and hosted CI visibility. | Keep recording recent health history. |
 | Memory | Engram/SDD memory policy exists with monthly review cadence and stale-memory triage. | Keep memory verified against current code before acting. |
 | Follow-ups | Follow-up audit exists and has no urgent blockers. | Keep a single live follow-up register. |
 | Drift detection | Active change exists with review-budget guardrail. | Continue only via small, tested slices. |
@@ -30,7 +30,7 @@ These are required before calling a change done.
 - [ ] `git status` is clean or intentionally dirty with a documented reason.
 - [ ] Relevant tests pass locally.
 - [ ] CI is green after push.
-- [ ] `scripts/system_health.ps1` reports runner service healthy.
+- [ ] `scripts/system_health.ps1` reports hosted CI visibility.
 - [ ] Important decisions, bug fixes, and gotchas are saved to memory.
 - [ ] Follow-ups are either closed, promoted, or explicitly deferred.
 - [ ] The diff is reviewable: target <=400 changed lines, hard stop >600 without explicit exception.
@@ -39,10 +39,7 @@ These are required before calling a change done.
 
 Goal: failures should find us before users do.
 
-- [x] Add a scheduled runner health check. See `.github/workflows/health-monitor.yml`.
-- [x] Add CI failure notification path. `health-monitor` fails visibly through GitHub Actions notifications when the self-hosted runner is available.
-- [x] Add stale-green alert when no successful CI run exists after a threshold. `health-monitor` uses `HEALTH_MAX_CI_AGE_HOURS`.
-- [x] Add out-of-band runner-down alert hook. See `scripts/runner_watchdog.ps1` and `docs/runner-watchdog.md`; wire it to Task Scheduler or an external monitor for live paging.
+- [x] Use hosted GitHub Actions status and notifications for CI failures.
 - [x] Document incident response: symptom, diagnosis, fix, prevention. See `docs/incident-response.md`.
 - [x] Record recent health-check result history. See `docs/system-health.md`.
 
@@ -51,10 +48,10 @@ Goal: failures should find us before users do.
 Goal: secrets and supply chain mistakes should be hard to miss.
 
 - [x] Document secret handling and security reporting. See `SECURITY.md` and `docs/security-baseline.md`.
-- [x] Define token rotation rules for GitHub, OpenAI, OpenCode, and runner credentials. See `docs/security-baseline.md`.
+- [x] Define token rotation rules for GitHub, OpenAI, and OpenCode credentials. See `docs/security-baseline.md`.
 - [x] Add dependency update policy. See `docs/dependency-updates.md`.
 - [x] Add lightweight SAST/security scan for changed code. CI runs a focused Ruff security rule set over `src` and `scripts`.
-- [x] Require extra review for changes touching secrets, runner setup, filesystem access, auth, or external command execution. See `docs/security-baseline.md`.
+- [x] Require extra review for changes touching secrets, workflow runner labels, filesystem access, auth, or external command execution. See `docs/security-baseline.md`.
 
 ## Priority 3 — governance of change
 
@@ -82,7 +79,7 @@ Goal: prevent regressions without testing everything blindly.
 Goal: system state should be easy to inspect in one minute.
 
 - [x] Keep the lightweight health command as the source of truth. See `docs/system-health.md`.
-- [x] Add CI status, runner status, active specs, follow-ups, and memory hygiene to one dashboard view. See `docs/system-health.md` and `scripts/system_health.ps1`.
+- [x] Add hosted CI status, active specs, follow-ups, and memory hygiene to one dashboard view. See `docs/system-health.md` and `scripts/system_health.ps1`.
 - [x] Avoid a large dashboard until the manual health workflow proves stable. The lightweight health command remains the source of truth.
 - [x] Add structured logs only where they answer real operational questions. Current decision: no extra logs until a concrete incident or operator question requires them.
 
@@ -100,7 +97,7 @@ Goal: AI should remember useful context and forget stale noise.
 
 Goal: the project should be restorable on another machine.
 
-- [x] Document how to rebuild the runner service. See `docs/release-recovery.md`.
+- [x] Document hosted CI and repository recovery. See `docs/release-recovery.md`.
 - [x] Document what critical Codex/OpenCode/Engram configuration must be preserved. See `docs/release-recovery.md`.
 - [x] Document disaster recovery steps. See `docs/release-recovery.md`.
 - [x] Tag stable releases. `v1.3.0` is published at https://github.com/Rene-Kuhm/flow-engineering/releases/tag/v1.3.0.
@@ -113,7 +110,7 @@ A slice is done when:
 - [ ] The intended behavior or documentation outcome is complete.
 - [ ] Local verification relevant to the slice passed.
 - [ ] CI passed after push.
-- [ ] Health check confirms runner/CI visibility.
+- [ ] Health check confirms hosted CI visibility.
 - [ ] Memory was updated for any non-obvious decision, bug fix, or discovery.
 - [ ] Follow-ups are explicit and not hidden in chat.
 - [ ] The change stayed inside review budget or has a documented exception.

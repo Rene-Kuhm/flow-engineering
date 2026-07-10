@@ -8,7 +8,8 @@ on:
 
 jobs:
   test:
-    runs-on: self-hosted
+    # This PR-triggerable workflow must never target an owner-managed runner.
+    runs-on: windows-latest
     defaults:
       run:
         shell: powershell -ExecutionPolicy Bypass -NoProfile -Command ". '{0}'"

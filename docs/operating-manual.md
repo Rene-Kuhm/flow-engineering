@@ -70,11 +70,11 @@ code, tests, and product intent prove it still matters.
 | Task | Command |
 |---|---|
 | Check project health | `.\scripts\system_health.ps1` |
-| Check runner watchdog | `.\scripts\runner_watchdog.ps1 -Json` |
+| Optional private-runner watchdog | `.\scripts\runner_watchdog.ps1 -Json` |
 | Run monthly maintenance | `.\scripts\monthly_maintenance.ps1` |
 | Install monthly task | `.\scripts\install_monthly_maintenance_task.ps1` |
-| Set alert webhook | `.\scripts\set_runner_watchdog_webhook.ps1` |
-| Test alert webhook | `.\scripts\runner_watchdog.ps1 -WebhookTest` |
+| Optional private-runner alert webhook | `.\scripts\set_runner_watchdog_webhook.ps1` |
+| Optional private-runner webhook test | `.\scripts\runner_watchdog.ps1 -WebhookTest` |
 
 For local pytest runs on Windows, avoid shared temp cleanup issues:
 
@@ -87,9 +87,9 @@ uv run pytest --basetemp="$base"
 
 | Gotcha | Response |
 |---|---|
-| GitHub-hosted runners are blocked by billing gate | Use the self-hosted Windows runner and verify it with `system_health.ps1`. |
-| Runner-down cannot be detected by a workflow that never starts | Use `runner_watchdog.ps1` through Task Scheduler or an external monitor. |
-| Codecov can slow or block the single runner | Keep upload steps time-bounded and non-blocking. |
+| GitHub-hosted test jobs are blocked by a billing gate | Resolve the account gate; never route a PR-triggerable workflow to the self-hosted runner. |
+| An operator maintains a separate private runner | Use the optional watchdog through Task Scheduler; it is not repository health. |
+| Codecov can delay CI | Keep upload steps time-bounded and non-blocking. |
 | PowerShell JSON/JQ behavior differs across versions | Prefer explicit PowerShell JSON parsing in workflows. |
 | Old SDD notes can look like live debt | Check `docs/follow-up-audit.md` before acting. |
 | Pytest shared temp cleanup can fail on Windows | Use an isolated `--basetemp`. |

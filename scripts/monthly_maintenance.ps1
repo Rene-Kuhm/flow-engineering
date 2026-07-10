@@ -9,11 +9,10 @@ $ErrorActionPreference = "Stop"
 
 $repoRootPath = (Resolve-Path -LiteralPath $RepoRoot).Path
 $healthScript = Join-Path $repoRootPath "scripts/system_health.ps1"
-$watchdogScript = Join-Path $repoRootPath "scripts/runner_watchdog.ps1"
 $followUpAudit = Join-Path $repoRootPath "docs/follow-up-audit.md"
 $memoryPolicy = Join-Path $repoRootPath "docs/memory-maintenance.md"
 
-foreach ($required in @($healthScript, $watchdogScript, $followUpAudit, $memoryPolicy)) {
+foreach ($required in @($healthScript, $followUpAudit, $memoryPolicy)) {
   if (-not (Test-Path -LiteralPath $required)) {
     throw "Required maintenance artifact missing: $required"
   }
@@ -39,13 +38,6 @@ $steps += Invoke-Step "system_health" {
     & $healthScript -RepoRoot $repoRootPath -SkipGitHub
   } else {
     & $healthScript -RepoRoot $repoRootPath -RunLimit 5
-  }
-}
-$steps += Invoke-Step "runner_watchdog" {
-  if ($SkipGitHub) {
-    & $watchdogScript -Repo $Repo -SkipGitHub -Json
-  } else {
-    & $watchdogScript -Repo $Repo -Json
   }
 }
 $steps += Invoke-Step "follow_up_audit" {

@@ -52,7 +52,7 @@ Preview the scheduled task command first:
 ## Monthly audit checklist
 
 - [ ] Latest `main` CI is green.
-- [ ] Runner service is `Running` and `Automatic`.
+- [ ] Hosted `main` CI is green.
 - [ ] `docs/follow-up-audit.md` still reflects the current next slice.
 - [ ] No completed OpenSpec change is left active outside `openspec/changes/archive/`.
 - [ ] New memories are actionable and not duplicates of stale notes.

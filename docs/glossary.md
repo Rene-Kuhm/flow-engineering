@@ -45,11 +45,10 @@ industry definitions.
 
 | Term | Meaning in this project |
 |---|---|
-| Self-hosted runner | The Windows GitHub Actions runner installed as a service at `C:\actions-runner-flow-engineering`. |
-| Runner watchdog | `scripts/runner_watchdog.ps1`, the out-of-band health signal for runner service and latest CI health. |
-| System health | `scripts/system_health.ps1`, the one-minute local dashboard for runner, CI, active specs, follow-ups, and memory pointers. |
+| Hosted CI | The `tests` GitHub Actions workflow, which uses audited GitHub-hosted Windows runner labels and has no repository self-hosted runner dependency. |
+| Runner watchdog | Optional local utility for an operator who separately manages a private runner; it is not part of repository health or GitHub Actions. |
+| System health | `scripts/system_health.ps1`, the one-minute local dashboard for hosted CI, active specs, follow-ups, and memory pointers. |
 | Monthly maintenance | `scripts/monthly_maintenance.ps1`, the periodic routine for health, follow-up, and memory hygiene checks. |
-| Health monitor | The scheduled GitHub Actions workflow that checks latest main CI health when the self-hosted runner can start jobs. |
 | Alert webhook | `FLOW_RUNNER_ALERT_WEBHOOK`, the external notification URL for watchdog warnings/critical states. It is not active until a real URL is configured and tested. |
 
 ## Repository surfaces
@@ -68,5 +67,5 @@ industry definitions.
 |---|---|
 | OpenSpec vs Engram | OpenSpec is file-backed and committable; Engram is persistent memory across sessions. |
 | Archived change vs active follow-up | Archived changes are historical; active follow-ups must appear in `docs/follow-up-audit.md` or a new proposal. |
-| Health monitor vs runner watchdog | Health monitor runs inside GitHub Actions; watchdog can run outside GitHub Actions and can detect runner-down states. |
+| Hosted CI vs runner watchdog | Hosted CI is the repository's required verification surface; the watchdog is optional local tooling for a separately managed private runner. |
 | Operating manual vs detailed docs | The operating manual is a routing map; detailed docs remain the source of truth for each topic. |

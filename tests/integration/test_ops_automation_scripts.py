@@ -94,7 +94,7 @@ def test_monthly_maintenance_renders_expected_sections_offline() -> None:
     assert "monthly-maintenance: ok" in output
     assert "== git_status: ok ==" in output
     assert "== system_health: ok ==" in output
-    assert "== runner_watchdog: ok ==" in output
+    assert "== runner_watchdog:" not in output
     assert "== follow_up_audit: ok ==" in output
     assert "== memory_policy: ok ==" in output
 
@@ -106,10 +106,10 @@ def test_monthly_maintenance_json_output_is_machine_readable() -> None:
     payload = json.loads(result.stdout)
     assert payload["overall"] == "ok"
     step_names = {step["name"] for step in payload["steps"]}
+    assert "runner_watchdog" not in step_names
     assert {
         "git_status",
         "system_health",
-        "runner_watchdog",
         "follow_up_audit",
         "memory_policy",
     }.issubset(step_names)

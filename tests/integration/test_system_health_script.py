@@ -47,10 +47,10 @@ def test_system_health_script_renders_expected_sections_offline(tmp_path: Path) 
 
     assert result.returncode == 0, result.stderr
     output = result.stdout
-    assert "== Runner service ==" in output
-    assert "== Startup fallback ==" in output
-    assert "== Latest CI runs ==" in output
+    assert "== Hosted CI ==" in output
     assert "gh: skipped" in output
+    assert "Runner service" not in output
+    assert "Startup fallback" not in output
     assert "== Active OpenSpec changes ==" in output
     assert "demo-change" in output
     assert "== Follow-up audit ==" in output

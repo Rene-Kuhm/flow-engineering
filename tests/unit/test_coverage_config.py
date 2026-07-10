@@ -13,7 +13,10 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
-TEST_YML = REPO_ROOT / ".github" / "workflows" / "test.yml"
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+TEST_YML = WORKFLOWS_DIR / "test.yml"
+GITHUB_HOSTED_RUNNERS = {"windows-latest"}
+EXTERNAL_PR_TRIGGERS = {"pull_request", "pull_request_target"}
 
 
 def _read_pyproject() -> str:
@@ -53,6 +56,41 @@ class TestCoverageCiFlag:
         # sanity: the existing cov args must still be there
         assert "--cov=src" in text
         assert "--cov-report=xml" in text
+
+
+def test_workflows_do_not_reference_self_hosted_runners() -> None:
+    for workflow in sorted((*WORKFLOWS_DIR.glob("*.yml"), *WORKFLOWS_DIR.glob("*.yaml"))):
+        assert "self-hosted" not in workflow.read_text(encoding="utf-8").lower(), workflow
+
+
+def test_external_pr_workflows_use_only_audited_github_hosted_runners() -> None:
+    external_pr_workflows: list[Path] = []
+
+    for workflow in sorted((*WORKFLOWS_DIR.glob("*.yml"), *WORKFLOWS_DIR.glob("*.yaml"))):
+        text = workflow.read_text(encoding="utf-8")
+        parsed = yaml.safe_load(text)
+        triggers = parsed.get("on", parsed.get(True))
+        has_external_pr = (
+            isinstance(triggers, str)
+            and triggers in EXTERNAL_PR_TRIGGERS
+            or isinstance(triggers, dict)
+            and bool(EXTERNAL_PR_TRIGGERS.intersection(triggers))
+            or isinstance(triggers, list)
+            and bool(EXTERNAL_PR_TRIGGERS.intersection(triggers))
+        )
+
+        if has_external_pr:
+            external_pr_workflows.append(workflow)
+            for job_name, job in parsed["jobs"].items():
+                assert isinstance(job, dict), f"{workflow}:{job_name} must be a job mapping"
+                assert "uses" not in job, f"{workflow}:{job_name} uses an unaudited workflow"
+                runs_on = job.get("runs-on")
+                assert isinstance(runs_on, str), f"{workflow}:{job_name} runs-on must be static"
+                assert runs_on in GITHUB_HOSTED_RUNNERS, (
+                    f"{workflow}:{job_name} uses unaudited runner {runs_on!r}"
+                )
+
+    assert TEST_YML in external_pr_workflows
 
 
 def test_workflow_yaml_is_parseable() -> None:

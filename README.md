@@ -1,7 +1,7 @@
 # flow-engineering
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Rene-Kuhm/flow-engineering/test.yml?branch=main&event=push&style=flat-square)](https://github.com/Rene-Kuhm/flow-engineering/actions)
-[![codecov](https://img.shields.io/codecov/c/github/Rene-Kuhm/flow-engineering/main?style=flat-square&token=PLACEHOLDER)](https://codecov.io/gh/Rene-Kuhm/flow-engineering)
+[![codecov](https://img.shields.io/codecov/c/github/Rene-Kuhm/flow-engineering/main?style=flat-square)](https://codecov.io/gh/Rene-Kuhm/flow-engineering)
 [![pypi](https://img.shields.io/pypi/v/flow-engineering?style=flat-square)](https://pypi.org/project/flow-engineering/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue?style=flat-square)
@@ -126,11 +126,11 @@ The orchestrator enforces **strict TDD per Constitution Article III**: `sdd-appl
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev workflow, conventional commit discipline, and the chained-PR policy. Constitution at `.specify/memory/constitution.md` is binding — PRs that violate any article will be flagged by `sdd-verify`.
 
-See [Engineering Quality Gates](docs/engineering-quality-gates.md) for self-hosted runner operations, lean SDD documentation rules, and drift-detection slice limits.
+See [Engineering Quality Gates](docs/engineering-quality-gates.md) for hosted CI policy, lean SDD documentation rules, and drift-detection slice limits.
 See [Follow-up Audit](docs/follow-up-audit.md) for the current debt triage policy and next-slice guidance.
 See [Drift Detection Regression Set](docs/drift-detection-regression-set.md) for the minimum tests required by future drift slices.
-See [System Health](docs/system-health.md) for the lightweight runner/CI/follow-up dashboard.
-See [Runner Watchdog](docs/runner-watchdog.md) for out-of-band runner-down checks.
+See [System Health](docs/system-health.md) for the lightweight hosted-CI/follow-up dashboard.
+See [Runner Watchdog](docs/runner-watchdog.md) for optional private-runner operator tooling.
 See [Memory Maintenance](docs/memory-maintenance.md) for keeping Engram/SDD context useful instead of noisy.
 See [Enterprise Readiness](docs/enterprise-readiness.md) for the operational, security, governance, and recovery checklist.
 See [Dependency Updates](docs/dependency-updates.md) for Dependabot scope and review rules.
@@ -138,7 +138,7 @@ See [Security Baseline](docs/security-baseline.md) and [Security Policy](SECURIT
 See [Operating Manual](docs/operating-manual.md) for the first-read map for agents and maintainers.
 See [Glossary](docs/glossary.md) for project-specific vocabulary and domain terms.
 See [Session Checklist](docs/session-checklist.md) for the start/close routine agents should follow.
-See [Release and Recovery](docs/release-recovery.md) for release tagging, runner rebuild, rollback, and disaster recovery.
+See [Release and Recovery](docs/release-recovery.md) for release tagging, rollback, and disaster recovery.
 See [Incident Response](docs/incident-response.md) for the symptom/diagnosis/fix/prevention workflow.
 See [Change Governance](docs/change-governance.md), [Architecture Decisions](docs/adr/README.md), and [Changelog](CHANGELOG.md) for Definition of Done, release notes, and durable decisions.
 See [Support Matrix](docs/support-matrix.md) for Python and platform support levels.

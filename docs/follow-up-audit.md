@@ -7,7 +7,7 @@ This audit separates actionable engineering debt from historical SDD noise. Do n
 | Area | Verdict | Decision |
 |---|---|---|
 | `drift-detection-spec-align` | Resolved in this pass | Active spec now names the shipped flat modules: `drift_graph_loader.py`, `drift_observation_source.py`, and standalone `drift_exceptions.py`. |
-| Runner health | Resolved | Runner is a Windows Service with `Automatic` start; Startup fallback is removed. |
+| Public CI runner model | Resolved | Repository workflows are hosted-only and do not require an active self-hosted runner. |
 | Old archived follow-ups | Audit-only | Treat archived follow-ups as historical unless they are re-promoted here or in a new SDD proposal. |
 | Future drift-detection slices | Active guardrail | Must follow `openspec/config.yaml` review budget: target ≤400 LOC, hard stop >600 LOC. |
 
@@ -38,6 +38,5 @@ No urgent blocker remains. If continuing drift-detection, choose one small behav
 
 Expected state:
 
-- runner service: `Running`, `Automatic`
 - open PRs: none unless a new work unit is intentionally opened
 - latest `main` CI: success
