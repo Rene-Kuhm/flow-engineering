@@ -30,6 +30,7 @@ the MCP transport, or project-specific governance.
 
 - Prefer `flow-mcp` read-only tools for bounded project detection, context, and
   health summaries when the server is available.
+- Convert only approved local documents, then use the separate Engram MCP to persist requested Markdown.
 - Treat MCP output as execution-surface evidence, not a replacement for
   repository files, tests, current diffs, or governance.
 - The core package owns deterministic project detection, health logic, and
