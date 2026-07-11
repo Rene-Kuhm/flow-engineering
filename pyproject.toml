@@ -28,8 +28,9 @@ dev = [
     "mypy>=2.2.0",
     "pip-audit==2.10.1",
     "mcp>=1.28.1,<1.29",
+    "markitdown[docx,pdf,pptx,xlsx]>=0.1.6,<0.2",
 ]
-mcp = ["mcp>=1.28.1,<1.29"]
+mcp = ["mcp>=1.28.1,<1.29", "markitdown[docx,pdf,pptx,xlsx]>=0.1.6,<0.2"]
 
 # Optional ML extras for vector-semantic-search (REQ-17, REQ-19).
 # Installing [vectors] enables ``HybridBackend.mem_search_semantic`` /
