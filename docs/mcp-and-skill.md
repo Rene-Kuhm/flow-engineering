@@ -43,9 +43,19 @@ skill mechanism. The skill remains useful when MCP is unavailable.
 | Surface | Owns | Does not own |
 |---|---|---|
 | Core package | Deterministic project detection, health logic, and domain APIs | Agent orchestration or transport concerns |
-| MCP adapter | Transport interoperability and three bounded read-only tools: detection, allowlisted context, and health summary | Arbitrary file access, writes, project-code execution, network access, or secret exposure |
+| MCP adapter | Transport interoperability and bounded read-only detection, context, health, and document conversion | Arbitrary file access, writes, project-code execution, network access, or secret exposure |
 | Skill | Stack-first workflow, bounded context, verification, memory, and fail-closed behavior | Core business logic or MCP transport |
 
 The context tool reads only the documented root allowlist and bounds file and
 total output. Treat MCP input paths and returned data as untrusted; run the
 server with the least filesystem access practical.
+
+## Convert a local document
+Set `FLOW_MCP_DOCUMENT_ROOTS` to `os.pathsep`-separated absolute directories;
+otherwise only the server checkout is approved. `convert_document` accepts an
+approved root plus a relative PDF, Office, or text path. It snapshots one
+verified file handle, rejects path and declared-format mismatches, enforces a
+10 MiB input limit and Office archive budgets, then converts for at most 20
+seconds and returns at most 50,000 Markdown characters. MarkItDown may create a
+network-capable session, but receives only this local stream and no URL, LLM,
+Azure, or plugin configuration. Portable parser memory limits are unavailable.
