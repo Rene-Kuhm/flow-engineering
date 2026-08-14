@@ -193,7 +193,11 @@ def main() -> int:
     try:
         DOCS_DIR.mkdir(parents=True, exist_ok=True)
         body = build_doc()
-        DOC_PATH.write_text(body, encoding="utf-8")
+        # newline="\n" so the output is byte-identical on every platform.
+        # Without it, text mode translates to CRLF on Windows, the file
+        # stops matching the LF copy in git, and any test that asserts a
+        # clean working tree fails depending on collection order.
+        DOC_PATH.write_text(body, encoding="utf-8", newline="\n")
     except OSError as exc:
         print(f"error: failed to write {DOC_PATH}: {exc}", file=sys.stderr)
         return 1
