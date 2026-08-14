@@ -169,6 +169,30 @@ def dry_run_field_is_true(context: dict) -> None:
     assert payload["dry_run"] is True
 
 
+def _modified_paths() -> set[str]:
+    """Return the paths ``git status --porcelain`` reports as modified."""
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+        check=True,
+    )
+    return {
+        line[3:]
+        for line in result.stdout.splitlines()
+        if line[:2].replace("?", " ").strip()
+    }
+
+
+# Captured at import time, before any scenario runs. Comparing against this
+# baseline instead of demanding a globally clean tree is what the assertion
+# below always meant to do: the step must catch what the dry-run touched,
+# not fail because the developer running the suite has work in progress.
+_BASELINE_MODIFIED = _modified_paths()
+
+
 @then("the filesystem is unchanged (no entries moved or renamed)")
 def filesystem_unchanged() -> None:
     """After a dry-run invocation, ``git status`` MUST be clean.
@@ -178,21 +202,8 @@ def filesystem_unchanged() -> None:
     the repo root and asserting the output is identical to a baseline
     captured at import time.
     """
-    repo_root = Path(__file__).resolve().parents[2]
-    result = subprocess.run(
-        ["git", "status", "--porcelain"],
-        capture_output=True,
-        text=True,
-        cwd=str(repo_root),
-        check=True,
-    )
-    # The fixture files added by RED-phase step glue (``tests/``,
-    # ``src/``) are all on the new branch; the only entries ``git status``
-    # reports are pre-existing untracked dirs from other in-flight work.
-    # Dry-run MUST NOT add to that list.
-    assert "M " not in result.stdout.replace("??", ""), (
-        f"dry-run introduced modifications: {result.stdout!r}"
-    )
+    introduced = _modified_paths() - _BASELINE_MODIFIED
+    assert not introduced, f"dry-run introduced modifications: {sorted(introduced)!r}"
 
 
 @then('the 400-day-old entry appears in the "candidates" list')
